@@ -23,14 +23,16 @@ public class MessageController {
     private final UserRepository userRepository;
     private final SimpMessagingTemplate simpMessagingTemplate;
     private final boolean useRabbit;
+    private final com.example.chat.config.WebSocketSessionTracker sessionTracker;
 
-    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit) {
+    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit, com.example.chat.config.WebSocketSessionTracker sessionTracker) {
         this.messageRepository = messageRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.chatProcessor = chatProcessor;
         this.userRepository = userRepository;
         this.simpMessagingTemplate = simpMessagingTemplate;
         this.useRabbit = useRabbit;
+        this.sessionTracker = sessionTracker;
     }
 
     @PostMapping
@@ -44,6 +46,7 @@ public class MessageController {
         String question = questionObj == null ? "" : questionObj.toString();
 
         Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
+        boolean isPrivate = "true".equals(String.valueOf(body.get("private")));
 
         if (userRepository.findById(userId) == null) {
             User newUser = new User();
@@ -59,23 +62,24 @@ public class MessageController {
         User user = userRepository.findById(userId);
         String userName = user != null && user.name != null ? user.name : "用户" + userId;
 
-        // debug log to ensure reqId is generated
         System.out.println("[DEBUG] createMessage body=" + body + " resolved reqId=" + reqId);
         Message m = new Message();
         m.reqId = reqId;
         m.userId = userId;
         m.question = question;
         m.status = "queued";
+        m.isPrivate = isPrivate ? 1 : 0;
         messageRepository.insert(m);
 
-        Map<String, Object> broadcastPayload = new HashMap<>();
-        broadcastPayload.put("user_id", userId);
-        broadcastPayload.put("user_name", userName);
-        broadcastPayload.put("question", question);
-        broadcastPayload.put("req_id", reqId);
-        simpMessagingTemplate.convertAndSend("/topic/public-questions", broadcastPayload);
+        if (!isPrivate) {
+            Map<String, Object> broadcastPayload = new HashMap<>();
+            broadcastPayload.put("user_id", userId);
+            broadcastPayload.put("user_name", userName);
+            broadcastPayload.put("question", question);
+            broadcastPayload.put("req_id", reqId);
+            simpMessagingTemplate.convertAndSend("/topic/public-questions", broadcastPayload);
+        }
 
-        // prepare payload
         Object preferred = body.get("preferred_model_config_id");
         Map<String, Object> messagePayload = new HashMap<>();
         messagePayload.put("req_id", reqId);
@@ -89,12 +93,10 @@ public class MessageController {
             try {
                 rabbitTemplate.convertAndSend("chat.exchange", "chat.request", messagePayload);
             } catch (Exception ex) {
-                // RabbitMQ not available — fallback to direct processing
                 System.err.println("Rabbit send failed, falling back: " + ex.getMessage());
                 chatProcessor.process(messagePayload);
             }
         } else {
-            // directly process synchronously
             chatProcessor.process(messagePayload);
         }
 
@@ -135,4 +137,10 @@ public class MessageController {
         }
         return ResponseEntity.ok(Map.of("answer", m.answerJson));
     }
+
+    @GetMapping("/online-count")
+    public ResponseEntity<?> getOnlineCount() {
+        return ResponseEntity.ok(Map.of("count", sessionTracker.getCount()));
+    }
+
 }

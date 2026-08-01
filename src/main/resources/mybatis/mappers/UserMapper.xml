@@ -9,20 +9,21 @@
     <result property="email" column="email"/>
     <result property="passwordHash" column="password_hash"/>
     <result property="name" column="name"/>
+    <result property="nickname" column="nickname"/>
     <result property="role" column="role"/>
     <result property="createdAt" column="created_at"/>
   </resultMap>
 
   <select id="findByEmail" resultMap="UserResult" parameterType="string">
-    SELECT id, email, password_hash, name, role, created_at FROM users WHERE email = #{email}
+    SELECT id, email, password_hash, name, nickname, role, created_at FROM users WHERE email = #{email}
   </select>
 
   <select id="findByName" resultMap="UserResult" parameterType="string">
-    SELECT id, email, password_hash, name, role, created_at FROM users WHERE name = #{name}
+    SELECT id, email, password_hash, name, nickname, role, created_at FROM users WHERE name = #{name}
   </select>
 
   <insert id="insert" parameterType="com.example.chat.entity.User" useGeneratedKeys="true" keyProperty="id">
-    INSERT INTO users (email, password_hash, name, role, created_at)
-    VALUES (#{email}, #{passwordHash}, #{name}, #{role}, NOW())
+    INSERT INTO users (email, password_hash, name, nickname, role, created_at)
+    VALUES (#{email}, #{passwordHash}, #{name}, #{nickname}, #{role}, NOW())
   </insert>
 </mapper>

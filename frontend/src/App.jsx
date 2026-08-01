@@ -8,6 +8,9 @@ import AdminModels from './pages/AdminModels'
 import KnowledgeGraph from './pages/KnowledgeGraph'
 import SqlExecutor from './pages/SqlExecutor'
 import MediaGen from './pages/MediaGen'
+import Profile from './pages/Profile'
+import PersonalChat from './pages/PersonalChat'
+import About from './pages/About'
 
 function NavBar({ authUser, onLogout, onOpenAuth }) {
     const location = useLocation()
@@ -21,10 +24,13 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
 
     const navLinks = [
         { to: '/home', label: '首页' },
+        { to: '/about', label: '制作人简介' },
         { to: '/', label: '社交AI对话' },
+        { to: '/personal', label: '个人对话' },
         { to: '/media', label: '图片与视频' },
         { to: '/history', label: '问答列表' },
         { to: '/graph', label: '问答图谱' },
+        { to: '/profile', label: '个人信息' },
         { to: '/admin/models', label: '模型管理' },
     ]
 
@@ -43,7 +49,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                 <div className="navbar-auth">
                     {authUser ? (
                         <>
-                            <span className="navbar-user">👋 {authUser.name}</span>
+                            <Link to="/profile" className="navbar-user navbar-user-link">👋 {authUser.name}</Link>
                             <button onClick={onLogout} className="navbar-auth-btn navbar-logout-btn">退出</button>
                         </>
                     ) : (
@@ -111,6 +117,7 @@ function AuthModal({ mode, onClose, onSwitch }) {
     const [regForm, setRegForm] = useState({ email: '', username: '', password: '' })
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const navigate = useNavigate()
 
     const handleLogin = async (e) => {
         e.preventDefault()
@@ -122,6 +129,7 @@ function AuthModal({ mode, onClose, onSwitch }) {
             localStorage.setItem('auth_user', JSON.stringify(res.data.user))
             window.dispatchEvent(new CustomEvent('auth-changed', { detail: res.data.user }))
             onClose()
+            navigate('/profile')
         } catch (err) {
             setError(err.response?.data?.error || '登录失败，请重试')
         } finally {
@@ -139,6 +147,7 @@ function AuthModal({ mode, onClose, onSwitch }) {
             localStorage.setItem('auth_user', JSON.stringify(res.data.user))
             window.dispatchEvent(new CustomEvent('auth-changed', { detail: res.data.user }))
             onClose()
+            navigate('/profile')
         } catch (err) {
             setError(err.response?.data?.error || '注册失败，请重试')
         } finally {
@@ -242,8 +251,11 @@ export default function App(){
                     <Route path="/home" element={<Landing/>} />
                     <Route path="/" element={<ChatPage/>} />
                     <Route path="/media" element={<MediaGen/>} />
+                    <Route path="/personal" element={<PersonalChat/>} />
                     <Route path="/history" element={<History/>} />
                     <Route path="/graph" element={<KnowledgeGraph/>} />
+                    <Route path="/about" element={<About/>} />
+                    <Route path="/profile" element={<Profile/>} />
                     <Route path="/admin/models" element={<AdminModels/>} />
                     <Route path="/sql" element={<SqlExecutor/>} />
                     <Route path="*" element={<Landing/>} />

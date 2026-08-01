@@ -13,6 +13,10 @@ const formatAnswer = (text) => {
   return result.split('\n').map(s => s.trim()).filter(Boolean)
 }
 
+const generateId = () => {
+  return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 10)
+}
+
 export default function ChatPage(){
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
@@ -32,6 +36,7 @@ export default function ChatPage(){
   const recognitionRef = useRef(null)
   const [speechSupported, setSpeechSupported] = useState(false)
   const userIdResolved = useRef(false)
+  const [onlineCount, setOnlineCount] = useState(1)
 
   useEffect(() => {
     const userStr = localStorage.getItem('auth_user')
@@ -122,6 +127,12 @@ export default function ChatPage(){
             }
           } catch (e) { console.error(e) }
         })
+        client.subscribe('/topic/online-count', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            setOnlineCount(payload.count || 1)
+          } catch (e) { console.error(e) }
+        })
       },
       onStompError: (frame) => {
         console.error('[STOMP] error', frame)
@@ -142,7 +153,7 @@ export default function ChatPage(){
     e?.preventDefault?.()
     if (!question.trim()) return
     const text = question.trim()
-    const reqId = crypto.randomUUID()
+    const reqId = generateId()
     setMessages(prev => [...prev, { role: 'user', content: text, reqId }])
     setQuestion('')
     setTyping(true)
@@ -217,6 +228,10 @@ export default function ChatPage(){
             <div className="chat-welcome">
               <h1>✦ 博思</h1>
               <p>有什么想问的？我来帮你解答</p>
+              <div className="chat-online-badge">
+                <span className="online-dot"></span>
+                {onlineCount} 人在线
+              </div>
             </div>
         )}
 
@@ -280,6 +295,12 @@ export default function ChatPage(){
         </div>
 
         <div className="chat-input-area">
+          <div className="chat-input-top">
+            <span className="chat-online-mini">
+              <span className="online-dot-small"></span>
+              {onlineCount} 人在线
+            </span>
+          </div>
           <form className="chat-input-wrapper" onSubmit={sendQuestion}>
             <input
                 value={question}

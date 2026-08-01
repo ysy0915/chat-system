@@ -5,6 +5,7 @@ public class User {
     public String email;
     public String passwordHash;
     public String name;
+    public String nickname;
     public String role = "user";
     public java.time.Instant createdAt = java.time.Instant.now();
 }

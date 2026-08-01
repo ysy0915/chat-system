@@ -11,6 +11,6 @@ public class ViewConfig implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/chat/assets/**")
                 .addResourceLocations("classpath:/static/chat/assets/")
-                .setCachePeriod(3600);
+                .setCachePeriod(0);
     }
 }

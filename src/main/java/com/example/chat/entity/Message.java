@@ -5,9 +5,10 @@ public class Message {
     public String reqId;
     public Long userId;
     public String question;
-    public String answerJson; // JSON stored as text
-    public String status; // queued/processing/done/failed
+    public String answerJson;
+    public String status;
     public String provider;
     public String model;
+    public Integer isPrivate = 0;
     public java.time.Instant createdAt = java.time.Instant.now();
 }

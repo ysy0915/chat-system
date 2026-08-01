@@ -32,19 +32,58 @@ export default function Landing() {
     <div className="landing">
       <section className="hero">
         <h1 className="hero-title">博思AI聊天论坛</h1>
-        <p className="hero-desc">
-          应用架构、中间件架构、基础设施与AI架构的融合架构，构建具备感知、规划、执行与反思能力的企业级智能体
-        </p>
         <div className="hero-actions">
           <Link to="/" className="btn-glow">
             <span>社交AI对话</span>
             <span className="btn-arrow">→</span>
           </Link>
+          <a href="#product-intro" className="btn-outline">产品简介</a>
+          <Link to="/personal" className="btn-outline">🔒 个人对话</Link>
           <a href="#arch" className="btn-outline">了解架构</a>
           <Link to="/graph" className="btn-outline">问答图谱</Link>
           <Link to="/history" className="btn-outline">问答列表</Link>
-          <Link to="/admin/models" className="btn-outline">模型管理</Link>
+          <Link to="/about" className="btn-outline">制作人简介</Link>
         </div>
+
+        {/* Product Intro */}
+        <section className="product-intro" id="product-intro">
+          <h2 className="section-title">产品简介</h2>
+          <p className="product-lead">
+            博思（BoSi）是一个融合多模型AI能力的智能对话平台，基于 应用架构 · 中间件架构 · 基础设施与AI融合架构，集社交化对话、私密助手、多媒体生成、知识图谱于一体，打造面向未来的社交智能体。
+          </p>
+          <div className="feature-grid">
+            <div className="feature-card">
+              <div className="feature-icon">💬</div>
+              <h3>社交AI对话</h3>
+              <p>公共论坛式AI对话，所有用户可实时查看提问与回答，支持多人在线互动与思维碰撞</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🔒</div>
+              <h3>个人对话空间</h3>
+              <p>完全私密的AI助手对话，内容不广播、不展示、不入图谱，只属于你自己的智能伙伴</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🎨</div>
+              <h3>图片与视频生成</h3>
+              <p>接入通义千问多模态模型，输入文字描述即可生成高质量图片与视频内容</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🌐</div>
+              <h3>问答图谱</h3>
+              <p>3D力导向图可视化展示历史问答间的语义关联，支持搜索高亮与节点交互探索</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">📋</div>
+              <h3>问答列表</h3>
+              <p>全量结构化浏览历史问答记录，支持快速检索与回顾每一轮精彩对话</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🤖</div>
+              <h3>多模型管理</h3>
+              <p>支持动态配置多个AI模型，灵活切换不同大语言模型，满足多样化对话场景需求</p>
+            </div>
+          </div>
+        </section>
 
         <div className="hero-visual">
           <svg className="orbit-svg" width="520" height="520" viewBox="0 0 520 520">

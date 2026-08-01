@@ -15,7 +15,7 @@ import java.io.IOException;
 @RequestMapping
 public class WebPageController {
 
-    @GetMapping({"/", "/chat", "/chat/home", "/chat/graph", "/chat/history", "/chat/admin/**", "/chat/sql", "/chat/media"})
+    @GetMapping({"/", "/chat", "/chat/home", "/chat/graph", "/chat/history", "/chat/admin/**", "/chat/sql", "/chat/media", "/chat/personal", "/chat/about"})
     public ResponseEntity<Resource> index() throws IOException {
         ClassPathResource index = new ClassPathResource("static/chat/index.html");
         if (!index.exists()) {
@@ -23,6 +23,9 @@ public class WebPageController {
         }
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE)
+                .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header("Expires", "0")
                 .body(index);
     }
 }

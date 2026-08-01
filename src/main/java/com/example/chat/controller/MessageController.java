@@ -6,6 +6,7 @@ import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.UserRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -51,16 +52,19 @@ public class MessageController {
         if (userRepository.findById(userId) == null) {
             User newUser = new User();
             newUser.email = "user_" + userId + "@chat.local";
-            newUser.name = "用户" + userId;
+            newUser.name = "";
+            newUser.guestName = "用户" + userId;
             newUser.role = "user";
             newUser.passwordHash = "";
             userRepository.insert(newUser);
             userId = newUser.id;
-            System.out.println("[DEBUG] Auto-created user id=" + userId);
+            newUser.guestName = "用户" + userId;
+            userRepository.updateRegister(newUser);
+            System.out.println("[DEBUG] Auto-created user id=" + userId + " guest_name=" + newUser.guestName);
         }
 
         User user = userRepository.findById(userId);
-        String userName = user != null && user.name != null ? user.name : "用户" + userId;
+        String userName = user != null && user.nickname != null && !user.nickname.isBlank() ? user.nickname : "用户" + userId;
 
         System.out.println("[DEBUG] createMessage body=" + body + " resolved reqId=" + reqId);
         Message m = new Message();
@@ -81,6 +85,7 @@ public class MessageController {
         }
 
         Object preferred = body.get("preferred_model_config_id");
+        boolean aiAnswer = "true".equals(String.valueOf(body.get("ai_answer")));
         Map<String, Object> messagePayload = new HashMap<>();
         messagePayload.put("req_id", reqId);
         messagePayload.put("user_id", userId);
@@ -89,15 +94,17 @@ public class MessageController {
             messagePayload.put("preferred_model_config_id", preferred);
         }
 
-        if (useRabbit) {
-            try {
-                rabbitTemplate.convertAndSend("chat.exchange", "chat.request", messagePayload);
-            } catch (Exception ex) {
-                System.err.println("Rabbit send failed, falling back: " + ex.getMessage());
+        if (aiAnswer) {
+            if (useRabbit) {
+                try {
+                    rabbitTemplate.convertAndSend("chat.exchange", "chat.request", messagePayload);
+                } catch (Exception ex) {
+                    System.err.println("Rabbit send failed, falling back: " + ex.getMessage());
+                    chatProcessor.process(messagePayload);
+                }
+            } else {
                 chatProcessor.process(messagePayload);
             }
-        } else {
-            chatProcessor.process(messagePayload);
         }
 
         return ResponseEntity.accepted().body(Map.of("id", m.id, "req_id", reqId, "status", "queued", "user_id", userId));    }
@@ -141,6 +148,32 @@ public class MessageController {
     @GetMapping("/online-count")
     public ResponseEntity<?> getOnlineCount() {
         return ResponseEntity.ok(Map.of("count", sessionTracker.getCount()));
+    }
+
+    @MessageMapping("/online.register")
+    public void handleOnlineRegister(Map<String, String> payload) {
+        String userId = payload.get("userId");
+        if (userId != null) {
+            String displayName = "用户" + userId;
+            try {
+                Long uid = Long.parseLong(userId);
+                User user = userRepository.findById(uid);
+                if (user != null && user.nickname != null && !user.nickname.isBlank()) {
+                    displayName = user.nickname;
+                }
+            } catch (Exception e) {
+                System.err.println("[WARN] Failed to lookup user: " + e.getMessage());
+            }
+            sessionTracker.registerUser(userId, displayName);
+        }
+    }
+
+    @MessageMapping("/online.unregister")
+    public void handleOnlineUnregister(Map<String, String> payload) {
+        String userId = payload.get("userId");
+        if (userId != null) {
+            sessionTracker.unregisterUser(userId);
+        }
     }
 
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import axios from 'axios'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 
 export default function Profile() {
   const navigate = useNavigate()
@@ -92,6 +92,7 @@ export default function Profile() {
 
   return (
     <div className="profile-page">
+      <Link to="/home" className="btn-back-home">← 返回首页</Link>
       <div className="profile-card">
         <h2 className="profile-title">个人信息</h2>
         {error && <div className="profile-error">{error}</div>}

@@ -1,0 +1,128 @@
+/* ===== Knowledge Graph (问答图谱) ===== */
+.kg-page {
+    flex: 1;
+    width: 100%;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-sizing: border-box;
+}
+.kg-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 8px;
+}
+.kg-title {
+    font-size: 22px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0;
+}
+.kg-subtitle {
+    color: #94a3b8;
+    font-size: 13px;
+    text-align: center;
+    margin: 20px 0 16px;
+    opacity: 0.9;
+}
+.kg-loading, .kg-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 60px 0;
+    font-size: 14px;
+}
+.kg-canvas {
+    position: relative;
+    width: 100%;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    justify-content: center;
+    box-sizing: border-box;
+}
+.kg-canvas svg {
+    width: 100%;
+    height: auto;
+    max-width: 700px;
+}
+.kg-center-search {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+}
+.kg-search-input {
+    width: 180px;
+    padding: 8px 14px;
+    border: 1px solid rgba(56,189,248,0.2);
+    border-radius: 10px;
+    background: rgba(15,23,42,0.85);
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    backdrop-filter: blur(8px);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.kg-search-input:focus {
+    border-color: rgba(56,189,248,0.5);
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.08);
+}
+.kg-search-input::placeholder { color: #475569; }
+.kg-tooltip {
+    position: absolute;
+    background: rgba(15,23,42,0.92);
+    border: 1px solid rgba(56,189,248,0.15);
+    border-radius: 12px;
+    padding: 14px 18px;
+    max-width: 360px;
+    min-width: 200px;
+    max-height: 280px;
+    overflow-y: auto;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 20;
+}
+.kg-tooltip::-webkit-scrollbar { width: 3px; }
+.kg-tooltip::-webkit-scrollbar-track { background: transparent; }
+.kg-tooltip::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.2); border-radius: 3px; }
+.kg-tooltip-q {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+.kg-tooltip-a {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+}
+.kg-tooltip-item {
+    padding: 6px 10px;
+    margin: 4px 0;
+    border-radius: 8px;
+    background: rgba(56,189,248,0.06);
+    border: 1px solid rgba(56,189,248,0.1);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.kg-tooltip-item:hover {
+    background: rgba(56,189,248,0.12);
+    border-color: rgba(56,189,248,0.25);
+    color: var(--text-primary);
+}
+

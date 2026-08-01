@@ -1,13 +1,10 @@
 package com.example.chat.controller;
 
 import com.example.chat.entity.User;
-import com.example.chat.entity.UserRegistration;
 import com.example.chat.repository.UserRepository;
-import com.example.chat.repository.UserRegistrationRepository;
 import com.example.chat.security.JwtUtil;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -16,16 +13,13 @@ import java.util.Map;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final UserRepository userRepository;
-    private final UserRegistrationRepository registrationRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
     public AuthController(UserRepository userRepository,
-                          UserRegistrationRepository registrationRepository,
                           PasswordEncoder passwordEncoder,
                           JwtUtil jwtUtil) {
         this.userRepository = userRepository;
-        this.registrationRepository = registrationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
     }
@@ -46,7 +40,6 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    @Transactional
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
         String email = payload.get("email");
         String username = payload.get("username");
@@ -55,6 +48,7 @@ public class AuthController {
         if (userRepository.findByEmail(email) != null) {
             return ResponseEntity.badRequest().body(Map.of("error", "邮箱已被注册"));
         }
+
         if (userRepository.findByName(username) != null) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名已被占用"));
         }
@@ -62,15 +56,10 @@ public class AuthController {
         User user = new User();
         user.email = email;
         user.name = username;
+        user.nickname = username;
         user.passwordHash = passwordEncoder.encode(password);
         user.role = "user";
         userRepository.insert(user);
-
-        UserRegistration reg = new UserRegistration();
-        reg.userId = user.id;
-        reg.email = email;
-        reg.username = username;
-        registrationRepository.insert(reg);
 
         String token = jwtUtil.generateToken(user.email, user.id, user.role);
         return ResponseEntity.status(201).body(Map.of("access_token", token, "user", user));

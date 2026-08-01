@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
+import { Link } from 'react-router-dom'
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
@@ -169,6 +170,8 @@ export default function PersonalChat() {
 
   return (
     <div className="chat-container">
+      <Link to="/home" className="btn-back-home">← 返回首页</Link>
+
       {messages.length === 0 && !typing && (
         <div className="chat-welcome">
           <h1>✦ 个人对话空间</h1>

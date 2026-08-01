@@ -6,6 +6,7 @@ public class User {
     public String passwordHash;
     public String name;
     public String nickname;
+    public String guestName;
     public String role = "user";
     public java.time.Instant createdAt = java.time.Instant.now();
 }

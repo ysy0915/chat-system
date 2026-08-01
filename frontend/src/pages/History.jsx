@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import axios from 'axios'
+import { Link } from 'react-router-dom'
 
 export default function History(){
   const [items, setItems] = useState([])
@@ -25,6 +26,7 @@ export default function History(){
 
   return (
     <div className="history-page">
+      <Link to="/home" className="btn-back-home">← 返回首页</Link>
       <div className="history-header">
         <h2 className="history-title">历史问答记录</h2>
         <button onClick={fetchList} className="btn-refresh">刷新</button>

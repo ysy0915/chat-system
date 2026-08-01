@@ -1,0 +1,235 @@
+/* ─── About Page (制作人简介) ─── */
+.about-page {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 16px 60px;
+}
+
+.about-card {
+    max-width: 700px;
+    width: 100%;
+    background: var(--bg-card);
+    border: 1px solid var(--border-glow);
+    border-radius: 20px;
+    padding: 40px 36px;
+    backdrop-filter: blur(12px);
+    animation: fadeIn 0.5s ease;
+}
+
+.about-header {
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.about-avatar {
+    position: relative;
+    width: 88px;
+    height: 88px;
+    margin: 0 auto 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.about-avatar-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6) border-box;
+    -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: aboutRingSpin 6s linear infinite;
+}
+
+@keyframes aboutRingSpin {
+    to { transform: rotate(360deg); }
+}
+
+.about-name {
+    font-size: 26px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), #a78bfa, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 6px;
+}
+
+.about-title {
+    color: var(--text-secondary);
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+.about-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+    margin: 28px 0;
+}
+
+.about-section {
+    margin-bottom: 28px;
+}
+
+.about-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.about-section-title::before {
+    content: '';
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--accent), #8b5cf6);
+}
+
+.about-text {
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.9;
+    opacity: 0.85;
+    margin-bottom: 16px;
+}
+
+.about-highlight {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.about-timeline {
+    position: relative;
+    padding-left: 24px;
+}
+
+.about-timeline::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--accent), rgba(139, 92, 246, 0.3), rgba(139, 92, 246, 0.1));
+    border-radius: 1px;
+}
+
+.about-timeline-item {
+    position: relative;
+    padding-bottom: 22px;
+    padding-left: 8px;
+}
+
+.about-timeline-item:last-child {
+    padding-bottom: 0;
+}
+
+.about-timeline-dot {
+    position: absolute;
+    left: -22px;
+    top: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 2px solid rgba(56, 189, 248, 0.4);
+    z-index: 1;
+}
+
+.about-timeline-dot-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.about-timeline-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+}
+
+.about-timeline-text {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-primary);
+    opacity: 0.85;
+    margin: 0;
+}
+
+.about-tech-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.about-tech-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 12px;
+    background: rgba(56, 189, 248, 0.04);
+    border: 1px solid rgba(56, 189, 248, 0.08);
+    transition: border-color 0.3s, background 0.3s;
+}
+
+.about-tech-item:hover {
+    border-color: rgba(56, 189, 248, 0.2);
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.about-tech-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.about-tech-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+}
+
+.about-tech-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    line-height: 1.5;
+}
+
+.about-footer {
+    text-align: center;
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(56, 189, 248, 0.08);
+}
+
+.about-footer-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    opacity: 0.7;
+}
+
+@media (max-width: 640px) {
+    .about-card {
+        padding: 28px 20px;
+    }
+    .about-tech-grid {
+        grid-template-columns: 1fr;
+    }
+    .about-name {
+        font-size: 22px;
+    }
+}

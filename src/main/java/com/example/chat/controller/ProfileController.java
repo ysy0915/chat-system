@@ -2,6 +2,7 @@ package com.example.chat.controller;
 
 import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
+import com.example.chat.repository.UserRegistrationRepository;
 import com.example.chat.security.JwtUtil;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,10 +13,12 @@ import java.util.Map;
 @RequestMapping("/api/v1/profile")
 public class ProfileController {
     private final UserRepository userRepository;
+    private final UserRegistrationRepository registrationRepository;
     private final JwtUtil jwtUtil;
 
-    public ProfileController(UserRepository userRepository, JwtUtil jwtUtil) {
+    public ProfileController(UserRepository userRepository, UserRegistrationRepository registrationRepository, JwtUtil jwtUtil) {
         this.userRepository = userRepository;
+        this.registrationRepository = registrationRepository;
         this.jwtUtil = jwtUtil;
     }
 
@@ -60,6 +63,14 @@ public class ProfileController {
         if (email != null && !email.trim().isEmpty()) user.email = email.trim();
 
         userRepository.updateProfile(user);
+
+        if (nickname != null) {
+            try {
+                registrationRepository.updateNicknameByUserId(userId, nickname.trim());
+            } catch (Exception e) {
+                System.err.println("[WARN] Failed to sync nickname to user_registrations: " + e.getMessage());
+            }
+        }
 
         return ResponseEntity.ok(Map.of(
                 "id", user.id,

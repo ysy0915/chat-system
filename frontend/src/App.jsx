@@ -11,6 +11,7 @@ import MediaGen from './pages/MediaGen'
 import Profile from './pages/Profile'
 import PersonalChat from './pages/PersonalChat'
 import About from './pages/About'
+import Debate from './pages/Debate'
 
 function NavBar({ authUser, onLogout, onOpenAuth }) {
     const location = useLocation()
@@ -27,6 +28,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/about', label: '制作人简介' },
         { to: '/', label: '社交AI对话' },
         { to: '/personal', label: '个人对话' },
+        { to: '/debate', label: 'AI博弈' },
         { to: '/media', label: '图片与视频' },
         { to: '/history', label: '问答列表' },
         { to: '/graph', label: '问答图谱' },
@@ -252,6 +254,7 @@ export default function App(){
                     <Route path="/" element={<ChatPage/>} />
                     <Route path="/media" element={<MediaGen/>} />
                     <Route path="/personal" element={<PersonalChat/>} />
+                    <Route path="/debate" element={<Debate/>} />
                     <Route path="/history" element={<History/>} />
                     <Route path="/graph" element={<KnowledgeGraph/>} />
                     <Route path="/about" element={<About/>} />

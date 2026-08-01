@@ -5,5 +5,6 @@ public class UserRegistration {
     public Long userId;
     public String email;
     public String username;
+    public String nickname;
     public java.time.Instant registeredAt = java.time.Instant.now();
 }

@@ -15,7 +15,7 @@ import java.io.IOException;
 @RequestMapping
 public class WebPageController {
 
-    @GetMapping({"/", "/chat", "/chat/home", "/chat/graph", "/chat/history", "/chat/admin/**", "/chat/sql", "/chat/media", "/chat/personal", "/chat/about"})
+    @GetMapping({"/", "/chat", "/chat/home", "/chat/graph", "/chat/history", "/chat/admin/**", "/chat/sql", "/chat/media", "/chat/personal", "/chat/about", "/chat/debate"})
     public ResponseEntity<Resource> index() throws IOException {
         ClassPathResource index = new ClassPathResource("static/chat/index.html");
         if (!index.exists()) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
+import { Link } from 'react-router-dom'
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
@@ -37,6 +38,9 @@ export default function ChatPage(){
   const [speechSupported, setSpeechSupported] = useState(false)
   const userIdResolved = useRef(false)
   const [onlineCount, setOnlineCount] = useState(1)
+  const [onlineUsers, setOnlineUsers] = useState([])
+  const [showOnlineList, setShowOnlineList] = useState(false)
+  const [aiAnswer, setAiAnswer] = useState(false)
 
   useEffect(() => {
     const userStr = localStorage.getItem('auth_user')
@@ -58,25 +62,26 @@ export default function ChatPage(){
 
   useEffect(() => {
     axios.get('/api/v1/messages', { params: { user_id: userId } })
-      .then(res => {
-        const history = (res.data || [])
-          .filter(m => m.answerJson && m.answerJson.trim())
-          .slice(-5)
-        if (history.length > 0) {
-          const msgs = []
-          history.forEach(m => {
-            msgs.push({ role: 'user', content: m.question, fromHistory: true })
-            let answer = m.answerJson
-            try {
-              const parsed = JSON.parse(answer)
-              if (parsed.answer) answer = parsed.answer
-            } catch {}
-            msgs.push({ role: 'ai', content: answer, fromHistory: true })
-          })
-          setMessages(msgs)
-        }
-      })
-      .catch(() => {})
+        .then(res => {
+          const history = (res.data || [])
+              .filter(m => m.answerJson && m.answerJson.trim())
+              .slice(0, 5)
+              .reverse()
+          if (history.length > 0) {
+            const msgs = []
+            history.forEach(m => {
+              msgs.push({ role: 'user', content: m.question, fromHistory: true })
+              let answer = m.answerJson
+              try {
+                const parsed = JSON.parse(answer)
+                if (parsed.answer) answer = parsed.answer
+              } catch {}
+              msgs.push({ role: 'ai', content: answer, fromHistory: true })
+            })
+            setMessages(msgs)
+          }
+        })
+        .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -84,7 +89,7 @@ export default function ChatPage(){
   }, [messages, typing])
 
   useEffect(() => {
-    const sock = new SockJS('/ws/chat');
+    const sock = new SockJS('/ws/chat?userId=' + userId);
     sock.onopen = () => console.log('[WS] SockJS opened')
     sock.onclose = () => { console.log('[WS] SockJS closed'); setWsStatus('disconnected') }
     sock.onerror = (e) => console.error('[WS] SockJS error', e)
@@ -111,10 +116,10 @@ export default function ChatPage(){
             if (payload.question) {
               setMessages(prev => {
                 if (prev.some(m => m.reqId === payload.req_id)) return prev
-                return [...prev, { 
-                  role: 'user', 
-                  content: payload.question, 
-                  fromOther: true, 
+                return [...prev, {
+                  role: 'user',
+                  content: payload.question,
+                  fromOther: true,
                   reqId: payload.req_id,
                   userName: payload.user_name || ('用户' + payload.user_id)
                 }]
@@ -127,11 +132,24 @@ export default function ChatPage(){
             }
           } catch (e) { console.error(e) }
         })
-        client.subscribe('/topic/online-count', (msg) => {
+        client.subscribe('/topic/online-users', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
             setOnlineCount(payload.count || 1)
+            setOnlineUsers(payload.users || [])
           } catch (e) { console.error(e) }
+        })
+        let displayName = '用户' + userId
+        try {
+          const stored = localStorage.getItem('auth_user')
+          if (stored) {
+            const u = JSON.parse(stored)
+            if (u?.nickname) displayName = u.nickname
+          }
+        } catch {}
+        client.publish({
+          destination: '/app/online.register',
+          body: JSON.stringify({ userId: String(userId), name: displayName })
         })
       },
       onStompError: (frame) => {
@@ -146,7 +164,13 @@ export default function ChatPage(){
     })
     stompRef.current = client
     client.activate()
-    return () => { client.deactivate() }
+    return () => {
+      client.publish({
+        destination: '/app/online.unregister',
+        body: JSON.stringify({ userId: String(userId) })
+      })
+      client.deactivate()
+    }
   }, [userId])
 
   const sendQuestion = async (e) => {
@@ -156,8 +180,8 @@ export default function ChatPage(){
     const reqId = generateId()
     setMessages(prev => [...prev, { role: 'user', content: text, reqId }])
     setQuestion('')
-    setTyping(true)
-    const payload = { req_id: reqId, question: text, user_id: userId, preferred_model_config_id: 2 }
+    if (aiAnswer) setTyping(true)
+    const payload = { req_id: reqId, question: text, user_id: userId, preferred_model_config_id: 2, ai_answer: aiAnswer }
     try {
       const res = await axios.post('/api/v1/messages', payload)
       const resolvedId = res.data?.user_id
@@ -223,14 +247,16 @@ export default function ChatPage(){
 
   return (
       <div className="chat-container">
+        <Link to="/home" className="btn-back-home">← 返回首页</Link>
 
         {messages.length === 0 && (
             <div className="chat-welcome">
               <h1>✦ 博思</h1>
               <p>有什么想问的？我来帮你解答</p>
-              <div className="chat-online-badge">
+              <div className="chat-online-badge" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
                 <span className="online-dot"></span>
-                {onlineCount} 人在线
+                {onlineCount + ' 人在线'}
+                <span style={{fontSize:'10px', opacity:0.6}}>{showOnlineList ? '▲' : '▼'}</span>
               </div>
             </div>
         )}
@@ -238,49 +264,52 @@ export default function ChatPage(){
         <div className="chat-messages">
           {messages.map((m, idx) => (
               m.role === 'user' && (m.fromOther || m.fromHistory) ? (
-                <div key={idx} className="msg-row msg-other-user-row">
-                  <div className="msg-avatar other-user-avatar">
-                    {m.fromHistory ? (
-                      <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
-                    ) : (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                      </svg>
-                    )}
+                  <div key={idx} className="msg-row msg-other-user-row">
+                    <div className="msg-avatar other-user-avatar">
+                      {m.fromHistory ? (
+                          <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
+                      ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                      )}
+                    </div>
+                    <div className="msg-other-wrap">
+                      {m.userName && <div className="msg-other-name">{m.userName}</div>}
+                      <div className="msg other-user">{m.content}</div>
+                    </div>
                   </div>
-                  <div className="msg-other-wrap">
-                    {m.userName && <div className="msg-other-name">{m.userName}</div>}
-                    <div className="msg other-user">{m.content}</div>
-                  </div>
-                </div>
               ) : m.role === 'user' ? (
-                <div key={idx} className="msg-row msg-user-row">
-                  <div className="msg-avatar user-avatar">
-                    <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
+                  <div key={idx} className="msg-row msg-user-row">
+                    <div className="msg-avatar user-avatar">
+                      <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
+                    </div>
+                    <div className="msg-user-wrap">
+                      <div className="msg-user-name">{authUser?.nickname || ('用户' + userId)}</div>
+                      <div className="msg user">{m.content}</div>
+                    </div>
                   </div>
-                  <div className="msg user">{m.content}</div>
-                </div>
               ) : m.role === 'ai' && m.forOther ? (
-                <div key={idx} className="msg-row msg-other-ai-row">
-                  <div className="msg user">{formatAnswer(m.content).map((sentence, i) => (
-                      <span key={i} style={{display:'block'}}>{sentence}</span>
-                  ))}</div>
-                  <div className="msg-avatar other-ai-avatar">✦</div>
-                </div>
-              ) : m.role === 'ai' ? (
-                <div key={idx} className="msg-row msg-ai-row">
-                  <div className="msg-avatar ai-avatar">✦</div>
-                  <div className={`msg ${m.fromHistory ? 'history-ai' : 'ai'}`}>
-                    {formatAnswer(m.content).map((sentence, i) => (
+                  <div key={idx} className="msg-row msg-other-ai-row">
+                    <div className="msg user">{formatAnswer(m.content).map((sentence, i) => (
                         <span key={i} style={{display:'block'}}>{sentence}</span>
-                    ))}
+                    ))}</div>
+                    <div className="msg-avatar other-ai-avatar">✦</div>
                   </div>
-                </div>
+              ) : m.role === 'ai' ? (
+                  <div key={idx} className="msg-row msg-ai-row">
+                    <div className="msg-avatar ai-avatar">✦</div>
+                    <div className={`msg ${m.fromHistory ? 'history-ai' : 'ai'}`}>
+                      {formatAnswer(m.content).map((sentence, i) => (
+                          <span key={i} style={{display:'block'}}>{sentence}</span>
+                      ))}
+                    </div>
+                  </div>
               ) : (
-                <div key={idx} className={`msg ${m.role}`}>{m.content}</div>
+                  <div key={idx} className={`msg ${m.role}`}>{m.content}</div>
               )
           ))}
           {typing && (
@@ -296,11 +325,26 @@ export default function ChatPage(){
 
         <div className="chat-input-area">
           <div className="chat-input-top">
-            <span className="chat-online-mini">
+            <span className="chat-online-mini" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
               <span className="online-dot-small"></span>
-              {onlineCount} 人在线
+              {onlineCount + ' 人在线'}
+              <span style={{fontSize:'9px', opacity:0.6}}>{showOnlineList ? '▲' : '▼'}</span>
             </span>
+            <button type="button" className={`ai-toggle-btn ${aiAnswer ? 'active' : ''}`} onClick={() => setAiAnswer(!aiAnswer)}>
+              ✦ 点击此按钮-由AI回答你提的问题
+            </button>
           </div>
+          {showOnlineList && onlineUsers.length > 0 && (
+              <div className="online-users-panel">
+                {onlineUsers.map(u => (
+                    <div key={u.id} className="online-user-item">
+                      <span className="online-user-avatar">🐰</span>
+                      <span className="online-user-name">{u.name || ('用户' + u.id)}</span>
+                      <span className="online-user-dot"></span>
+                    </div>
+                ))}
+              </div>
+          )}
           <form className="chat-input-wrapper" onSubmit={sendQuestion}>
             <input
                 value={question}

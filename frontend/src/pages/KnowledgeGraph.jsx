@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react'
 import axios from 'axios'
+import { Link } from 'react-router-dom'
 
 const STOP_WORDS = new Set('的了是在我有和就不人都一个上也这到说们为你会对就而且但如果因为所以可以已经还是或者虽然然而因此而且及其等等关于以及之后之前什么哪个哪些怎么如何为什么哪谁哪里什么时候'.split(''))
 
@@ -360,6 +361,7 @@ export default function KnowledgeGraph() {
 
   return (
     <div className="kg-page">
+      <Link to="/home" className="btn-back-home">← 返回首页</Link>
       <p className="kg-subtitle">基于语义相似度构建的问答关联网络 · 悬停节点查看答案 · 中心搜索定位问题</p>
 
       {loading && <div className="kg-loading">加载中…</div>}

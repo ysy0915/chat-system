@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import { Link } from 'react-router-dom'
 
 export default function MediaGen() {
   const [authUser, setAuthUser] = useState(null)
@@ -99,6 +100,7 @@ export default function MediaGen() {
     <div className="chat-container">
       {messages.length === 0 && (
         <div className="chat-welcome">
+          <Link to="/home" className="btn-back-home">← 返回首页</Link>
           <h1>🎨 AI 创作</h1>
           <p>描述你想要的图片或视频，AI 为你生成</p>
         </div>

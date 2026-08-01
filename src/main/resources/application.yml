@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: big-data-engine
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: root
+    password: YangSy@0915!
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  mybatis:
+    mapper-locations: classpath:mybatis/mappers/*.xml
+    configuration:
+      map-underscore-to-camel-case: true
+  rabbitmq:
+    host: localhost       # 本机地址
+    port: 5672            # AMQP 协议默认端口
+    username: guest       # 默认账号
+    password: guest       # 默认密码
+    virtual-host: /       # 默认虚拟主机
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    # 注意：这里直接省略 password 配置项即可
+    database: 0
+    timeout: 5000ms
+  mvc:
+    async:
+      request-timeout: 120000
+
+# Toggle to control RabbitMQ usage: true=use RabbitMQ, false=direct processing
+server:
+  forward-headers-strategy: native
+  port: 8080
+  tomcat:
+    connection-timeout: 120000
+    keep-alive-timeout: 120000
+    threads:
+      max: 200
+      min-spare: 10
+
+# Enable STOMP broker relay or use simple broker configured in WebSocketConfig

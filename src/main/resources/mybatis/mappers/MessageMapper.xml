@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.chat.repository.MessageRepository">
+  <resultMap id="MessageResult" type="com.example.chat.entity.Message">
+    <id property="id" column="id"/>
+    <result property="reqId" column="req_id"/>
+    <result property="userId" column="user_id"/>
+    <result property="question" column="question"/>
+    <result property="answerJson" column="answer_json"/>
+    <result property="status" column="status"/>
+    <result property="provider" column="provider"/>
+    <result property="model" column="model"/>
+    <result property="createdAt" column="created_at"/>
+  </resultMap>
+
+  <select id="findByReqId" parameterType="string" resultMap="MessageResult">
+    SELECT * FROM messages WHERE req_id = #{reqId}
+  </select>
+
+  <insert id="insert" parameterType="com.example.chat.entity.Message" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO messages (req_id, user_id, question, status, created_at)
+    VALUES (#{reqId}, #{userId}, #{question}, #{status}, NOW())
+  </insert>
+
+  <update id="updateByReqId" parameterType="com.example.chat.entity.Message">
+    UPDATE messages SET answer_json = #{answerJson}, status = #{status}, updated_at = NOW() WHERE req_id = #{reqId}
+  </update>
+</mapper>

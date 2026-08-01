@@ -27,6 +27,7 @@ spring:
       request-timeout: 120000
 
 # Toggle to control RabbitMQ usage: true=use RabbitMQ, false=direct processing
+
 server:
   forward-headers-strategy: native
   port: 8080

@@ -20,6 +20,7 @@ export default function ChatPage(){
   const [wsStatus, setWsStatus] = useState('connecting')
   const stompRef = useRef(null)
   const messagesEnd = useRef(null)
+  const [authUser, setAuthUser] = useState(null)
   const [userId, setUserId] = useState(() => {
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -33,7 +34,44 @@ export default function ChatPage(){
   const userIdResolved = useRef(false)
 
   useEffect(() => {
+    const userStr = localStorage.getItem('auth_user')
+    if (userStr) {
+      try { setAuthUser(JSON.parse(userStr)) } catch {}
+    }
+  }, [])
+
+  const getUserAvatar = () => {
+    if (authUser?.name) {
+      return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f430.png'
+    }
+    return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f430.png'
+  }
+
+  useEffect(() => {
     setSpeechSupported(!!SpeechRecognition)
+  }, [])
+
+  useEffect(() => {
+    axios.get('/api/v1/messages', { params: { user_id: userId } })
+      .then(res => {
+        const history = (res.data || [])
+          .filter(m => m.answerJson && m.answerJson.trim())
+          .slice(-5)
+        if (history.length > 0) {
+          const msgs = []
+          history.forEach(m => {
+            msgs.push({ role: 'user', content: m.question, fromHistory: true })
+            let answer = m.answerJson
+            try {
+              const parsed = JSON.parse(answer)
+              if (parsed.answer) answer = parsed.answer
+            } catch {}
+            msgs.push({ role: 'ai', content: answer, fromHistory: true })
+          })
+          setMessages(msgs)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -62,6 +100,28 @@ export default function ChatPage(){
             }
           } catch (e) { console.error(e) }
         })
+        client.subscribe('/topic/public-questions', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            if (payload.question) {
+              setMessages(prev => {
+                if (prev.some(m => m.reqId === payload.req_id)) return prev
+                return [...prev, { 
+                  role: 'user', 
+                  content: payload.question, 
+                  fromOther: true, 
+                  reqId: payload.req_id,
+                  userName: payload.user_name || ('用户' + payload.user_id)
+                }]
+              })
+            } else if (payload.type === 'answer' && payload.answer && payload.user_id !== userId) {
+              setMessages(prev => {
+                if (prev.some(m => m.reqId === payload.req_id && m.role === 'ai')) return prev
+                return [...prev, { role: 'ai', content: payload.answer, forOther: true, reqId: payload.req_id }]
+              })
+            }
+          } catch (e) { console.error(e) }
+        })
       },
       onStompError: (frame) => {
         console.error('[STOMP] error', frame)
@@ -82,10 +142,11 @@ export default function ChatPage(){
     e?.preventDefault?.()
     if (!question.trim()) return
     const text = question.trim()
-    setMessages(prev => [...prev, { role: 'user', content: text }])
+    const reqId = crypto.randomUUID()
+    setMessages(prev => [...prev, { role: 'user', content: text, reqId }])
     setQuestion('')
     setTyping(true)
-    const payload = { req_id: null, question: text, user_id: userId, preferred_model_config_id: 2 }
+    const payload = { req_id: reqId, question: text, user_id: userId, preferred_model_config_id: 2 }
     try {
       const res = await axios.post('/api/v1/messages', payload)
       const resolvedId = res.data?.user_id
@@ -161,18 +222,58 @@ export default function ChatPage(){
 
         <div className="chat-messages">
           {messages.map((m, idx) => (
-              <div key={idx} className={`msg ${m.role}`}>
-                {m.role === 'ai'
-                    ? formatAnswer(m.content).map((sentence, i) => (
+              m.role === 'user' && (m.fromOther || m.fromHistory) ? (
+                <div key={idx} className="msg-row msg-other-user-row">
+                  <div className="msg-avatar other-user-avatar">
+                    {m.fromHistory ? (
+                      <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                      </svg>
+                    )}
+                  </div>
+                  <div className="msg-other-wrap">
+                    {m.userName && <div className="msg-other-name">{m.userName}</div>}
+                    <div className="msg other-user">{m.content}</div>
+                  </div>
+                </div>
+              ) : m.role === 'user' ? (
+                <div key={idx} className="msg-row msg-user-row">
+                  <div className="msg-avatar user-avatar">
+                    <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
+                  </div>
+                  <div className="msg user">{m.content}</div>
+                </div>
+              ) : m.role === 'ai' && m.forOther ? (
+                <div key={idx} className="msg-row msg-other-ai-row">
+                  <div className="msg user">{formatAnswer(m.content).map((sentence, i) => (
+                      <span key={i} style={{display:'block'}}>{sentence}</span>
+                  ))}</div>
+                  <div className="msg-avatar other-ai-avatar">✦</div>
+                </div>
+              ) : m.role === 'ai' ? (
+                <div key={idx} className="msg-row msg-ai-row">
+                  <div className="msg-avatar ai-avatar">✦</div>
+                  <div className={`msg ${m.fromHistory ? 'history-ai' : 'ai'}`}>
+                    {formatAnswer(m.content).map((sentence, i) => (
                         <span key={i} style={{display:'block'}}>{sentence}</span>
-                    ))
-                    : m.content
-                }
-              </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div key={idx} className={`msg ${m.role}`}>{m.content}</div>
+              )
           ))}
           {typing && (
-              <div className="typing-indicator">
-                <span></span><span></span><span></span>
+              <div className="msg-row msg-ai-row">
+                <div className="msg-avatar ai-avatar">✦</div>
+                <div className="typing-indicator">
+                  <span></span><span></span><span></span>
+                </div>
               </div>
           )}
           <div ref={messagesEnd} />

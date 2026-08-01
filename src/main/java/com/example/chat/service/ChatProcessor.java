@@ -199,6 +199,9 @@ public class ChatProcessor {
         messagingTemplate.convertAndSend("/topic/user." + userId,
                 Map.of("type", "done", "req_id", reqId, "answer", answer));
 
+        messagingTemplate.convertAndSend("/topic/public-questions",
+                Map.of("type", "answer", "req_id", reqId, "user_id", userId, "answer", answer));
+
         String cacheKey = buildCacheKey(question, provider, model);
         try {
             redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
@@ -208,11 +211,7 @@ public class ChatProcessor {
 
         Message m = messageRepository.findByReqId(reqId);
         if (m != null) {
-            try {
-                m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
-            } catch (Exception ex) {
-                m.answerJson = answer;
-            }
+            m.answerJson = answer;
             m.status = "done";
             m.provider = provider;
             m.model = model;

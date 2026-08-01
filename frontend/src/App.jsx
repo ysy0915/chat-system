@@ -21,7 +21,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
 
     const navLinks = [
         { to: '/home', label: '首页' },
-        { to: '/', label: '对话' },
+        { to: '/', label: '社交AI对话' },
         { to: '/media', label: '图片与视频' },
         { to: '/history', label: '问答列表' },
         { to: '/graph', label: '问答图谱' },
@@ -54,14 +54,33 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                     )}
                 </div>
                 <div className="navbar-credit">制作者：杨思义</div>
-                <button className="navbar-hamburger" onClick={() => setMobileOpen(true)}>
+                <button 
+                    className="navbar-hamburger" 
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Hamburger clicked, opening drawer');
+                        setMobileOpen(true);
+                    }}
+                    type="button"
+                >
                     <span /><span /><span />
                 </button>
             </nav>
             {mobileOpen && (
-                <div className="mobile-drawer-overlay" onClick={closeMobile}>
+                <div 
+                    className="mobile-drawer-overlay active" 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        closeMobile();
+                    }}
+                >
                     <div className="mobile-drawer" onClick={e => e.stopPropagation()}>
-                        <button className="mobile-drawer-close" onClick={closeMobile}>✕</button>
+                        <button 
+                            className="mobile-drawer-close" 
+                            onClick={closeMobile}
+                            type="button"
+                        >✕</button>
                         <div className="mobile-drawer-links">
                             {navLinks.map(l => (
                                 <Link key={l.to} to={l.to} className={isActive(l.to)} onClick={closeMobile}>{l.label}</Link>

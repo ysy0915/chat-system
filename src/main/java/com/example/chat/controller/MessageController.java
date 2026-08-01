@@ -6,6 +6,7 @@ import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.UserRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -20,13 +21,15 @@ public class MessageController {
     private final RabbitTemplate rabbitTemplate;
     private final com.example.chat.service.ChatProcessor chatProcessor;
     private final UserRepository userRepository;
+    private final SimpMessagingTemplate simpMessagingTemplate;
     private final boolean useRabbit;
 
-    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit) {
+    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit) {
         this.messageRepository = messageRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.chatProcessor = chatProcessor;
         this.userRepository = userRepository;
+        this.simpMessagingTemplate = simpMessagingTemplate;
         this.useRabbit = useRabbit;
     }
 
@@ -53,6 +56,9 @@ public class MessageController {
             System.out.println("[DEBUG] Auto-created user id=" + userId);
         }
 
+        User user = userRepository.findById(userId);
+        String userName = user != null && user.name != null ? user.name : "用户" + userId;
+
         // debug log to ensure reqId is generated
         System.out.println("[DEBUG] createMessage body=" + body + " resolved reqId=" + reqId);
         Message m = new Message();
@@ -61,6 +67,13 @@ public class MessageController {
         m.question = question;
         m.status = "queued";
         messageRepository.insert(m);
+
+        Map<String, Object> broadcastPayload = new HashMap<>();
+        broadcastPayload.put("user_id", userId);
+        broadcastPayload.put("user_name", userName);
+        broadcastPayload.put("question", question);
+        broadcastPayload.put("req_id", reqId);
+        simpMessagingTemplate.convertAndSend("/topic/public-questions", broadcastPayload);
 
         // prepare payload
         Object preferred = body.get("preferred_model_config_id");

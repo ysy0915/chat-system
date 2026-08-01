@@ -37,7 +37,7 @@ export default function Landing() {
         </p>
         <div className="hero-actions">
           <Link to="/" className="btn-glow">
-            <span>开始对话</span>
+            <span>社交AI对话</span>
             <span className="btn-arrow">→</span>
           </Link>
           <a href="#arch" className="btn-outline">了解架构</a>

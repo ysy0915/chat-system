@@ -32,13 +32,15 @@ export default function History(){
       {loading && <div>加载中…</div>}
       {!loading && items.length === 0 && <div>暂无历史记录</div>}
       <div className="history-list">
-        {items.map((it, idx) => {
-          let answerText = ''
+        {items.filter(it => it.answerJson && it.answerJson.trim()).map((it, idx) => {
+          let answerText = it.answerJson || ''
           try {
-            const parsed = JSON.parse(it.answerJson || '{}')
-            answerText = parsed.answer || it.answerJson || ''
+            const parsed = JSON.parse(answerText)
+            if (parsed && parsed.answer) {
+              answerText = parsed.answer
+            }
           } catch (e) {
-            answerText = it.answerJson || ''
+            // answerText is already plain text, keep as is
           }
           return (
               <div key={idx} className="history-item">

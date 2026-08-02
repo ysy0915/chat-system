@@ -13,6 +13,7 @@ export default function About() {
           </div>
           <h1 className="about-name">杨思义</h1>
           <p className="about-title">数据工程架构师 · AI 基础架构方向</p>
+          <p className="about-wechat-inline">微信号：yangsy0915（申请时请注明原由）</p>
         </div>
 
         <div className="about-divider" />
@@ -46,10 +47,13 @@ export default function About() {
                   以对技术与工作<span className="about-highlight">极度专注、踏实肯干</span>的态度著称，并持续进行行业技术分享，致力于影响和感染更多的人。
                 </p>
               </div>
+            </div>
+            <div className="about-timeline-item">
+              <div className="about-timeline-dot" />
               <div className="about-timeline-content">
-                <div className="about-timeline-label">工作风格</div>
+                <div className="about-timeline-label">个人博客</div>
                 <p className="about-timeline-text">
-                  杨思义的技术博客：<a href="https://yangsiyi.cn" target="_blank" rel="noopener noreferrer">https://www.cnblogs.com/yangsy0915</a>
+                  技术博客地址：<a href="https://www.cnblogs.com/yangsy0915" target="_blank" rel="noopener noreferrer">https://www.cnblogs.com/yangsy0915</a>
                 </p>
               </div>
             </div>
@@ -106,7 +110,7 @@ export default function About() {
         </div>
 
         <div className="about-footer">
-          <p className="about-footer-text">制作者：杨思义</p>
+
         </div>
       </div>
     </div>

@@ -133,3 +133,22 @@
     color: var(--text-primary);
 }
 
+.kg-keyword-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.kg-keyword-tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.1);
+    border: 1px solid rgba(167, 139, 250, 0.2);
+    line-height: 1.6;
+}
+

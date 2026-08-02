@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,7 +26,8 @@ public class MediaGenController {
     private static final long IMAGE_MODEL_ID = 4L;
     private static final long VIDEO_MODEL_ID = 5L;
     private static final Duration IMAGE_TIMEOUT = Duration.ofSeconds(120);
-    private static final Duration VIDEO_TIMEOUT = Duration.ofSeconds(300);
+    private static final int VIDEO_POLL_INTERVAL_MS = 10000;
+    private static final int VIDEO_MAX_POLL_COUNT = 30;
 
     public MediaGenController(ModelConfigRepository modelConfigRepository, ObjectMapper objectMapper) {
         this.modelConfigRepository = modelConfigRepository;
@@ -60,7 +62,12 @@ public class MediaGenController {
         String baseUrl = resolveBaseUrl(config);
 
         try {
-            String mediaUrl = callMediaGeneration(baseUrl, apiKey, config.model, prompt, type);
+            String mediaUrl;
+            if ("video".equals(type)) {
+                mediaUrl = callVideoGeneration(baseUrl, apiKey, config.model, prompt);
+            } else {
+                mediaUrl = callImageGeneration(baseUrl, apiKey, config.model, prompt);
+            }
             return ResponseEntity.ok(Map.of(
                     "url", mediaUrl,
                     "type", type,
@@ -73,9 +80,90 @@ public class MediaGenController {
         }
     }
 
-    private String callMediaGeneration(String baseUrl, String apiKey, String model, String prompt, String type) throws Exception {
+    private String callVideoGeneration(String baseUrl, String apiKey, String model, String prompt) throws Exception {
+        String submitUrl = baseUrl.replaceAll("/+$", "") + "/api/v1/services/aigc/video-generation/video-synthesis";
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("input", Map.of("prompt", prompt));
+        requestBody.put("parameters", Map.of(
+                "resolution", "720P",
+                "ratio", "16:9",
+                "duration", 10
+        ));
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(submitUrl))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .header("X-DashScope-Async", "enable")
+                .timeout(Duration.ofSeconds(30))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("提交视频任务失败，状态 " + response.statusCode() + ": " + response.body());
+        }
+
+        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+        Map<String, Object> output = (Map<String, Object>) result.get("output");
+        if (output == null) {
+            String errMsg = result.get("message") != null ? result.get("message").toString() : "未知错误";
+            throw new RuntimeException(errMsg);
+        }
+
+        String taskId = (String) output.get("task_id");
+        if (taskId == null || taskId.isBlank()) {
+            throw new RuntimeException("未返回 task_id");
+        }
+
+        System.out.println("[MediaGen] 视频任务已提交, task_id=" + taskId);
+
+        String pollUrl = baseUrl.replaceAll("/+$", "") + "/api/v1/tasks/" + taskId;
+        for (int i = 0; i < VIDEO_MAX_POLL_COUNT; i++) {
+            Thread.sleep(VIDEO_POLL_INTERVAL_MS);
+
+            HttpRequest pollRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(pollUrl))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .timeout(Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> pollResponse = httpClient.send(pollRequest, HttpResponse.BodyHandlers.ofString());
+            if (pollResponse.statusCode() != 200) {
+                System.err.println("[MediaGen] 轮询失败, status=" + pollResponse.statusCode());
+                continue;
+            }
+
+            Map<String, Object> pollResult = objectMapper.readValue(pollResponse.body(), Map.class);
+            Map<String, Object> pollOutput = (Map<String, Object>) pollResult.get("output");
+            if (pollOutput == null) continue;
+
+            String status = (String) pollOutput.get("task_status");
+            System.out.println("[MediaGen] 轮询 task_status=" + status + " (第" + (i + 1) + "次)");
+
+            if ("SUCCEEDED".equals(status)) {
+                String videoUrl = (String) pollOutput.get("video_url");
+                if (videoUrl != null && !videoUrl.isBlank()) {
+                    return videoUrl;
+                }
+                throw new RuntimeException("任务成功但未返回 video_url");
+            } else if ("FAILED".equals(status) || "CANCELED".equals(status)) {
+                String msg = pollOutput.get("message") != null ? pollOutput.get("message").toString() : "任务失败";
+                throw new RuntimeException(msg);
+            }
+        }
+
+        throw new RuntimeException("视频生成超时，已轮询 " + VIDEO_MAX_POLL_COUNT + " 次");
+    }
+
+    private String callImageGeneration(String baseUrl, String apiKey, String model, String prompt) throws Exception {
         String url = baseUrl.replaceAll("/+$", "") + "/api/v1/services/aigc/multimodal-generation/generation";
-        Duration timeout = "video".equals(type) ? VIDEO_TIMEOUT : IMAGE_TIMEOUT;
 
         Map<String, Object> requestBody = Map.of(
                 "model", model,
@@ -96,7 +184,7 @@ public class MediaGenController {
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
-                .timeout(timeout)
+                .timeout(IMAGE_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
@@ -127,8 +215,8 @@ public class MediaGenController {
         }
 
         Map<String, Object> firstContent = content.get(0);
-        Object mediaUrl = firstContent.getOrDefault("video", firstContent.get("image"));
-        return mediaUrl != null ? mediaUrl.toString() : "";
+        Object imageUrl = firstContent.get("image");
+        return imageUrl != null ? imageUrl.toString() : "";
     }
 
     private String resolveBaseUrl(ModelConfig config) {

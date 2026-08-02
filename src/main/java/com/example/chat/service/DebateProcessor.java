@@ -1,7 +1,9 @@
 package com.example.chat.service;
 
+import com.example.chat.entity.DebateRecord;
 import com.example.chat.entity.Message;
 import com.example.chat.entity.ModelConfig;
+import com.example.chat.repository.DebateRecordRepository;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +26,7 @@ public class DebateProcessor {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ExecutorService debateExecutor;
+    private final DebateRecordRepository debateRecordRepository;
 
     @org.springframework.beans.factory.annotation.Value("${app.llm.api-key:}")
     private String defaultApiKey;
@@ -33,11 +36,13 @@ public class DebateProcessor {
     public DebateProcessor(MessageRepository messageRepository,
                            ModelConfigRepository modelConfigRepository,
                            SimpMessagingTemplate messagingTemplate,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper,
+                           DebateRecordRepository debateRecordRepository) {
         this.messageRepository = messageRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.messagingTemplate = messagingTemplate;
         this.objectMapper = objectMapper;
+        this.debateRecordRepository = debateRecordRepository;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
@@ -48,6 +53,8 @@ public class DebateProcessor {
         String reqId = (String) payload.get("req_id");
         Long userId = payload.get("user_id") == null ? 0L : Long.parseLong(payload.get("user_id").toString());
         String question = payload.get("question") == null ? "" : payload.get("question").toString();
+        Long debateRecordId = payload.get("debate_record_id") == null ? null : Long.parseLong(payload.get("debate_record_id").toString());
+        String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
 
         List<ModelConfig> models = modelConfigRepository.findByIds(List.of(1L, 2L, 3L));
         if (models.size() < 3) {
@@ -71,7 +78,7 @@ public class DebateProcessor {
 
         debateExecutor.submit(() -> {
             try {
-                runDebate(reqId, userId, question, modelMap);
+                runDebate(reqId, userId, question, modelMap, debateRecordId, userName);
             } catch (Exception e) {
                 System.err.println("[ERROR] DebateProcessor: " + e.getMessage());
                 e.printStackTrace();
@@ -81,7 +88,7 @@ public class DebateProcessor {
         });
     }
 
-    private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap) {
+    private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap, Long debateRecordId, String userName) {
         List<List<Map<String, String>>> allRounds = new ArrayList<>();
         List<Long> debateOrder = List.of(1L, 2L, 3L);
 
@@ -147,6 +154,14 @@ public class DebateProcessor {
                 m.provider = synthesizer.provider;
                 m.model = synthesizer.model;
                 messageRepository.updateByReqId(m);
+            }
+
+            DebateRecord debateRecord = debateRecordRepository.findById(debateRecordId);
+            if (debateRecord != null) {
+                debateRecord.finalAnswer = finalAnswer;
+                debateRecord.userName = userName;
+                debateRecord.status = "completed";
+                debateRecordRepository.updateAnswer(debateRecord);
             }
         } catch (Exception e) {
             messagingTemplate.convertAndSend("/topic/debate." + userId,

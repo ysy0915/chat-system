@@ -40,32 +40,34 @@ function wordsSimilar(a, b) {
 }
 
 function buildGraph(nodes) {
-  const qWordSets = nodes.map(n => extractWords(n.question + ' ' + n.keyword))
-  const wordFreq = {}
-  qWordSets.forEach(ws => ws.forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1 }))
-  const allWords = Object.keys(wordFreq)
-  const parent = {}; allWords.forEach(w => parent[w] = w)
-  function find(x) { return parent[x] === x ? x : (parent[x] = find(parent[x])) }
-  function union(a, b) { parent[find(a)] = find(b) }
-  for (let i = 0; i < allWords.length; i++)
-    for (let j = i + 1; j < allWords.length; j++)
-      if (wordsSimilar(allWords[i], allWords[j])) union(allWords[i], allWords[j])
-  const groupFreq = {}
-  allWords.forEach(w => { const g = find(w); groupFreq[g] = (groupFreq[g] || 0) + wordFreq[w] })
-  const hotGroups = new Set(Object.keys(groupFreq).filter(g => groupFreq[g] >= 2))
-  function isHot(w) { return hotGroups.has(find(w)) }
+  const nodeKeywords = nodes.map(n => extractWords(n.question + ' ' + n.keyword))
+  const keywordDocFreq = {}
+  nodeKeywords.forEach(ws => {
+    const unique = new Set(ws)
+    unique.forEach(w => { keywordDocFreq[w] = (keywordDocFreq[w] || 0) + 1 })
+  })
+  const totalDocs = nodes.length
   const edges = []
-  if (hotGroups.size > 0) {
-    for (let i = 0; i < nodes.length; i++) {
-      const hI = new Set([...qWordSets[i]].filter(isHot).map(find))
-      for (let j = i + 1; j < nodes.length; j++) {
-        const hJ = new Set([...qWordSets[j]].filter(isHot).map(find))
-        let shared = 0; hI.forEach(g => { if (hJ.has(g)) shared++ })
-        if (shared > 0) edges.push({ source: i, target: j, similarity: Math.min(shared / hotGroups.size * 2 + 0.2, 1) })
+  for (let i = 0; i < nodes.length; i++) {
+    const kwI = new Set(nodeKeywords[i])
+    for (let j = i + 1; j < nodes.length; j++) {
+      const kwJ = new Set(nodeKeywords[j])
+      const shared = []
+      kwI.forEach(w => { if (kwJ.has(w)) shared.push(w) })
+      if (shared.length > 0) {
+        shared.sort((a, b) => {
+          const idfA = Math.log(totalDocs / (keywordDocFreq[a] || 1))
+          const idfB = Math.log(totalDocs / (keywordDocFreq[b] || 1))
+          return idfB - idfA
+        })
+        const topKeywords = shared.slice(0, 3)
+        const similarity = Math.min(shared.length * 0.3 + 0.15, 1)
+        edges.push({ source: i, target: j, similarity, sharedKeywords: topKeywords })
       }
     }
   }
-  return { wordSets: qWordSets, edges }
+  edges.sort((a, b) => b.similarity - a.similarity)
+  return { wordSets: nodeKeywords, edges }
 }
 
 function forceLayout3D(n, edges, R) {

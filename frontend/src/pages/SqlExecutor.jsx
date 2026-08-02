@@ -58,9 +58,10 @@ export default function SqlExecutor() {
 
   const quickSqls = [
     { label: '所有表', sql: 'SHOW TABLES' },
-    { label: '用户列表', sql: 'SELECT id, email, name, role, created_at FROM users ORDER BY created_at DESC' },
-    { label: '消息统计', sql: 'SELECT COUNT(*) AS total FROM messages' },
-    { label: '模型配置', sql: 'SELECT id, model_name, provider, is_active FROM model_configs ORDER BY id' },
+    { label: '用户列表', sql: 'SELECT * FROM users ORDER BY id DESC' },
+    { label: '消息统计', sql: 'SELECT * FROM messages ORDER BY id DESC' },
+    { label: '模型配置', sql: 'SELECT * FROM model_configs ORDER BY id DESC' },
+    { label: '辩论记录', sql: 'SELECT * FROM debate_records ORDER BY id DESC' },
   ]
 
   if (!token) {

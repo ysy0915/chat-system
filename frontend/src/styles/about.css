@@ -80,9 +80,18 @@
 }
 
 .about-title {
-    color: var(--text-secondary);
     font-size: 14px;
+    color: var(--text-secondary);
     opacity: 0.8;
+    margin-top: 6px;
+}
+
+.about-wechat-inline {
+    font-size: 13px;
+    color: #4ade80;
+    font-weight: 600;
+    margin-top: 8px;
+    letter-spacing: 0.3px;
 }
 
 .about-divider {
@@ -230,16 +239,18 @@
 
 .about-footer {
     text-align: center;
-    margin-top: 32px;
-    padding-top: 20px;
-    border-top: 1px solid rgba(56, 189, 248, 0.08);
+    padding-top: 24px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    opacity: 0.7;
 }
 
-.about-footer-text {
+.about-wechat {
+    margin-top: 8px;
     font-size: 13px;
+    color: #4ade80;
     font-weight: 600;
-    color: var(--accent);
-    opacity: 0.7;
+    letter-spacing: 0.3px;
 }
 
 @media (max-width: 640px) {

@@ -23,7 +23,15 @@ export default function PersonalChat() {
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
   const [authUser, setAuthUser] = useState(null)
+  const [onlineCount, setOnlineCount] = useState(0)
   const [userId, setUserId] = useState(() => {
+    try {
+      const authStr = localStorage.getItem('auth_user')
+      if (authStr) {
+        const auth = JSON.parse(authStr)
+        if (auth?.id) return auth.id
+      }
+    } catch {}
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
     const id = Math.floor(Math.random() * 10000) + 1
@@ -35,6 +43,8 @@ export default function PersonalChat() {
   const [speechSupported, setSpeechSupported] = useState(false)
   const messagesEnd = useRef(null)
   const userIdResolved = useRef(false)
+  const clientRef = useRef(null)
+  const connectedRef = useRef(false)
 
   useEffect(() => {
     const userStr = localStorage.getItem('auth_user')
@@ -42,7 +52,6 @@ export default function PersonalChat() {
       try {
         const user = JSON.parse(userStr)
         setAuthUser(user)
-        setUserId(user.id)
       } catch {}
     }
   }, [])
@@ -78,11 +87,13 @@ export default function PersonalChat() {
 
   useEffect(() => {
     if (!userId) return
-    const sock = new SockJS('/ws/chat')
+    connectedRef.current = false
+    const sock = new SockJS('/ws/chat?userId=' + userId)
     const client = new Client({
       webSocketFactory: () => sock,
       debug: () => {},
       onConnect: () => {
+        connectedRef.current = true
         client.subscribe(`/topic/user.${userId}`, (msg) => {
           try {
             const payload = JSON.parse(msg.body)
@@ -92,11 +103,38 @@ export default function PersonalChat() {
             }
           } catch (e) { console.error(e) }
         })
+        client.subscribe('/topic/online-count/personal', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            setOnlineCount(payload.count || 0)
+          } catch (e) { console.error(e) }
+        })
+        let displayName = '用户' + userId
+        try {
+          const stored = localStorage.getItem('auth_user')
+          if (stored) {
+            const u = JSON.parse(stored)
+            if (u?.nickname) displayName = u.nickname
+          }
+        } catch {}
+        client.publish({
+          destination: '/app/online.register',
+          body: JSON.stringify({ userId: String(userId), name: displayName, page: 'personal' })
+        })
       },
-      onStompError: () => { setTyping(false) }
+      onStompError: () => { setTyping(false) },
+      onWebSocketClose: () => { connectedRef.current = false }
     })
+    clientRef.current = client
     client.activate()
-    return () => { client.deactivate() }
+    return () => {
+      connectedRef.current = false
+      const c = clientRef.current
+      if (c) {
+        c.deactivate().catch(() => {})
+        clientRef.current = null
+      }
+    }
   }, [userId])
 
   useEffect(() => {
@@ -178,6 +216,10 @@ export default function PersonalChat() {
           <h1>✦ 个人对话空间</h1>
           <p>{authUser?.name ? `${authUser.name}，这是你的私密AI助手` : '这是你的私密AI助手'}</p>
           <p style={{fontSize:'12px', color:'var(--text-secondary)', opacity:0.6, marginTop:4}}>对话内容仅自己可见，不会公开</p>
+          <div className="chat-online-badge" style={{marginTop:12}}>
+            <span className="online-dot"></span>
+            {onlineCount} 人在线
+          </div>
         </div>
       )}
 

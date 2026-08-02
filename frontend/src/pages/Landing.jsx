@@ -5,11 +5,18 @@ import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 
 export default function Landing() {
-  const [orbitAngle, setOrbitAngle] = useState(0)
   const animRef = useRef(null)
   const lastTimeRef = useRef(null)
-  const [onlineCount, setOnlineCount] = useState(45)
+  const [baseCount, setBaseCount] = useState(() => Math.floor(Math.random() * 200) + 1)
+  const [realUsers, setRealUsers] = useState(0)
   const stompRef = useRef(null)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setBaseCount(Math.floor(Math.random() * 200) + 1)
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     let landingId = localStorage.getItem('landing_visitor_id')
@@ -22,15 +29,15 @@ export default function Landing() {
       webSocketFactory: () => sock,
       debug: () => {},
       onConnect: () => {
-        client.subscribe('/topic/online-users', (msg) => {
+        client.subscribe('/topic/online-count/landing', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            setOnlineCount(45 + (payload.count || 0))
+            setRealUsers(payload.count || 0)
           } catch {}
         })
         client.publish({
           destination: '/app/online.register',
-          body: JSON.stringify({ userId: landingId, name: '访客' })
+          body: JSON.stringify({ userId: landingId, name: '访客', page: 'landing' })
         })
       }
     })
@@ -39,32 +46,13 @@ export default function Landing() {
     return () => {
       client.publish({
         destination: '/app/online.unregister',
-        body: JSON.stringify({ userId: landingId })
+        body: JSON.stringify({ userId: landingId, page: 'landing' })
       })
       client.deactivate()
     }
   }, [])
 
-  useEffect(() => {
-    const animate = (time) => {
-      if (lastTimeRef.current === null) lastTimeRef.current = time
-      const delta = time - lastTimeRef.current
-      lastTimeRef.current = time
-      setOrbitAngle(prev => (prev + delta * 0.005) % 360)
-      animRef.current = requestAnimationFrame(animate)
-    }
-    animRef.current = requestAnimationFrame(animate)
-    return () => { cancelAnimationFrame(animRef.current) }
-  }, [])
-
-  const orbitNodes = [
-    { label: 'Java', bg: '#333', border: '#333', color: '#fff' },
-    { label: 'BigData', bg: '#333', border: '#333', color: '#fff' },
-    { label: 'MCP', bg: '#333', border: '#333', color: '#fff' },
-    { label: 'Agent', bg: '#333', border: '#333', color: '#fff' },
-  ]
-
-  const rotRad = (orbitAngle / 180) * Math.PI
+  const onlineCount = baseCount + realUsers
 
   return (
     <div className="landing">
@@ -124,48 +112,6 @@ export default function Landing() {
           </div>
         </section>
 
-        <div className="hero-visual">
-          <svg className="orbit-svg" width="520" height="520" viewBox="0 0 520 520">
-            <defs>
-              <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="rgba(56,189,248,0.25)" />
-                <stop offset="100%" stopColor="rgba(56,189,248,0)" />
-              </radialGradient>
-            </defs>
-            <circle cx="260" cy="260" r="190"
-                    fill="none" stroke="rgba(56,189,248,0.08)"
-                    strokeWidth="1" strokeDasharray="8 6" />
-            {orbitNodes.map((_, i) => {
-              const angle = (2 * Math.PI * i) / orbitNodes.length - Math.PI / 2 + rotRad
-              const nx = 260 + 190 * Math.cos(angle)
-              const ny = 260 + 190 * Math.sin(angle)
-              return (
-                <line key={'line-' + i}
-                      x1="260" y1="260" x2={nx} y2={ny}
-                      stroke="rgba(56,189,248,0.12)"
-                      strokeWidth="1.5" strokeDasharray="6 4" />
-              )
-            })}
-            {orbitNodes.map((node, i) => {
-              const angle = (2 * Math.PI * i) / orbitNodes.length - Math.PI / 2 + rotRad
-              const nx = 260 + 190 * Math.cos(angle)
-              const ny = 260 + 190 * Math.sin(angle)
-              return (
-                <g key={'node-' + i}>
-                  <circle cx={nx} cy={ny} r="40"
-                          fill={node.bg} stroke={node.border} strokeWidth="2" />
-                  <text x={nx} y={ny + 6} textAnchor="middle"
-                        fontSize="15" fontWeight="700" fill={node.color}>
-                    {node.label}
-                  </text>
-                </g>
-              )
-            })}
-          </svg>
-          <div className="orbit-core">
-            <span>AI</span>
-          </div>
-        </div>
       </section>
 
       {/* Features */}

@@ -94,7 +94,7 @@ export default function Debate() {
             }
           } catch (e) { console.error(e) }
         })
-        client.subscribe('/topic/online-users', (msg) => {
+        client.subscribe('/topic/online-count/debate', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
             setOnlineCount(payload.count || 0)
@@ -110,7 +110,7 @@ export default function Debate() {
         } catch {}
         client.publish({
           destination: '/app/online.register',
-          body: JSON.stringify({ userId: String(userId), name: displayName })
+          body: JSON.stringify({ userId: String(userId), name: displayName, page: 'debate' })
         })
       },
       onStompError: () => { setWsStatus('error'); setDebating(false) },
@@ -121,7 +121,7 @@ export default function Debate() {
     return () => {
       client.publish({
         destination: '/app/online.unregister',
-        body: JSON.stringify({ userId: String(userId) })
+        body: JSON.stringify({ userId: String(userId), page: 'debate' })
       })
       client.deactivate()
     }

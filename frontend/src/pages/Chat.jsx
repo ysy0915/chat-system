@@ -61,30 +61,6 @@ export default function ChatPage(){
   }, [])
 
   useEffect(() => {
-    axios.get('/api/v1/messages', { params: { user_id: userId } })
-        .then(res => {
-          const history = (res.data || [])
-              .filter(m => m.answerJson && m.answerJson.trim())
-              .slice(0, 5)
-              .reverse()
-          if (history.length > 0) {
-            const msgs = []
-            history.forEach(m => {
-              msgs.push({ role: 'user', content: m.question, fromHistory: true })
-              let answer = m.answerJson
-              try {
-                const parsed = JSON.parse(answer)
-                if (parsed.answer) answer = parsed.answer
-              } catch {}
-              msgs.push({ role: 'ai', content: answer, fromHistory: true })
-            })
-            setMessages(msgs)
-          }
-        })
-        .catch(() => {})
-  }, [])
-
-  useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typing])
 
@@ -158,6 +134,12 @@ export default function ChatPage(){
             setOnlineUsers(payload.users || [])
           } catch (e) { console.error(e) }
         })
+        client.subscribe('/topic/online-count/chat', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            setOnlineCount(payload.count || 1)
+          } catch (e) { console.error(e) }
+        })
         let displayName = '用户' + userId
         try {
           const stored = localStorage.getItem('auth_user')
@@ -168,7 +150,7 @@ export default function ChatPage(){
         } catch {}
         client.publish({
           destination: '/app/online.register',
-          body: JSON.stringify({ userId: String(userId), name: displayName })
+          body: JSON.stringify({ userId: String(userId), name: displayName, page: 'chat' })
         })
       },
       onStompError: (frame) => {
@@ -184,11 +166,17 @@ export default function ChatPage(){
     stompRef.current = client
     client.activate()
     return () => {
-      client.publish({
-        destination: '/app/online.unregister',
-        body: JSON.stringify({ userId: String(userId) })
-      })
-      client.deactivate()
+      try {
+        if (client.connected) {
+          client.publish({
+            destination: '/app/online.unregister',
+            body: JSON.stringify({ userId: String(userId), page: 'chat' })
+          })
+        }
+      } catch (e) { console.warn('unregister failed:', e) }
+      try {
+        client.deactivate()
+      } catch (e) { console.warn('deactivate failed:', e) }
     }
   }, [userId])
 

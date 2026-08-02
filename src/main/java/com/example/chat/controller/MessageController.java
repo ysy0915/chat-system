@@ -146,13 +146,14 @@ public class MessageController {
     }
 
     @GetMapping("/online-count")
-    public ResponseEntity<?> getOnlineCount() {
-        return ResponseEntity.ok(Map.of("count", sessionTracker.getCount()));
+    public ResponseEntity<?> getOnlineCount(@RequestParam(value = "page", defaultValue = "global") String page) {
+        return ResponseEntity.ok(Map.of("count", sessionTracker.getCount(page)));
     }
 
     @MessageMapping("/online.register")
     public void handleOnlineRegister(Map<String, String> payload) {
         String userId = payload.get("userId");
+        String page = payload.get("page");
         if (userId != null) {
             String displayName = "用户" + userId;
             try {
@@ -165,15 +166,16 @@ public class MessageController {
             } catch (Exception e) {
                 System.err.println("[WARN] Failed to lookup user: " + e.getMessage());
             }
-            sessionTracker.registerUser(userId, displayName);
+            sessionTracker.registerUser(userId, displayName, page);
         }
     }
 
     @MessageMapping("/online.unregister")
     public void handleOnlineUnregister(Map<String, String> payload) {
         String userId = payload.get("userId");
+        String page = payload.get("page");
         if (userId != null) {
-            sessionTracker.unregisterUser(userId);
+            sessionTracker.unregisterUser(userId, page);
         }
     }
 

@@ -116,7 +116,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
 
 function AuthModal({ mode, onClose, onSwitch }) {
     const [loginForm, setLoginForm] = useState({ username: '', password: '' })
-    const [regForm, setRegForm] = useState({ email: '', username: '', password: '' })
+    const [regForm, setRegForm] = useState({ username: '', password: '' })
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const navigate = useNavigate()
@@ -188,12 +188,6 @@ function AuthModal({ mode, onClose, onSwitch }) {
                     </form>
                 ) : (
                     <form onSubmit={handleRegister}>
-                        <div className="auth-field">
-                            <label>邮箱</label>
-                            <input type="email" value={regForm.email}
-                                   onChange={e => setRegForm({ ...regForm, email: e.target.value })}
-                                   placeholder="请输入邮箱" required />
-                        </div>
                         <div className="auth-field">
                             <label>用户名</label>
                             <input type="text" value={regForm.username}

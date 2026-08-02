@@ -57,7 +57,8 @@ export default function PersonalChat() {
       .then(res => {
         const history = (res.data || [])
           .filter(m => m.answerJson && m.answerJson.trim())
-          .slice(-20)
+          .slice(0, 10)
+          .reverse()
         if (history.length > 0) {
           const msgs = []
           history.forEach(m => {
@@ -116,7 +117,7 @@ export default function PersonalChat() {
         question: text,
         user_id: userId,
         private: 'true',
-        preferred_model_config_id: 2
+        ai_answer: true
       })
       const resolvedId = res.data?.user_id
       if (resolvedId && resolvedId !== userId && !userIdResolved.current) {

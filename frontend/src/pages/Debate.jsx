@@ -30,6 +30,7 @@ export default function Debate() {
   const [error, setError] = useState(null)
   const [modelNames, setModelNames] = useState({})
   const [wsStatus, setWsStatus] = useState('connecting')
+  const [onlineCount, setOnlineCount] = useState(0)
   const stompRef = useRef(null)
   const scrollRef = useRef(null)
   const [userId] = useState(() => {
@@ -93,13 +94,37 @@ export default function Debate() {
             }
           } catch (e) { console.error(e) }
         })
+        client.subscribe('/topic/online-users', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            setOnlineCount(payload.count || 0)
+          } catch {}
+        })
+        let displayName = '用户' + userId
+        try {
+          const stored = localStorage.getItem('auth_user')
+          if (stored) {
+            const u = JSON.parse(stored)
+            if (u?.nickname) displayName = u.nickname
+          }
+        } catch {}
+        client.publish({
+          destination: '/app/online.register',
+          body: JSON.stringify({ userId: String(userId), name: displayName })
+        })
       },
       onStompError: () => { setWsStatus('error'); setDebating(false) },
       onWebSocketClose: () => setWsStatus('disconnected')
     })
     stompRef.current = client
     client.activate()
-    return () => { client.deactivate() }
+    return () => {
+      client.publish({
+        destination: '/app/online.unregister',
+        body: JSON.stringify({ userId: String(userId) })
+      })
+      client.deactivate()
+    }
   }, [userId])
 
   useEffect(() => {
@@ -150,6 +175,10 @@ export default function Debate() {
         <div className="chat-welcome">
           <h1>⚔️ AI 博弈</h1>
           <p>三个大模型围绕你的问题展开辩论，3轮讨论后给出整合结论</p>
+          <div className="hero-online-badge">
+            <span className="online-dot"></span>
+            {onlineCount} 人在线
+          </div>
           <div className="debate-models-preview">
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>🔮 模型 1</span>
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[2].border, color: MODEL_COLORS[2].accent }}>🤖 模型 2</span>

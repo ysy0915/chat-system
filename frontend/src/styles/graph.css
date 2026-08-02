@@ -10,7 +10,14 @@
     flex-direction: column;
     align-items: center;
     box-sizing: border-box;
+    overflow-y: auto;
+    min-height: 0;
 }
+
+.kg-page::-webkit-scrollbar { width: 4px; }
+.kg-page::-webkit-scrollbar-track { background: transparent; }
+.kg-page::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.2); border-radius: 4px; }
+
 .kg-header {
     display: flex;
     align-items: center;

@@ -161,6 +161,7 @@ public class MessageController {
                 if (user != null && user.nickname != null && !user.nickname.isBlank()) {
                     displayName = user.nickname;
                 }
+            } catch (NumberFormatException ignored) {
             } catch (Exception e) {
                 System.err.println("[WARN] Failed to lookup user: " + e.getMessage());
             }

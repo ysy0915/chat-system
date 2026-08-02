@@ -56,11 +56,9 @@ public class ProfileController {
 
         String nickname = body.get("nickname");
         String name = body.get("name");
-        String email = body.get("email");
 
         if (nickname != null) user.nickname = nickname.trim();
         if (name != null && !name.trim().isEmpty()) user.name = name.trim();
-        if (email != null && !email.trim().isEmpty()) user.email = email.trim();
 
         userRepository.updateProfile(user);
 
@@ -75,8 +73,7 @@ public class ProfileController {
         return ResponseEntity.ok(Map.of(
                 "id", user.id,
                 "name", user.name != null ? user.name : "",
-                "nickname", user.nickname != null ? user.nickname : "",
-                "email", user.email != null ? user.email : ""
+                "nickname", user.nickname != null ? user.nickname : ""
         ));
     }
 

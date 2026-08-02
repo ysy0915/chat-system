@@ -41,20 +41,15 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
-        String email = payload.get("email");
         String username = payload.get("username");
         String password = payload.get("password");
-
-        if (userRepository.findByEmail(email) != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "邮箱已被注册"));
-        }
 
         if (userRepository.findByName(username) != null) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名已被占用"));
         }
 
         User user = new User();
-        user.email = email;
+        user.email = username + "@chat.local";
         user.name = username;
         user.nickname = username;
         user.passwordHash = passwordEncoder.encode(password);

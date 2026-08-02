@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom'
 
 export default function Profile() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ name: '', nickname: '', email: '' })
+  const [form, setForm] = useState({ name: '', nickname: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -25,8 +25,7 @@ export default function Profile() {
         .then(res => {
           setForm({
             name: res.data.name || '',
-            nickname: res.data.nickname || '',
-            email: res.data.email || ''
+            nickname: res.data.nickname || ''
           })
         })
         .catch(err => {
@@ -53,7 +52,7 @@ export default function Profile() {
     setSaving(true)
     const token = localStorage.getItem('auth_token')
     try {
-      const res = await axios.put('/api/v1/profile', { nickname: form.nickname, email: form.email }, {
+      const res = await axios.put('/api/v1/profile', { nickname: form.nickname }, {
         headers: { Authorization: 'Bearer ' + token }
       })
       const userStr = localStorage.getItem('auth_user')
@@ -107,12 +106,6 @@ export default function Profile() {
             <input type="text" value={form.nickname}
                    onChange={e => setForm({ ...form, nickname: e.target.value })}
                    placeholder="请输入昵称" />
-          </div>
-          <div className="profile-field">
-            <label>邮箱</label>
-            <input type="email" value={form.email}
-                   onChange={e => setForm({ ...form, email: e.target.value })}
-                   placeholder="请输入邮箱" required />
           </div>
           <button type="submit" className="profile-save-btn" disabled={saving}>
             {saving ? '保存中...' : '保存修改'}

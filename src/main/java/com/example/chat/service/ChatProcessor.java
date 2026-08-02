@@ -23,6 +23,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -48,7 +51,7 @@ public class ChatProcessor {
     private String defaultProvider;
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
-    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(120);
 
     public ChatProcessor(MessageRepository messageRepository,
                          ModelConfigRepository modelConfigRepository,
@@ -63,7 +66,18 @@ public class ChatProcessor {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(HTTP_TIMEOUT)
                 .build();
-        this.modelExecutor = Executors.newFixedThreadPool(3);
+        this.modelExecutor = new ThreadPoolExecutor(
+                3,
+                30,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(50),
+                r -> {
+                    Thread t = new Thread(r, "llm-worker-" + System.currentTimeMillis());
+                    t.setDaemon(true);
+                    return t;
+                },
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
     }
 
     public void process(Map<String, Object> payload) {

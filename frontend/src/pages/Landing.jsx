@@ -1,11 +1,49 @@
 // frontend/src/pages/Landing.jsx
 import React, { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import SockJS from 'sockjs-client'
+import { Client } from '@stomp/stompjs'
 
 export default function Landing() {
   const [orbitAngle, setOrbitAngle] = useState(0)
   const animRef = useRef(null)
   const lastTimeRef = useRef(null)
+  const [onlineCount, setOnlineCount] = useState(45)
+  const stompRef = useRef(null)
+
+  useEffect(() => {
+    let landingId = localStorage.getItem('landing_visitor_id')
+    if (!landingId) {
+      landingId = 'landing-' + Math.floor(Math.random() * 100000)
+      localStorage.setItem('landing_visitor_id', landingId)
+    }
+    const sock = new SockJS('/ws/chat?userId=' + landingId)
+    const client = new Client({
+      webSocketFactory: () => sock,
+      debug: () => {},
+      onConnect: () => {
+        client.subscribe('/topic/online-users', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            setOnlineCount(45 + (payload.count || 0))
+          } catch {}
+        })
+        client.publish({
+          destination: '/app/online.register',
+          body: JSON.stringify({ userId: landingId, name: '访客' })
+        })
+      }
+    })
+    stompRef.current = client
+    client.activate()
+    return () => {
+      client.publish({
+        destination: '/app/online.unregister',
+        body: JSON.stringify({ userId: landingId })
+      })
+      client.deactivate()
+    }
+  }, [])
 
   useEffect(() => {
     const animate = (time) => {
@@ -32,6 +70,10 @@ export default function Landing() {
     <div className="landing">
       <section className="hero">
         <h1 className="hero-title">博思AI聊天论坛</h1>
+        <div className="hero-online-badge">
+          <span className="online-dot"></span>
+          {onlineCount} 人在线
+        </div>
         <div className="hero-actions">
           <a href="#product-intro" className="btn-outline">产品简介</a>
           <Link to="/debate" className="btn-outline">AI博弈</Link>

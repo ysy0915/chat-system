@@ -3,9 +3,29 @@
     flex: 1;
     overflow-y: auto;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
     padding: 40px 16px 60px;
+}
+
+.btn-back-top {
+    display: inline-block;
+    margin-bottom: 20px;
+    padding: 8px 24px;
+    border-radius: 12px;
+    border: 1px solid rgba(56,189,248,0.15);
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-decoration: none;
+    transition: all 0.2s;
+    align-self: center;
+}
+
+.btn-back-top:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-dim);
 }
 
 .about-card {

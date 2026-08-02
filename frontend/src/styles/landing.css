@@ -83,6 +83,34 @@
     animation: fadeSlideUp 1.2s ease;
 }
 
+.hero-online-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(34,197,94,0.2);
+    background: rgba(34,197,94,0.08);
+    color: #4ade80;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    animation: fadeSlideUp 0.7s ease;
+}
+
+.hero-online-badge .online-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4ade80;
+    animation: onlinePulse 2s infinite;
+}
+
+@keyframes onlinePulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74,222,128,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+}
+
 .btn-glow {
     display: inline-flex;
     align-items: center;
@@ -157,6 +185,20 @@
 }
 
 /* History list styles */
+.history-page {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 0 16px 20px;
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.history-page::-webkit-scrollbar { width: 4px; }
+.history-page::-webkit-scrollbar-track { background: transparent; }
+.history-page::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.2); border-radius: 4px; }
+
 .history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px; }
 .history-title { font-size:20px; font-weight:700; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
 .btn-refresh { padding:8px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.12); background:transparent; color:var(--text-secondary); cursor:pointer; transition:all .12s; }

@@ -315,7 +315,9 @@ export default function KnowledgeGraph() {
   }
 
   const { edges } = useMemo(() => nodes.length > 1 ? buildGraph(nodes) : { edges: [] }, [nodes])
-  const basePos = useMemo(() => {
+
+  useEffect(() => {
+    if (nodes.length === 0) return
     const layout = forceLayout3D(nodes.length, edges, 250)
     posRef.current = layout.map(p => ({ x: p.x, y: p.y, z: p.z }))
     velRef.current = layout.map(() => ({
@@ -323,8 +325,9 @@ export default function KnowledgeGraph() {
       vy: (Math.random() - 0.5) * 0.5,
       vz: (Math.random() - 0.5) * 0.5
     }))
-    return layout
+    lastTimeRef.current = null
   }, [nodes.length, edges.length])
+
   const nodeDegrees = useMemo(() => {
     const deg = new Array(nodes.length).fill(0)
     edges.forEach(e => { deg[e.source]++; deg[e.target]++ })

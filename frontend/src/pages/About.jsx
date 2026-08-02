@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 export default function About() {
   return (
     <div className="about-page">
-      <Link to="/home" className="btn-back-home">← 返回首页</Link>
+      <Link to="/home" className="btn-back-top">← 返回首页</Link>
       <div className="about-card">
         <div className="about-header">
           <div className="about-avatar">

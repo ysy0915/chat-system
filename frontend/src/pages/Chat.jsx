@@ -113,7 +113,26 @@ export default function ChatPage(){
         client.subscribe('/topic/public-questions', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            if (payload.question) {
+            if (payload.auto_chat && payload.type === 'auto_question') {
+              setMessages(prev => {
+                if (prev.some(m => m.reqId === payload.req_id)) return prev
+                return [...prev, {
+                  role: 'auto-q',
+                  content: payload.question,
+                  reqId: payload.req_id,
+                  userName: payload.user_name
+                }]
+              })
+            } else if (payload.auto_chat && payload.type === 'auto_answer') {
+              setMessages(prev => {
+                return [...prev, {
+                  role: 'auto-a',
+                  content: payload.answer,
+                  reqId: payload.req_id,
+                  userName: payload.user_name
+                }]
+              })
+            } else if (payload.question) {
               setMessages(prev => {
                 if (prev.some(m => m.reqId === payload.req_id)) return prev
                 return [...prev, {
@@ -263,7 +282,23 @@ export default function ChatPage(){
 
         <div className="chat-messages">
           {messages.map((m, idx) => (
-              m.role === 'user' && (m.fromOther || m.fromHistory) ? (
+              m.role === 'auto-q' ? (
+                  <div key={idx} className="msg-row msg-auto-q-row">
+                    <div className="msg-avatar msg-auto-q-avatar">🤖</div>
+                    <div className="msg-auto-wrap">
+                      <div className="msg-auto-name">{m.userName} 提问</div>
+                      <div className="msg auto-q">{m.content}</div>
+                    </div>
+                  </div>
+              ) : m.role === 'auto-a' ? (
+                  <div key={idx} className="msg-row msg-auto-a-row">
+                    <div className="msg-avatar msg-auto-a-avatar">✦</div>
+                    <div className="msg-auto-wrap">
+                      <div className="msg-auto-name">{m.userName} 回答</div>
+                      <div className="msg auto-a">{m.content}</div>
+                    </div>
+                  </div>
+              ) : m.role === 'user' && (m.fromOther || m.fromHistory) ? (
                   <div key={idx} className="msg-row msg-other-user-row">
                     <div className="msg-avatar other-user-avatar">
                       {m.fromHistory ? (

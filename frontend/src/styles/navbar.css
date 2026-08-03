@@ -3,11 +3,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 24px;
-    height: 56px;
-    background: rgba(17, 24, 39, 0.8);
+    padding: 0 32px;
+    height: 64px;
+    background: rgba(240, 244, 248, 0.6);
     backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-glow);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
     flex-shrink: 0;
 }
 
@@ -17,18 +17,18 @@
     gap: 10px;
     font-size: 18px;
     font-weight: 700;
-    color: var(--accent);
+    color: var(--text-primary);
     text-decoration: none;
     letter-spacing: 0.5px;
 }
 
 .navbar-brand .logo {
-    width: 32px; height: 32px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, var(--accent), #8b5cf6);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px;
-    box-shadow: 0 0 12px rgba(56,189,248,0.4);
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    background: transparent;
+    border-radius: 0;
+    display: block;
 }
 
 .navbar-links { display: flex; gap: 4px; }
@@ -36,9 +36,10 @@
 .navbar-links a {
     color: var(--text-secondary);
     text-decoration: none;
-    padding: 6px 14px;
+    padding: 8px 16px;
     border-radius: 8px;
     font-size: 14px;
+    font-weight: 500;
     transition: all 0.2s;
 }
 

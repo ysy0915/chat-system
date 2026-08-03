@@ -45,22 +45,28 @@ public class AuthController {
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
         String username = payload.get("username");
         String password = payload.get("password");
+        String nickname = payload.get("nickname");
 
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名和密码不能为空"));
         }
-        if (username.length() > 50 || password.length() > 100) {
-            return ResponseEntity.badRequest().body(Map.of("error", "用户名或密码过长"));
+        if (nickname == null || nickname.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "昵称不能为空"));
+        }
+        String trimmedUsername = username.trim();
+        String trimmedNickname = nickname.trim();
+        if (trimmedUsername.length() > 50 || password.length() > 100 || trimmedNickname.length() > 50) {
+            return ResponseEntity.badRequest().body(Map.of("error", "用户名、昵称或密码过长"));
         }
 
-        if (userRepository.findByName(username) != null) {
+        if (userRepository.findByName(trimmedUsername) != null) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名已被占用"));
         }
 
         User user = new User();
-        user.email = username + "@chat.local";
-        user.name = username;
-        user.nickname = username;
+        user.email = trimmedUsername + "@chat.local";
+        user.name = trimmedUsername;
+        user.nickname = trimmedNickname;
         user.passwordHash = passwordEncoder.encode(password);
         user.role = "user";
         userRepository.insert(user);

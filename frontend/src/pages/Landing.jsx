@@ -12,8 +12,8 @@ export default function Landing() {
     const saved = localStorage.getItem('landing_base_count')
     const savedTime = localStorage.getItem('landing_base_time')
     const now = Date.now()
-    if (saved && savedTime && (now - parseInt(savedTime)) < 60000) {
-      return parseInt(saved)
+    if (saved && savedTime && (now - parseInt(savedTime, 10)) < 60000) {
+      return parseInt(saved, 10)
     }
     const val = Math.floor(Math.random() * 201)
     localStorage.setItem('landing_base_count', String(val))
@@ -35,9 +35,11 @@ export default function Landing() {
   }, [])
 
   useEffect(() => {
-    axios.post('/api/v1/monitor/record').catch(() => {})
     axios.get('/api/v1/monitor/total-usage').then(res => {
       setTotalUsage(res.data?.totalUsage || 0)
+    }).catch(() => {})
+    axios.get('/api/v1/messages/online-count', { params: { page: 'landing' } }).then(res => {
+      setRealUsers(res.data?.count || 0)
     }).catch(() => {})
     let landingId = localStorage.getItem('landing_visitor_id')
     if (!landingId) {
@@ -55,19 +57,11 @@ export default function Landing() {
             setRealUsers(payload.count || 0)
           } catch {}
         })
-        client.publish({
-          destination: '/app/online.register',
-          body: JSON.stringify({ userId: landingId, name: '访客', page: 'landing' })
-        })
       }
     })
     stompRef.current = client
     client.activate()
     return () => {
-      client.publish({
-        destination: '/app/online.unregister',
-        body: JSON.stringify({ userId: landingId, page: 'landing' })
-      })
       client.deactivate()
     }
   }, [])
@@ -89,51 +83,57 @@ export default function Landing() {
           </div>
         </div>
         <div className="hero-actions">
-          <a href="#product-intro" className="btn-outline">产品简介</a>
-          <Link to="/debate" className="btn-outline">AI博弈</Link>
-          <Link to="/" className="btn-outline">社交AI对话</Link>
-          <Link to="/personal" className="btn-outline">个人对话</Link>
-          <Link to="/graph" className="btn-outline">问答图谱</Link>
+          <a href="#product-intro" className="btn-outline">功能简介</a>
+          <Link to="/debate" className="btn-outline">观点辩论场</Link>
+          <Link to="/" className="btn-outline">AI伙伴群聊</Link>
+          <Link to="/games" className="btn-outline">AI多人游戏</Link>
+          <Link to="/personal" className="btn-outline">个人对话空间</Link>
+          <Link to="/graph" className="btn-outline">知识脉络图</Link>
           <a href="#arch" className="btn-outline">了解架构</a>
           <Link to="/about" className="btn-outline">制作人简介</Link>
         </div>
 
         {/* Product Intro */}
         <section className="product-intro" id="product-intro">
-          <h2 className="section-title">产品简介</h2>
+          <h2 className="section-title">功能简介</h2>
           <p className="product-lead">
-            博思（BoSi）是一个融合多模型AI能力的智能对话平台，核心功能为AI博弈——多个大模型同时针对你的问题给出答案，并展开互相讨论与辩论，最终整合输出最优解答，帮你高效解决生活或工作中的每一个问题。
+            打破人机边界，融合真人社交与AI智慧，打造懂你、助你的全能数字伙伴。
           </p>
           <div className="feature-grid">
             <Link to="/debate" className="feature-card">
               <div className="feature-icon">🤖</div>
-              <h3>AI博弈</h3>
-              <p>三大模型围绕你提的问题展开多轮讨论，各抒己见给出阶段结论、互相反驳，最终整合生成结论</p>
+              <h3>观点辩论场</h3>
+              <p>让三位AI专家为你展开辩论，在思想交锋中，帮你获得更全面、更深入的结论。</p>
             </Link>
-            <Link to="/" className="feature-card">
-              <div className="feature-icon">💬</div>
-              <h3>社交AI对话</h3>
-              <p>公共论坛式AI对话，所有用户可实时查看提问与回答，支持多人在线互动与思维碰撞</p>
+            <Link to="/games" className="feature-card">
+              <div className="feature-icon">🎮</div>
+              <h3>AI多人游戏</h3>
+              <p>和真人玩家、AI模型同场竞技，在蛇王争霸、城池争夺战与AI乒乓球中体验更有代入感的多人对抗乐趣。</p>
             </Link>
             <Link to="/personal" className="feature-card">
               <div className="feature-icon">🔒</div>
               <h3>个人对话空间</h3>
-              <p>完全私密的AI助手对话，内容不广播、不展示、不入图谱，只属于你自己的智能伙伴</p>
+              <p>你的专属私密空间，安全归档所有灵感与深度探讨，让AI成为你成长的长期伙伴。</p>
+            </Link>
+            <Link to="/" className="feature-card">
+              <div className="feature-icon">💬</div>
+              <h3>AI 伙伴群聊</h3>
+              <p>随时拉上AI伙伴加入你的群聊，它既是智能助手，也是懂气氛的聊天搭子。</p>
             </Link>
             <Link to="/media" className="feature-card">
               <div className="feature-icon">🎨</div>
-              <h3>图片与视频生成</h3>
-              <p>接入通义千问多模态模型，输入文字描述即可生成高质量图片与视频内容</p>
+              <h3>文生视频/图</h3>
+              <p>一句提示词，秒级生成电影级大片或短视频，低成本实现从"脑洞"到"现实"。</p>
             </Link>
             <Link to="/graph" className="feature-card">
               <div className="feature-icon">🌐</div>
-              <h3>问答图谱</h3>
-              <p>3D力导向图可视化展示历史问答间的语义关联，支持搜索高亮与节点交互探索</p>
+              <h3>知识脉络图</h3>
+              <p>将零散的知识点连接成网，帮你一眼看清问题的来龙去脉和核心关联。</p>
             </Link>
             <Link to="/history" className="feature-card">
               <div className="feature-icon">📋</div>
-              <h3>问答列表</h3>
-              <p>全量结构化浏览历史问答记录，支持快速检索与回顾每一轮精彩对话</p>
+              <h3>问答足迹</h3>
+              <p>集中管理你的提问与探索，支持快速检索与二次编辑，让过往思考不被遗忘。</p>
             </Link>
           </div>
         </section>
@@ -143,50 +143,77 @@ export default function Landing() {
       {/* Features */}
       <section className="features">
         <h2 className="section-title">核心能力</h2>
+        <p className="product-lead">
+          从意图理解到任务执行，从安全守护到弹性扩展，六大核心能力构建全能数字伙伴。
+        </p>
         <div className="feature-grid">
           <div className="feature-card">
             <div className="feature-icon">🧠</div>
-            <h3>意图识别</h3>
-            <p>Python Agent 驱动的自然语言理解，精准捕捉用户意图</p>
+            <h3>懂你所想</h3>
+            <p>无论是规划行程、分析资料还是创作内容，它都能精准理解你的意图，自动拆解步骤并调用工具，让你专注于结果本身。</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔄</div>
-            <h3>任务规划</h3>
-            <p>大模型主导的循环决策机制，自动拆解复杂任务</p>
+            <h3>自动拆解</h3>
+            <p>无论是写策划还是做攻略，只需一句话，我就能为你制定详细的行动路线图，按部就班，高效交付。</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">⚡</div>
-            <h3>工具编排</h3>
-            <p>MCP 协议标准化调用，跨语言能力统一接入</p>
+            <h3>随时调用</h3>
+            <p>告别在不同AI软件间来回切换的烦恼。我能自动调动各种外部服务，将复杂的多步操作化繁为简，让体验如丝般顺滑。</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🛡️</div>
-            <h3>稳态底座</h3>
-            <p>Spring Boot 承载高并发业务逻辑，保障数据安全</p>
+            <h3>安全可靠</h3>
+            <p>采用金融级安全架构，全方位守护你的数据隐私与系统稳定，让你每一次使用都安心无忧。</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔌</div>
-            <h3>弹性扩展</h3>
-            <p>Docker / K8s 统一编排，支持异构 AI 服务接入</p>
+            <h3>轻松扛住</h3>
+            <p>无论是日常使用还是突发热点，强大的底层算力都能瞬间调动资源，为你护航，让每一次对话都如丝般顺滑。</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">📡</div>
-            <h3>链路追踪</h3>
-            <p>SkyWalking 打通双栈监控，异常快速定位</p>
+            <h3>全程透明</h3>
+            <p>遇到复杂问题，AI会自动记录它的分析路径与推理过程。不仅给你最终答案，更让你看懂得出答案的逻辑。</p>
           </div>
         </div>
       </section>
 
       {/* Architecture */}
       <section className="arch" id="arch">
-        <h2 className="section-title">应用架构 · 中间件架构 · 基础设施与AI融合架构</h2>
+        <h2 className="section-title">全栈融合架构</h2>
+        <p className="product-lead">
+          应用架构、中间件架构、基础设施与AI架构深度融合，构建具备感知、规划、执行与反思能力的企业级智能体。
+        </p>
         <div className="arch-diagram">
           <div className="arch-layer arch-frontend">
             <div className="arch-label">前端层 · Frontend</div>
             <div className="arch-boxes">
-              <div className="arch-box">React SPA</div>
-              <div className="arch-box">WebSocket</div>
-              <div className="arch-box">STOMP 消息</div>
+              <div className="arch-box">
+                <div className="box-title">React SPA</div>
+                <div className="box-sub">单页应用 · 组件化</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">WebSocket</div>
+                <div className="box-sub">实时双向通信</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">STOMP 消息</div>
+                <div className="box-sub">消息协议 · 订阅推送</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">Vite 构建</div>
+                <div className="box-sub">极速打包 · 热更新</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">React Router</div>
+                <div className="box-sub">前端路由 · 导航</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">Axios 请求</div>
+                <div className="box-sub">HTTP 客户端 · 拦截器</div>
+              </div>
             </div>
           </div>
           <div className="arch-arrow">
@@ -203,10 +230,34 @@ export default function Landing() {
           <div className="arch-layer arch-gateway">
             <div className="arch-label">网关层 · Gateway</div>
             <div className="arch-boxes">
-              <div className="arch-box">Spring Boot Gateway</div>
-              <div className="arch-box">JWT 鉴权</div>
-              <div className="arch-box">路由分发</div>
-              <div className="arch-box">SkyWalking 链路追踪</div>
+              <div className="arch-box">
+                <div className="box-title">Spring Boot Gateway</div>
+                <div className="box-sub">API 网关 · 请求路由</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">JWT 鉴权</div>
+                <div className="box-sub">令牌认证 · 安全校验</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">路由分发</div>
+                <div className="box-sub">负载均衡 · 流量控制</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">SkyWalking 链路追踪</div>
+                <div className="box-sub">性能监控 · 调用链分析</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">Nginx 反向代理</div>
+                <div className="box-sub">静态资源 · 请求转发</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">负载均衡</div>
+                <div className="box-sub">多实例 · 高可用</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">API 限流</div>
+                <div className="box-sub">频率控制 · 防刷保护</div>
+              </div>
             </div>
           </div>
           <div className="arch-arrow">
@@ -215,6 +266,42 @@ export default function Landing() {
               <div className="flow-head-down"></div>
             </div>
             <div className="flow-label">路由</div>
+            <div className="flow-up">
+              <div className="flow-head-up"></div>
+              <div className="flow-track flow-up-track"><span></span><span></span><span></span></div>
+            </div>
+          </div>
+          <div className="arch-layer arch-security">
+            <div className="arch-label">安全层 · Security</div>
+            <div className="arch-boxes">
+              <div className="arch-box">
+                <div className="box-title">数据安全</div>
+                <div className="box-sub">加密传输 · 访问控制</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">数据脱敏</div>
+                <div className="box-sub">敏感信息自动遮蔽</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">日志审计</div>
+                <div className="box-sub">全链路操作追溯</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">内容安全</div>
+                <div className="box-sub">敏感词过滤 · 合规检测</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">限流防护</div>
+                <div className="box-sub">频率控制 · 熔断降级</div>
+              </div>
+            </div>
+          </div>
+          <div className="arch-arrow">
+            <div className="flow-down">
+              <div className="flow-track"><span></span><span></span><span></span></div>
+              <div className="flow-head-down"></div>
+            </div>
+            <div className="flow-label">鉴权</div>
             <div className="flow-up">
               <div className="flow-head-up"></div>
               <div className="flow-track flow-up-track"><span></span><span></span><span></span></div>
@@ -264,6 +351,14 @@ export default function Landing() {
                 <div className="box-title">异步解耦</div>
                 <div className="box-sub">削峰填谷 · 高可用</div>
               </div>
+              <div className="arch-box">
+                <div className="box-title">消息持久化</div>
+                <div className="box-sub">可靠投递 · 幂等消费</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">死信队列</div>
+                <div className="box-sub">失败重试 · 异常处理</div>
+              </div>
             </div>
           </div>
           <div className="arch-arrow">
@@ -295,6 +390,14 @@ export default function Landing() {
               <div className="arch-box">
                 <div className="box-title">流批一体</div>
                 <div className="box-sub">Spark + Flink 协同</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">Airflow</div>
+                <div className="box-sub">任务调度 · 工作流编排</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">ClickHouse</div>
+                <div className="box-sub">OLAP 分析 · 实时查询</div>
               </div>
             </div>
           </div>
@@ -328,6 +431,14 @@ export default function Landing() {
                 <div className="box-title">HBase</div>
                 <div className="box-sub">列式海量数据</div>
               </div>
+              <div className="arch-box">
+                <div className="box-title">Elasticsearch</div>
+                <div className="box-sub">全文检索 · 日志分析</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">MinIO</div>
+                <div className="box-sub">对象存储 · 文件管理</div>
+              </div>
             </div>
           </div>
           <div className="arch-arrow">
@@ -360,6 +471,14 @@ export default function Landing() {
                 <div className="box-title">监控告警</div>
                 <div className="box-sub">Prometheus · Grafana</div>
               </div>
+              <div className="arch-box">
+                <div className="box-title">Terraform</div>
+                <div className="box-sub">基础设施即代码</div>
+              </div>
+              <div className="arch-box">
+                <div className="box-title">Helm</div>
+                <div className="box-sub">K8s 包管理 · 版本控制</div>
+              </div>
             </div>
           </div>
         </div>
@@ -372,7 +491,7 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="landing-footer">
-        <span>Powered by Application × Middleware × Infrastructure × AI Architecture</span>
+        <span>博思AI智能体 · 全栈融合架构驱动</span>
       </footer>
     </div>
   )

@@ -16,6 +16,7 @@ import './styles/about.css'
 import './styles/debate.css'
 import './styles/monitor.css'
 import './styles/responsive.css'
+import './styles/game.css'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -380,13 +380,13 @@ export default function KnowledgeGraph() {
                onClick={() => setHoveredIdx(null)}>
             <defs>
               <radialGradient id="globeGrad" cx="40%" cy="35%" r="60%">
-                <stop offset="0%" stopColor="rgba(56,189,248,0.08)" />
-                <stop offset="70%" stopColor="rgba(56,189,248,0.03)" />
-                <stop offset="100%" stopColor="rgba(56,189,248,0)" />
+                <stop offset="0%" stopColor="rgba(59,130,246,0.12)" />
+                <stop offset="70%" stopColor="rgba(59,130,246,0.06)" />
+                <stop offset="100%" stopColor="rgba(59,130,246,0)" />
               </radialGradient>
               <radialGradient id="globeEdge" cx="50%" cy="50%" r="50%">
-                <stop offset="85%" stopColor="rgba(56,189,248,0)" />
-                <stop offset="100%" stopColor="rgba(56,189,248,0.12)" />
+                <stop offset="85%" stopColor="rgba(59,130,246,0)" />
+                <stop offset="100%" stopColor="rgba(59,130,246,0.2)" />
               </radialGradient>
               <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b" />
                 <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -398,10 +398,10 @@ export default function KnowledgeGraph() {
 
             <circle cx={cx} cy={cy} r={R} fill="url(#globeGrad)" />
             <circle cx={cx} cy={cy} r={R} fill="url(#globeEdge)" />
-            <ellipse cx={cx} cy={cy} rx={R} ry={R * 0.15} fill="none" stroke="rgba(56,189,248,0.06)" strokeWidth="0.8" />
-            <ellipse cx={cx} cy={cy} rx={R * 0.15} ry={R} fill="none" stroke="rgba(56,189,248,0.06)" strokeWidth="0.8" />
-            <ellipse cx={cx} cy={cy} rx={R * 0.6} ry={R} fill="none" stroke="rgba(56,189,248,0.04)" strokeWidth="0.5" />
-            <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(56,189,248,0.15)" strokeWidth="1.2" />
+            <ellipse cx={cx} cy={cy} rx={R} ry={R * 0.15} fill="none" stroke="rgba(59,130,246,0.15)" strokeWidth="1" />
+            <ellipse cx={cx} cy={cy} rx={R * 0.15} ry={R} fill="none" stroke="rgba(59,130,246,0.15)" strokeWidth="1" />
+            <ellipse cx={cx} cy={cy} rx={R * 0.6} ry={R} fill="none" stroke="rgba(59,130,246,0.1)" strokeWidth="0.8" />
+            <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(59,130,246,0.25)" strokeWidth="1.5" />
 
             {drawables.map((d, di) => {
               if (d.type === 'edge') {
@@ -412,9 +412,9 @@ export default function KnowledgeGraph() {
                 return (
                   <line key={'e' + idx}
                     x1={s.sx} y1={s.sy} x2={t.sx} y2={t.sy}
-                    stroke={active ? '#8b5cf6' : 'rgba(139,92,246,0.35)'}
-                    strokeWidth={active ? 1.2 : 0.4 + e.similarity * 0.8}
-                    opacity={dimmed ? 0.03 : (active ? 0.7 : 0.12 * depthAlpha)}
+                    stroke={active ? '#7c3aed' : 'rgba(124,58,237,0.5)'}
+                    strokeWidth={active ? 1.5 : 0.6 + e.similarity * 1}
+                    opacity={dimmed ? 0.08 : (active ? 0.8 : 0.25 * depthAlpha)}
                     filter={active ? 'url(#glow)' : undefined}
                   />
                 )
@@ -440,18 +440,18 @@ export default function KnowledgeGraph() {
                      style={{ cursor: 'pointer' }}>
                     {highlighted && (
                       <circle cx={p.sx} cy={p.sy} r={r + 8}
-                        fill="none" stroke="rgba(56,189,248,0.15)" strokeWidth="0.8" />
+                        fill="none" stroke="rgba(59,130,246,0.3)" strokeWidth="1" />
                     )}
                     <circle cx={p.sx} cy={p.sy} r={highlighted ? r + 2 : r}
-                      fill={highlighted ? 'rgba(56,189,248,0.3)' : dimmed ? 'rgba(56,189,248,0.04)' : `rgba(56,189,248,${0.1 * depthAlpha})`}
-                      stroke={highlighted ? '#38bdf8' : dimmed ? 'rgba(56,189,248,0.06)' : `rgba(56,189,248,${0.3 * depthAlpha})`}
-                      strokeWidth={highlighted ? 2 : 1}
-                      opacity={dimmed ? 0.25 : depthAlpha}
+                      fill={highlighted ? 'rgba(59,130,246,0.4)' : dimmed ? 'rgba(59,130,246,0.08)' : `rgba(59,130,246,${0.2 * depthAlpha})`}
+                      stroke={highlighted ? '#3b82f6' : dimmed ? 'rgba(59,130,246,0.15)' : `rgba(59,130,246,${0.5 * depthAlpha})`}
+                      strokeWidth={highlighted ? 2.5 : 1.5}
+                      opacity={dimmed ? 0.4 : depthAlpha}
                       filter={highlighted ? 'url(#glowStrong)' : undefined} />
                     <text x={p.sx} y={p.sy + r * 0.3} textAnchor="middle"
                       fontSize={Math.max(8, 10 * p.scale)}
-                      fill={highlighted ? '#38bdf8' : dimmed ? 'rgba(148,163,184,0.2)' : `rgba(200,220,240,${0.8 * depthAlpha})`}
-                      fontWeight="600" opacity={dimmed ? 0.2 : depthAlpha}>
+                      fill={highlighted ? '#1e40af' : dimmed ? 'rgba(100,116,139,0.3)' : `rgba(30,64,175,${0.85 * depthAlpha})`}
+                      fontWeight="600" opacity={dimmed ? 0.3 : depthAlpha}>
                       {label}
                     </text>
                   </g>

@@ -6,6 +6,7 @@ import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.UserRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -296,7 +297,7 @@ public class MessageController {
     }
 
     @MessageMapping("/online.register")
-    public void handleOnlineRegister(Map<String, String> payload) {
+    public void handleOnlineRegister(@Header("simpSessionId") String sessionId, Map<String, String> payload) {
         String userId = payload.get("userId");
         String page = payload.get("page");
         if (userId != null) {
@@ -311,17 +312,14 @@ public class MessageController {
             } catch (Exception e) {
                 System.err.println("[WARN] Failed to lookup user: " + e.getMessage());
             }
-            sessionTracker.registerUser(userId, displayName, page);
+            sessionTracker.registerUser(sessionId, userId, displayName, page);
         }
     }
 
     @MessageMapping("/online.unregister")
-    public void handleOnlineUnregister(Map<String, String> payload) {
-        String userId = payload.get("userId");
+    public void handleOnlineUnregister(@Header("simpSessionId") String sessionId, Map<String, String> payload) {
         String page = payload.get("page");
-        if (userId != null) {
-            sessionTracker.unregisterUser(userId, page);
-        }
+        sessionTracker.unregisterUser(sessionId, page);
     }
 
 }

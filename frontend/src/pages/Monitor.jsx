@@ -15,11 +15,30 @@ const PAGE_COLORS = {
 
 const PAGE_LABELS = {
   landing: '首页',
-  chat: '社交AI对话',
-  personal: '个人对话',
-  debate: 'AI博弈',
+  chat: 'AI伙伴群聊',
+  personal: '个人对话空间',
+  debate: '观点辩论场',
+  games: 'AI多人游戏',
+  pingpong: 'AI乒乓球',
+  snakeking: 'AI蛇王争霸',
+  castlesiege: 'AI城池攻防战',
+  history: '问答列表',
+  graph: '知识脉络图',
+  about: '制作人简介',
+  profile: '个人信息',
+  'admin-models': '模型管理',
+  sql: 'SQL执行台',
+  monitor: '在线人数监控',
+  media: '图片与视频',
   global: '全局'
 }
+
+const DAY_OPTIONS = [
+  { value: 1, label: '1天' },
+  { value: 3, label: '3天' },
+  { value: 5, label: '5天' },
+  { value: 7, label: '7天' }
+]
 
 function getColor(page) {
   return PAGE_COLORS[page] || '#' + ((parseInt(page, 36) * 2654435761 >>> 0) % 0xFFFFFF).toString(16).padStart(6, '0')
@@ -32,7 +51,7 @@ function getLabel(page) {
 export default function Monitor() {
   const [history, setHistory] = useState({})
   const [current, setCurrent] = useState({})
-  const [minutes, setMinutes] = useState(60)
+  const [days, setDays] = useState(1)
   const [loading, setLoading] = useState(true)
   const canvasRef = useRef(null)
   const stompRef = useRef(null)
@@ -42,9 +61,9 @@ export default function Monitor() {
 
   useEffect(() => {
     fetchData()
-    const timer = setInterval(fetchData, minutes <= 10 ? 10000 : 60000)
+    const timer = setInterval(fetchData, 60000)
     return () => clearInterval(timer)
-  }, [minutes])
+  }, [days])
 
   useEffect(() => {
     historyRef.current = history
@@ -58,27 +77,27 @@ export default function Monitor() {
       debug: () => {},
       onConnect: () => {
         stompRef.current = client
-        const pages = ['landing', 'chat', 'personal', 'debate', 'global']
-        pages.forEach(page => {
-          client.subscribe('/topic/online-count/' + page, (msg) => {
-            try {
-              const payload = JSON.parse(msg.body)
-              const pageKey = payload.page
-              const count = payload.count || 0
-              setCurrent(prev => ({ ...prev, [pageKey]: count }))
-              const nowStr = new Date().toISOString().slice(0, 19)
-              setHistory(prev => {
-                const pageData = [...(prev[pageKey] || [])]
+        client.subscribe('/topic/online-count/all', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            const pageCounts = payload.pages || {}
+            setCurrent(pageCounts)
+            const nowStr = new Date().toISOString().slice(0, 19)
+            setHistory(prev => {
+              const next = { ...prev }
+              Object.entries(pageCounts).forEach(([pageKey, count]) => {
+                const pageData = [...(next[pageKey] || [])]
                 const lastEntry = pageData[pageData.length - 1]
                 if (!lastEntry || lastEntry.time !== nowStr) {
                   pageData.push({ time: nowStr, count })
                 } else {
                   pageData[pageData.length - 1] = { time: nowStr, count }
                 }
-                return { ...prev, [pageKey]: pageData }
+                next[pageKey] = pageData
               })
-            } catch {}
-          })
+              return next
+            })
+          } catch {}
         })
       }
     })
@@ -100,7 +119,7 @@ export default function Monitor() {
 
   async function fetchData() {
     try {
-      const res = await axios.get('/api/v1/monitor/online-history', { params: { minutes } })
+      const res = await axios.get('/api/v1/monitor/online-history', { params: { days } })
       setHistory(res.data.history || {})
       setCurrent(res.data.current || {})
     } catch (e) { console.error(e) }
@@ -108,7 +127,20 @@ export default function Monitor() {
   }
 
   const allPages = useMemo(() => {
-    const pages = new Set([...Object.keys(history), ...Object.keys(current)])
+    const pages = new Set()
+    Object.entries(history).forEach(([page, points]) => {
+      if ((points || []).length > 0 || (current[page] || 0) > 0) {
+        pages.add(page)
+      }
+    })
+    Object.entries(current).forEach(([page, count]) => {
+      if ((count || 0) > 0) {
+        pages.add(page)
+      }
+    })
+    if (!pages.size) {
+      Object.keys(current).forEach(page => pages.add(page))
+    }
     return [...pages].sort()
   }, [history, current])
 
@@ -133,7 +165,10 @@ export default function Monitor() {
     const chartH = H - pad.top - pad.bottom
 
     const now = Date.now()
-    const windowStart = now - minutes * 60 * 1000
+    const dayMs = 24 * 60 * 60 * 1000
+    const windowStartDate = new Date(now - days * dayMs)
+    windowStartDate.setHours(0, 0, 0, 0)
+    const windowStart = windowStartDate.getTime()
 
     const timeMap = new Map()
     for (const page of allPages) {
@@ -146,22 +181,40 @@ export default function Monitor() {
       }
     }
 
-    let mergedPoints = [...timeMap.entries()]
+    const rawMergedPoints = [...timeMap.entries()]
       .map(([time, count]) => ({ time, count }))
       .filter(p => p.time >= windowStart - 120000)
       .sort((a, b) => a.time - b.time)
 
     const totalNow = Object.values(current).reduce((a, b) => a + b, 0)
-    if (mergedPoints.length > 0) {
-      const lastTime = mergedPoints[mergedPoints.length - 1].time
+    if (rawMergedPoints.length > 0) {
+      const lastTime = rawMergedPoints[rawMergedPoints.length - 1].time
       if (now - lastTime > 30000) {
-        mergedPoints.push({ time: now, count: totalNow })
+        rawMergedPoints.push({ time: now, count: totalNow })
       } else {
-        mergedPoints[mergedPoints.length - 1] = { time: lastTime, count: totalNow }
+        rawMergedPoints[rawMergedPoints.length - 1] = { time: lastTime, count: totalNow }
       }
     } else {
-      mergedPoints.push({ time: now, count: totalNow })
+      rawMergedPoints.push({ time: now, count: totalNow })
     }
+
+    const bucketedByDay = new Map()
+    for (const point of rawMergedPoints) {
+      const bucketDate = new Date(point.time)
+      bucketDate.setHours(0, 0, 0, 0)
+      const bucketTime = bucketDate.getTime()
+      const bucket = bucketedByDay.get(bucketTime) || { total: 0, samples: 0 }
+      bucket.total += point.count
+      bucket.samples += 1
+      bucketedByDay.set(bucketTime, bucket)
+    }
+
+    const mergedPoints = [...bucketedByDay.entries()]
+      .map(([time, bucket]) => ({
+        time,
+        count: Math.round(bucket.total / Math.max(bucket.samples, 1))
+      }))
+      .sort((a, b) => a.time - b.time)
 
     const allCounts = mergedPoints.map(p => p.count)
     allCounts.push(0)
@@ -206,15 +259,24 @@ export default function Monitor() {
       ctx.fillText(Math.round(maxCount * i / 5), pad.left - 8, y + 4)
     }
 
-    const timeSteps = Math.min(8, Math.floor(chartW / 90))
-    for (let i = 0; i <= timeSteps; i++) {
-      const t = minTime + (i / timeSteps) * timeRange
-      const x = pad.left + (i / timeSteps) * chartW
+    const dayLabels = []
+    for (let offset = 0; offset <= days; offset++) {
+      const labelDate = new Date(windowStart + offset * dayMs)
+      labelDate.setHours(0, 0, 0, 0)
+      const labelTime = labelDate.getTime()
+      if (labelTime > maxTime) break
+      dayLabels.push(labelTime)
+    }
+    if (!dayLabels.length) {
+      dayLabels.push(new Date(windowStart).setHours(0, 0, 0, 0))
+    }
+
+    for (const t of dayLabels) {
+      const x = pad.left + ((t - minTime) / timeRange) * chartW
       const d = new Date(t)
-      const hh = d.getHours().toString().padStart(2, '0')
-      const mm = d.getMinutes().toString().padStart(2, '0')
-      const ss = d.getSeconds().toString().padStart(2, '0')
-      const label = minutes <= 10 ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`
+      const month = (d.getMonth() + 1).toString().padStart(2, '0')
+      const date = d.getDate().toString().padStart(2, '0')
+      const label = `${month}/${date}`
       ctx.fillStyle = '#64748b'
       ctx.font = '11px sans-serif'
       ctx.textAlign = 'center'
@@ -231,50 +293,51 @@ export default function Monitor() {
     ctx.strokeStyle = lineColor
     ctx.lineWidth = 2.5
     ctx.globalAlpha = 0.9
-    ctx.beginPath()
-    let started = false
-    for (const p of mergedPoints) {
-      const x = pad.left + ((p.time - minTime) / timeRange) * chartW
-      const y = pad.top + chartH - (p.count / maxCount) * chartH
-      if (!started) { ctx.moveTo(x, y); started = true }
-      else ctx.lineTo(x, y)
+    const coordinates = mergedPoints.map(p => ({
+      x: pad.left + ((p.time - minTime) / timeRange) * chartW,
+      y: pad.top + chartH - (p.count / maxCount) * chartH
+    }))
+
+    const drawSmoothLine = (closeToBottom = false) => {
+      if (!coordinates.length) return
+      ctx.beginPath()
+      ctx.moveTo(coordinates[0].x, coordinates[0].y)
+      for (let i = 0; i < coordinates.length - 1; i++) {
+        const currentPoint = coordinates[i]
+        const nextPoint = coordinates[i + 1]
+        const controlX = (currentPoint.x + nextPoint.x) / 2
+        ctx.quadraticCurveTo(currentPoint.x, currentPoint.y, controlX, (currentPoint.y + nextPoint.y) / 2)
+      }
+      const lastPoint = coordinates[coordinates.length - 1]
+      ctx.lineTo(lastPoint.x, lastPoint.y)
+      if (closeToBottom) {
+        ctx.lineTo(lastPoint.x, pad.top + chartH)
+        ctx.lineTo(coordinates[0].x, pad.top + chartH)
+        ctx.closePath()
+      }
     }
+
+    drawSmoothLine(false)
     ctx.stroke()
 
     ctx.globalAlpha = 0.08
-    ctx.beginPath()
-    started = false
-    for (const p of mergedPoints) {
-      const x = pad.left + ((p.time - minTime) / timeRange) * chartW
-      const y = pad.top + chartH - (p.count / maxCount) * chartH
-      if (!started) { ctx.moveTo(x, y); started = true }
-      else ctx.lineTo(x, y)
-    }
-    const lastPt = mergedPoints[mergedPoints.length - 1]
-    const firstPt = mergedPoints[0]
-    const lastX = pad.left + ((lastPt.time - minTime) / timeRange) * chartW
-    const firstX = pad.left + ((firstPt.time - minTime) / timeRange) * chartW
-    ctx.lineTo(lastX, pad.top + chartH)
-    ctx.lineTo(firstX, pad.top + chartH)
-    ctx.closePath()
+    drawSmoothLine(true)
     ctx.fillStyle = lineColor
     ctx.fill()
     ctx.globalAlpha = 1
 
-    for (const p of mergedPoints) {
-      const x = pad.left + ((p.time - minTime) / timeRange) * chartW
-      const y = pad.top + chartH - (p.count / maxCount) * chartH
+    const markerStep = Math.max(1, Math.ceil(coordinates.length / 36))
+    for (let index = 0; index < coordinates.length; index += markerStep) {
+      const { x, y } = coordinates[index]
       ctx.beginPath()
       ctx.arc(x, y, 3, 0, Math.PI * 2)
       ctx.fillStyle = lineColor
       ctx.fill()
     }
 
-    const endP = mergedPoints[mergedPoints.length - 1]
-    const endX = pad.left + ((endP.time - minTime) / timeRange) * chartW
-    const endY = pad.top + chartH - (endP.count / maxCount) * chartH
+    const endPoint = coordinates[coordinates.length - 1]
     ctx.beginPath()
-    ctx.arc(endX, endY, 6, 0, Math.PI * 2)
+    ctx.arc(endPoint.x, endPoint.y, 6, 0, Math.PI * 2)
     ctx.fillStyle = lineColor
     ctx.fill()
     ctx.strokeStyle = 'rgba(255,255,255,0.3)'
@@ -297,7 +360,7 @@ export default function Monitor() {
     ctx.fillStyle = '#cbd5e1'
     ctx.font = '12px sans-serif'
     ctx.textAlign = 'left'
-    ctx.fillText(`总在线 (${totalNow})`, pad.left + 36, pad.top + 26)
+    ctx.fillText(`日均在线 (${totalNow})`, pad.left + 36, pad.top + 26)
   }
 
   const totalCurrent = Object.values(current).reduce((a, b) => a + b, 0)
@@ -306,7 +369,7 @@ export default function Monitor() {
     <div className="monitor-page">
       <Link to="/home" className="btn-back-home">← 返回首页</Link>
       <h2 className="monitor-title">📊 在线人数监控</h2>
-      <p className="monitor-subtitle">实时追踪各页面在线人数变化 · 每60秒自动记录</p>
+      <p className="monitor-subtitle">按天查看各页面在线人数变化趋势 · 每60秒自动记录</p>
 
       <div className="monitor-stats">
         <div className="monitor-stat-card">
@@ -324,20 +387,20 @@ export default function Monitor() {
       </div>
 
       <div className="monitor-controls">
-        <span className="monitor-controls-label">时间范围：</span>
-        {[
-          { value: 5, label: '5分钟' },
-          { value: 10, label: '10分钟' },
-          { value: 60, label: '1小时' },
-          { value: 360, label: '6小时' },
-          { value: 720, label: '12小时' },
-          { value: 1440, label: '24小时' }
-        ].map(opt => (
-          <button key={opt.value} className={`monitor-time-btn ${minutes === opt.value ? 'active' : ''}`}
-                  onClick={() => { setMinutes(opt.value); setLoading(true) }}>
-            {opt.label}
-          </button>
-        ))}
+        <label className="monitor-controls-label" htmlFor="monitor-range-select">时间范围：</label>
+        <select
+          id="monitor-range-select"
+          className="monitor-range-select"
+          value={days}
+          onChange={(event) => {
+            setDays(Number(event.target.value))
+            setLoading(true)
+          }}
+        >
+          {DAY_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       {loading && <div className="monitor-loading">加载中…</div>}

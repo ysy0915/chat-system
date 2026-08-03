@@ -65,6 +65,9 @@ export default function ChatPage(){
   }, [messages, typing])
 
   useEffect(() => {
+    axios.get('/api/v1/messages/online-count', { params: { page: 'chat' } })
+      .then(res => setOnlineCount(res.data?.count || 0))
+      .catch(() => {})
     const sock = new SockJS('/ws/chat?userId=' + userId);
     sock.onopen = () => console.log('[WS] SockJS opened')
     sock.onclose = () => { console.log('[WS] SockJS closed'); setWsStatus('disconnected') }
@@ -140,18 +143,6 @@ export default function ChatPage(){
             setOnlineCount(payload.count || 1)
           } catch (e) { console.error(e) }
         })
-        let displayName = '用户' + userId
-        try {
-          const stored = localStorage.getItem('auth_user')
-          if (stored) {
-            const u = JSON.parse(stored)
-            if (u?.nickname) displayName = u.nickname
-          }
-        } catch {}
-        client.publish({
-          destination: '/app/online.register',
-          body: JSON.stringify({ userId: String(userId), name: displayName, page: 'chat' })
-        })
       },
       onStompError: (frame) => {
         console.error('[STOMP] error', frame)
@@ -166,14 +157,6 @@ export default function ChatPage(){
     stompRef.current = client
     client.activate()
     return () => {
-      try {
-        if (client.connected) {
-          client.publish({
-            destination: '/app/online.unregister',
-            body: JSON.stringify({ userId: String(userId), page: 'chat' })
-          })
-        }
-      } catch (e) { console.warn('unregister failed:', e) }
       try {
         client.deactivate()
       } catch (e) { console.warn('deactivate failed:', e) }
@@ -325,11 +308,15 @@ export default function ChatPage(){
                     <div className="msg user">{formatAnswer(m.content).map((sentence, i) => (
                         <span key={i} style={{display:'block'}}>{sentence}</span>
                     ))}</div>
-                    <div className="msg-avatar other-ai-avatar">✦</div>
+                    <div className="msg-avatar other-ai-avatar">
+                      <img src="/chat/logo.png" alt="AI" className="avatar-img" />
+                    </div>
                   </div>
               ) : m.role === 'ai' ? (
                   <div key={idx} className="msg-row msg-ai-row">
-                    <div className="msg-avatar ai-avatar">✦</div>
+                    <div className="msg-avatar ai-avatar">
+                      <img src="/chat/logo.png" alt="AI" className="avatar-img" />
+                    </div>
                     <div className={`msg ${m.fromHistory ? 'history-ai' : 'ai'}`}>
                       {formatAnswer(m.content).map((sentence, i) => (
                           <span key={i} style={{display:'block'}}>{sentence}</span>
@@ -342,7 +329,9 @@ export default function ChatPage(){
           ))}
           {typing && (
               <div className="msg-row msg-ai-row">
-                <div className="msg-avatar ai-avatar">✦</div>
+                <div className="msg-avatar ai-avatar">
+                  <img src="/chat/logo.png" alt="AI" className="avatar-img" />
+                </div>
                 <div className="typing-indicator">
                   <span></span><span></span><span></span>
                 </div>

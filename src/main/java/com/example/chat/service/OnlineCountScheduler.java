@@ -15,16 +15,21 @@ public class OnlineCountScheduler {
 
     private final WebSocketSessionTracker sessionTracker;
     private final OnlineCountRepository onlineCountRepository;
+    private final OnlineCountRedisService onlineCountRedisService;
 
-    public OnlineCountScheduler(WebSocketSessionTracker sessionTracker, OnlineCountRepository onlineCountRepository) {
+    public OnlineCountScheduler(WebSocketSessionTracker sessionTracker,
+                                OnlineCountRepository onlineCountRepository,
+                                OnlineCountRedisService onlineCountRedisService) {
         this.sessionTracker = sessionTracker;
         this.onlineCountRepository = onlineCountRepository;
+        this.onlineCountRedisService = onlineCountRedisService;
     }
 
     @Scheduled(fixedRate = 60000)
     public void recordOnlineCounts() {
         Map<String, Integer> allCounts = sessionTracker.getAllCounts();
         LocalDateTime now = LocalDateTime.now();
+        onlineCountRedisService.recordSnapshot(allCounts, now);
         for (Map.Entry<String, Integer> entry : allCounts.entrySet()) {
             OnlineCountRecord record = new OnlineCountRecord();
             record.page = entry.getKey();

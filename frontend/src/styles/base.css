@@ -1,22 +1,23 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-    --bg-primary: #0a0e17;
-    --bg-secondary: #111827;
-    --bg-card: rgba(17, 24, 39, 0.7);
-    --border-glow: rgba(56, 189, 248, 0.3);
-    --accent: #38bdf8;
-    --accent-dim: rgba(56, 189, 248, 0.15);
-    --text-primary: #e2e8f0;
-    --text-secondary: #94a3b8;
-    --user-bubble: linear-gradient(135deg, #1e3a5f, #1e40af);
-    --ai-bubble: linear-gradient(135deg, #1a1a2e, #16213e);
-    --danger: #f43f5e;
+    --bg-primary: #f0f4f8;
+    --bg-secondary: #ffffff;
+    --bg-card: rgba(255, 255, 255, 0.75);
+    --border-glow: rgba(59, 130, 246, 0.15);
+    --accent: #3b82f6;
+    --accent-dim: rgba(59, 130, 246, 0.08);
+    --text-primary: #1a202c;
+    --text-secondary: #64748b;
+    --user-bubble: linear-gradient(135deg, #60a5fa, #3b82f6);
+    --ai-bubble: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+    --danger: #ef4444;
 }
 
 body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: var(--bg-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background:
+        linear-gradient(160deg, #dbeafe 0%, #e8f0fe 15%, #f0f4f8 30%, #faf5ff 50%, #ede9fe 65%, #e0f2fe 80%, #dbeafe 100%);
     color: var(--text-primary);
     min-height: 100vh;
     overflow: hidden;
@@ -27,17 +28,43 @@ body::before {
     position: fixed;
     top: -50%; left: -50%;
     width: 200%;
+    height: 200%;
     background:
-            radial-gradient(ellipse at 20% 50%, rgba(56,189,248,0.06) 0%, transparent 50%),
-            radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 50%),
-            radial-gradient(ellipse at 50% 80%, rgba(6,182,212,0.04) 0%, transparent 50%);
-    animation: bgShift 20s ease-in-out infinite alternate;
+        radial-gradient(circle at 20% 30%, rgba(219, 234, 254, 0.6) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(237, 233, 254, 0.5) 0%, transparent 45%),
+        radial-gradient(circle at 50% 50%, rgba(224, 242, 254, 0.4) 0%, transparent 50%);
+    filter: blur(60px);
+    animation: lightFloat 20s ease-in-out infinite alternate;
     z-index: 0;
+    pointer-events: none;
 }
 
-@keyframes bgShift {
-    0% { transform: translate(0, 0); }
-    100% { transform: translate(-5%, -3%); }
+body::after {
+    content: '';
+    position: fixed;
+    top: -30%; left: -30%;
+    width: 160%;
+    height: 160%;
+    background:
+        radial-gradient(circle at 70% 20%, rgba(191, 219, 254, 0.4) 0%, transparent 35%),
+        radial-gradient(circle at 30% 60%, rgba(221, 214, 254, 0.35) 0%, transparent 40%);
+    filter: blur(80px);
+    animation: lightFloat2 25s ease-in-out infinite alternate;
+    z-index: 0;
+    pointer-events: none;
+}
+
+@keyframes lightFloat {
+    0% { transform: translate(0, 0) scale(1); opacity: 0.7; }
+    33% { transform: translate(5%, 3%) scale(1.05); opacity: 0.9; }
+    66% { transform: translate(-3%, 5%) scale(0.95); opacity: 0.8; }
+    100% { transform: translate(2%, -2%) scale(1.02); opacity: 0.7; }
+}
+
+@keyframes lightFloat2 {
+    0% { transform: translate(0, 0) rotate(0deg); opacity: 0.6; }
+    50% { transform: translate(-4%, 4%) rotate(3deg); opacity: 0.8; }
+    100% { transform: translate(3%, -3%) rotate(-2deg); opacity: 0.6; }
 }
 
 #root { position: relative; z-index: 1; height: 100vh; }

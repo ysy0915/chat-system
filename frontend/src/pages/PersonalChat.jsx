@@ -95,6 +95,9 @@ export default function PersonalChat() {
   useEffect(() => {
     if (!userId) return
     connectedRef.current = false
+    axios.get('/api/v1/messages/online-count', { params: { page: 'personal' } })
+      .then(res => setOnlineCount(res.data?.count || 0))
+      .catch(() => {})
     const sock = new SockJS('/ws/chat?userId=' + userId)
     const client = new Client({
       webSocketFactory: () => sock,
@@ -124,18 +127,6 @@ export default function PersonalChat() {
             const payload = JSON.parse(msg.body)
             setOnlineCount(payload.count || 0)
           } catch (e) { console.error(e) }
-        })
-        let displayName = '用户' + userId
-        try {
-          const stored = localStorage.getItem('auth_user')
-          if (stored) {
-            const u = JSON.parse(stored)
-            if (u?.nickname) displayName = u.nickname
-          }
-        } catch {}
-        client.publish({
-          destination: '/app/online.register',
-          body: JSON.stringify({ userId: String(userId), name: displayName, page: 'personal' })
         })
       },
       onStompError: () => { setTyping(false) },
@@ -297,7 +288,9 @@ export default function PersonalChat() {
             </div>
           ) : m.role === 'ai' ? (
             <div key={idx} className="msg-row msg-ai-row">
-              <div className="msg-avatar ai-avatar">✦</div>
+              <div className="msg-avatar ai-avatar">
+                <img src="/chat/logo.png" alt="AI" className="avatar-img" />
+              </div>
               <div className="msg ai">
                 {formatAnswer(m.content).map((sentence, i) => (
                   <span key={i} style={{display:'block'}}>{sentence}</span>
@@ -310,7 +303,9 @@ export default function PersonalChat() {
         ))}
         {typing && (
           <div className="msg-row msg-ai-row">
-            <div className="msg-avatar ai-avatar">✦</div>
+            <div className="msg-avatar ai-avatar">
+              <img src="/chat/logo.png" alt="AI" className="avatar-img" />
+            </div>
             <div className="typing-indicator">
               <span></span><span></span><span></span>
             </div>

@@ -149,8 +149,8 @@
     padding: 40px 20px;
 }
 .media-gate-card {
-    background: rgba(10, 15, 30, 0.88);
-    border: 1px solid rgba(56, 189, 248, 0.1);
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 24px;
     padding: 52px 48px;
     text-align: center;
@@ -158,22 +158,21 @@
     width: 100%;
     backdrop-filter: blur(20px);
     box-shadow:
-        0 0 0 1px rgba(56, 189, 248, 0.04),
-        0 20px 60px rgba(0, 0, 0, 0.4),
-        0 0 80px rgba(56, 189, 248, 0.04);
+        0 20px 60px rgba(0, 0, 0, 0.1),
+        0 0 80px rgba(59, 130, 246, 0.04);
 }
 .media-gate-icon {
     width: 88px;
     height: 88px;
     margin: 0 auto 24px;
     border-radius: 22px;
-    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(139, 92, 246, 0.08));
-    border: 1px solid rgba(56, 189, 248, 0.1);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.08));
+    border: 1px solid rgba(59, 130, 246, 0.15);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--accent);
-    opacity: 0.7;
+    opacity: 0.8;
 }
 .media-gate-title {
     font-size: 22px;
@@ -202,10 +201,10 @@
     border: none;
     cursor: pointer;
     transition: all 0.3s;
-    box-shadow: 0 0 24px rgba(56, 189, 248, 0.2);
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.2);
 }
 .media-gate-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 36px rgba(56, 189, 248, 0.35);
+    box-shadow: 0 8px 36px rgba(59, 130, 246, 0.35);
 }
 

@@ -61,8 +61,26 @@
     }
 
     .feature-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
+        display: flex !important;
+        overflow-x: auto !important;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 14px;
+        padding: 0 16px 16px;
+        margin: 0 -16px;
+        scrollbar-width: none;
+        flex-wrap: nowrap !important;
+    }
+
+    .feature-grid::-webkit-scrollbar {
+        display: none;
+    }
+
+    .feature-card {
+        flex: 0 0 260px !important;
+        scroll-snap-align: start;
+        width: 260px !important;
+        min-width: 260px !important;
     }
 
     .section-title {
@@ -185,7 +203,16 @@
         padding: 30px 12px;
     }
 
+    .feature-grid {
+        gap: 12px !important;
+        padding: 0 12px 14px !important;
+        margin: 0 -12px !important;
+    }
+
     .feature-card {
+        flex: 0 0 240px !important;
+        width: 240px !important;
+        min-width: 240px !important;
         padding: 18px;
     }
 

@@ -74,27 +74,23 @@
     color: #94a3b8;
 }
 
-.monitor-time-btn {
-    padding: 5px 14px;
-    border-radius: 8px;
-    border: 1px solid rgba(56, 189, 248, 0.2);
-    background: rgba(56, 189, 248, 0.05);
-    color: #94a3b8;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
+.monitor-range-select {
+    min-width: 120px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    background: rgba(15, 23, 42, 0.85);
+    color: #38bdf8;
+    font-size: 13px;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.monitor-time-btn:hover {
-    border-color: rgba(56, 189, 248, 0.4);
-    color: var(--text-primary);
-}
-
-.monitor-time-btn.active {
+.monitor-range-select:focus {
     background: rgba(56, 189, 248, 0.15);
     border-color: #38bdf8;
-    color: #38bdf8;
-    font-weight: 600;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
 }
 
 .monitor-loading {

@@ -3,12 +3,12 @@ package com.example.chat.controller;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.example.chat.entity.OnlineCountRecord;
 import com.example.chat.repository.OnlineCountRepository;
+import com.example.chat.service.OnlineCountRedisService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/monitor")
@@ -16,24 +16,34 @@ public class MonitorController {
 
     private final OnlineCountRepository onlineCountRepository;
     private final WebSocketSessionTracker sessionTracker;
+    private final OnlineCountRedisService onlineCountRedisService;
 
-    public MonitorController(OnlineCountRepository onlineCountRepository, WebSocketSessionTracker sessionTracker) {
+    public MonitorController(OnlineCountRepository onlineCountRepository,
+                             WebSocketSessionTracker sessionTracker,
+                             OnlineCountRedisService onlineCountRedisService) {
         this.onlineCountRepository = onlineCountRepository;
         this.sessionTracker = sessionTracker;
+        this.onlineCountRedisService = onlineCountRedisService;
     }
 
     @GetMapping("/online-history")
-    public ResponseEntity<?> getOnlineHistory(@RequestParam(value = "minutes", defaultValue = "360") int minutes) {
-        LocalDateTime since = LocalDateTime.now().minusMinutes(minutes);
-        List<OnlineCountRecord> records = onlineCountRepository.findRecent(since.toString().substring(0, 19).replace('T', ' '));
-
-        Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
-        for (OnlineCountRecord r : records) {
-            grouped.computeIfAbsent(r.page, k -> new ArrayList<>())
-                    .add(Map.of(
-                            "time", r.recordedAt != null ? r.recordedAt.toString() : "",
-                            "count", r.count
-                    ));
+    public ResponseEntity<?> getOnlineHistory(@RequestParam(value = "days", required = false) Integer days,
+                                              @RequestParam(value = "minutes", required = false) Integer minutes) {
+        int safeDays = days == null ? 1 : Math.max(1, Math.min(days, 7));
+        LocalDateTime since = minutes != null && minutes > 0
+                ? LocalDateTime.now().minusMinutes(minutes)
+                : LocalDateTime.now().minusDays(safeDays);
+        Map<String, List<Map<String, Object>>> grouped = onlineCountRedisService.getHistorySince(since);
+        if (grouped.isEmpty()) {
+            List<OnlineCountRecord> records = onlineCountRepository.findRecent(since.toString().substring(0, 19).replace('T', ' '));
+            grouped = new LinkedHashMap<>();
+            for (OnlineCountRecord r : records) {
+                grouped.computeIfAbsent(r.page, k -> new ArrayList<>())
+                        .add(Map.of(
+                                "time", r.recordedAt != null ? r.recordedAt.toString() : "",
+                                "count", r.count
+                        ));
+            }
         }
 
         Map<String, Integer> currentCounts = sessionTracker.getAllCounts();
@@ -53,6 +63,7 @@ public class MonitorController {
     public ResponseEntity<?> recordCurrentCounts() {
         LocalDateTime now = LocalDateTime.now();
         Map<String, Integer> allCounts = sessionTracker.getAllCounts();
+        onlineCountRedisService.recordSnapshot(allCounts, now);
         for (Map.Entry<String, Integer> entry : allCounts.entrySet()) {
             OnlineCountRecord record = new OnlineCountRecord();
             record.page = entry.getKey();

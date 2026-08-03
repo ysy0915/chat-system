@@ -8,7 +8,7 @@
     bottom: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.75);
+    background: rgba(0, 0, 0, 0.4);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     z-index: 1000;
@@ -30,15 +30,15 @@
     height: 100%;
     height: 100vh;
     height: 100dvh;
-    background: rgba(10, 15, 30, 0.98);
+    background: rgba(255, 255, 255, 0.98);
     -webkit-backdrop-filter: blur(24px);
     backdrop-filter: blur(24px);
-    border-left: 1px solid rgba(56, 189, 248, 0.15);
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
     padding: 20px;
     display: flex;
     flex-direction: column;
     animation: drawerSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.6);
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.1);
     z-index: 1001;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
@@ -52,8 +52,8 @@
 
 .mobile-drawer-close {
     align-self: flex-end;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 10px;
     color: var(--text-secondary);
     font-size: 16px;
@@ -70,7 +70,7 @@
 
 .mobile-drawer-close:active {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.08);
     transform: scale(0.9);
 }
 
@@ -112,13 +112,13 @@
 .mobile-drawer-links a:active,
 .mobile-drawer-links a.active {
     color: var(--accent);
-    background: rgba(56, 189, 248, 0.12);
+    background: rgba(59, 130, 246, 0.08);
 }
 
 .mobile-drawer-auth {
     margin-top: auto;
     padding-top: 20px;
-    border-top: 1px solid rgba(56, 189, 248, 0.1);
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -134,7 +134,7 @@
 .mobile-drawer-btn {
     width: 100%;
     padding: 14px;
-    border: 1px solid rgba(56, 189, 248, 0.3);
+    border: 1px solid rgba(59, 130, 246, 0.3);
     border-radius: 12px;
     background: transparent;
     color: var(--accent);
@@ -146,14 +146,14 @@
 }
 
 .mobile-drawer-btn:active {
-    background: rgba(56, 189, 248, 0.15);
+    background: rgba(59, 130, 246, 0.08);
     transform: scale(0.98);
 }
 
 .mobile-drawer-reg {
-    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(139,92,246,0.12));
+    background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08));
     border-color: rgba(139, 92, 246, 0.3);
-    color: #a78bfa;
+    color: #7c3aed;
 }
 
 .mobile-drawer-logout {
@@ -162,6 +162,6 @@
 }
 
 .mobile-drawer-logout:active {
-    background: rgba(248, 113, 113, 0.12);
+    background: rgba(248, 113, 113, 0.08);
 }
 

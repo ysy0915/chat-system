@@ -2,40 +2,71 @@ spring:
   application:
     name: big-data-engine
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-    username: root
-    password: YangSy@0915!
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:YangSy@0915!}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
   mybatis:
     mapper-locations: classpath:mybatis/mappers/*.xml
     configuration:
       map-underscore-to-camel-case: true
   rabbitmq:
-    host: localhost       # 本机地址
-    port: 5672            # AMQP 协议默认端口
-    username: guest       # 默认账号
-    password: guest       # 默认密码
-    virtual-host: /       # 默认虚拟主机
+    host: localhost
+    port: 5672
+    username: ${RABBIT_USERNAME:guest}
+    password: ${RABBIT_PASSWORD:guest}
+    virtual-host: /
+    connection-timeout: 5000ms
+    requested-heartbeat: 10s
+    listener:
+      simple:
+        auto-startup: false
   redis:
     host: 127.0.0.1
     port: 6379
-    # 注意：这里直接省略 password 配置项即可
     database: 0
     timeout: 5000ms
   mvc:
     async:
       request-timeout: 120000
 
-# Toggle to control RabbitMQ usage: true=use RabbitMQ, false=direct processing
-
 server:
   forward-headers-strategy: native
-  port: 8080
+  port: 8081
   tomcat:
     connection-timeout: 120000
     keep-alive-timeout: 120000
+    max-http-form-post-size: 10MB
     threads:
       max: 200
       min-spare: 10
 
-# Enable STOMP broker relay or use simple broker configured in WebSocketConfig
+# JWT
+jwt:
+  secret: ${JWT_SECRET:k8Xp2mQ7vR3nF9wL5tY1bJ6cH4dA0eG8iS2uW7xZ}
+
+# SQL执行器
+sql-executor:
+  password: ${SQL_EXECUTOR_PASSWORD:19641025}
+
+# 阿里云内容安全
+content-safety:
+  enabled: true
+  access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:LTAI5t8ZiGMvwftuoPdCrTWA}
+  access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:ZvGkVGj081Yutq7oJHTRoDE1BsPmxL}
+  endpoint: green-cip.cn-beijing.aliyuncs.com
+  region-id: cn-beijing
+
+# 限制 actuator 端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

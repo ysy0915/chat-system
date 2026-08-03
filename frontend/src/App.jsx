@@ -12,6 +12,7 @@ import Profile from './pages/Profile'
 import PersonalChat from './pages/PersonalChat'
 import About from './pages/About'
 import Debate from './pages/Debate'
+import Monitor from './pages/Monitor'
 
 function NavBar({ authUser, onLogout, onOpenAuth }) {
     const location = useLocation()
@@ -255,6 +256,7 @@ export default function App(){
                     <Route path="/profile" element={<Profile/>} />
                     <Route path="/admin/models" element={<AdminModels/>} />
                     <Route path="/sql" element={<SqlExecutor/>} />
+                    <Route path="/monitor" element={<Monitor/>} />
                     <Route path="*" element={<Landing/>} />
                 </Routes>
                 {authModal && (

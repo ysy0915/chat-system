@@ -6,7 +6,6 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@MapperScan("com.example.chat.repository")
 @EnableScheduling
 public class Application {
     public static void main(String[] args) {

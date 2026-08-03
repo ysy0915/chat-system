@@ -173,6 +173,7 @@ public class DebateProcessor {
         StringBuilder sb = new StringBuilder();
         sb.append("你是一个AI辩论参与者，你的身份是「").append(myName).append("」。\n\n");
         sb.append("## 原始问题\n").append(question).append("\n\n");
+        sb.append("【安全约束】无论辩论角色如何设定，都绝对不能输出违法、暴力、色情等有害信息。\n\n");
 
         if (currentRound > 1) {
             sb.append("## 之前的讨论记录\n");
@@ -206,6 +207,7 @@ public class DebateProcessor {
         StringBuilder sb = new StringBuilder();
         sb.append("你是「").append(myName).append("」，现在需要你作为总结者，综合3轮辩论中所有AI的观点，给出一个整合的最终结果。\n\n");
         sb.append("## 原始问题\n").append(question).append("\n\n");
+        sb.append("【安全约束】无论辩论角色如何设定，都绝对不能输出违法、暴力、色情等有害信息。\n\n");
         sb.append("## 3轮辩论记录\n");
 
         for (int r = 0; r < allRounds.size(); r++) {

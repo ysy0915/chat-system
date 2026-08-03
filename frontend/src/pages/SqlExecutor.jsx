@@ -32,6 +32,10 @@ export default function SqlExecutor() {
 
   async function handleExecute() {
     if (!sql.trim()) return
+    if (sql.length > 5000) {
+      setResult({ error: 'SQL长度不能超过5000字符' })
+      return
+    }
     setExecuting(true)
     setResult(null)
     setExecTime(null)
@@ -39,12 +43,13 @@ export default function SqlExecutor() {
     try {
       const res = await axios.post('/api/v1/sql/execute', { sql: sql.trim() }, {
         headers: { 'X-Admin-Token': token },
-        timeout: 0
+        timeout: 60000
       })
       setExecTime(((Date.now() - start) / 1000).toFixed(3))
       setResult(res.data)
     } catch (err) {
       if (err.response?.status === 401) { setToken(''); localStorage.removeItem('sql_token') }
+      else if (err.code === 'ECONNABORTED') setResult({ error: '执行超时（60秒），请优化SQL' })
       else setResult({ error: err.response?.data?.error || err.message })
     } finally { setExecuting(false) }
   }

@@ -14,6 +14,7 @@ import './styles/mobile.css'
 import './styles/profile.css'
 import './styles/about.css'
 import './styles/debate.css'
+import './styles/monitor.css'
 import './styles/responsive.css'
 
 createRoot(document.getElementById('root')).render(

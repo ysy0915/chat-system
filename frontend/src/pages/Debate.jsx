@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
-import { Link } from 'react-router-dom'
 
 const generateId = () => {
   return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 10)
@@ -30,7 +30,6 @@ export default function Debate() {
   const [error, setError] = useState(null)
   const [modelNames, setModelNames] = useState({})
   const [wsStatus, setWsStatus] = useState('connecting')
-  const [onlineCount, setOnlineCount] = useState(0)
   const stompRef = useRef(null)
   const scrollRef = useRef(null)
   const [userId] = useState(() => {
@@ -94,37 +93,13 @@ export default function Debate() {
             }
           } catch (e) { console.error(e) }
         })
-        client.subscribe('/topic/online-count/debate', (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count || 0)
-          } catch {}
-        })
-        let displayName = '用户' + userId
-        try {
-          const stored = localStorage.getItem('auth_user')
-          if (stored) {
-            const u = JSON.parse(stored)
-            if (u?.nickname) displayName = u.nickname
-          }
-        } catch {}
-        client.publish({
-          destination: '/app/online.register',
-          body: JSON.stringify({ userId: String(userId), name: displayName, page: 'debate' })
-        })
       },
       onStompError: () => { setWsStatus('error'); setDebating(false) },
       onWebSocketClose: () => setWsStatus('disconnected')
     })
     stompRef.current = client
     client.activate()
-    return () => {
-      client.publish({
-        destination: '/app/online.unregister',
-        body: JSON.stringify({ userId: String(userId), page: 'debate' })
-      })
-      client.deactivate()
-    }
+    return () => { client.deactivate() }
   }, [userId])
 
   useEffect(() => {
@@ -149,7 +124,11 @@ export default function Debate() {
     try {
       await axios.post('/api/v1/debate', { req_id: reqId, question: text, user_id: userId })
     } catch (err) {
-      setError('请求失败，请重试')
+      if (err.response?.status === 400) {
+        setError(err.response.data?.error || '问题包含敏感内容，请修改后重试')
+      } else {
+        setError('请求失败，请重试')
+      }
       setDebating(false)
     }
   }
@@ -170,15 +149,10 @@ export default function Debate() {
   return (
     <div className="debate-container">
       <Link to="/home" className="btn-back-home">← 返回首页</Link>
-
       {!debating && !finalAnswer && rounds.length === 0 && !error && (
         <div className="chat-welcome">
           <h1>⚔️ AI 博弈</h1>
           <p>三个大模型围绕你的问题展开辩论，3轮讨论后给出整合结论</p>
-          <div className="hero-online-badge">
-            <span className="online-dot"></span>
-            {onlineCount} 人在线
-          </div>
           <div className="debate-models-preview">
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>🔮 模型 1</span>
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[2].border, color: MODEL_COLORS[2].accent }}>🤖 模型 2</span>
@@ -224,7 +198,7 @@ export default function Debate() {
                   </div>
                 )
               })}
-              {thinking.map(modelId => {
+              {rIdx === currentRound - 1 && thinking.map(modelId => {
                 const color = getModelColor(modelId)
                 return (
                   <div key={'thinking-' + modelId} className="debate-response-card debate-thinking-card" style={{ borderColor: color.border, background: color.bg }}>
@@ -247,7 +221,7 @@ export default function Debate() {
         {synthesizing && (
           <div className="debate-synthesizing">
             <div className="debate-synth-spinner"></div>
-            <span>正在整合各方观点，生成最终结论...</span>
+            <span>模型 2 正在整合各方观点，生成最终结论...</span>
           </div>
         )}
 

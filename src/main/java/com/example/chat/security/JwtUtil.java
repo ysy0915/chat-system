@@ -19,7 +19,9 @@ public class JwtUtil {
 
     public JwtUtil(@Value("${jwt.secret:defaultsecretkeydefaultsecretkey}") String secret,
                    @Value("${jwt.expiration:3600000}") long expirationMs) {
-        // secret should be base64 or sufficiently long; for demo we derive key from bytes
+        if ("defaultsecretkeydefaultsecretkey".equals(secret)) {
+            System.err.println("[JWT] ⚠️ 警告: 使用默认JWT密钥！请在配置中设置 jwt.secret 为随机强密钥");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes());
         this.expirationMs = expirationMs;
     }

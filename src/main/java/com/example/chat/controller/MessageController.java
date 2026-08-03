@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.List;
@@ -25,8 +26,10 @@ public class MessageController {
     private final SimpMessagingTemplate simpMessagingTemplate;
     private final boolean useRabbit;
     private final com.example.chat.config.WebSocketSessionTracker sessionTracker;
+    private final com.example.chat.service.RateLimitService rateLimitService;
+    private final com.example.chat.service.ContentSafetyService contentSafetyService;
 
-    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit, com.example.chat.config.WebSocketSessionTracker sessionTracker) {
+    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit, com.example.chat.config.WebSocketSessionTracker sessionTracker, com.example.chat.service.RateLimitService rateLimitService, com.example.chat.service.ContentSafetyService contentSafetyService) {
         this.messageRepository = messageRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.chatProcessor = chatProcessor;
@@ -34,6 +37,8 @@ public class MessageController {
         this.simpMessagingTemplate = simpMessagingTemplate;
         this.useRabbit = useRabbit;
         this.sessionTracker = sessionTracker;
+        this.rateLimitService = rateLimitService;
+        this.contentSafetyService = contentSafetyService;
     }
 
     @PostMapping
@@ -48,6 +53,21 @@ public class MessageController {
 
         Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
         boolean isPrivate = "true".equals(String.valueOf(body.get("private")));
+
+        if (!rateLimitService.isAllowed(userId)) {
+            long retryAfter = rateLimitService.getRemainingSeconds(userId);
+            return ResponseEntity.status(429).body(Map.of(
+                    "error", "请求过于频繁，请 " + retryAfter + " 秒后再试",
+                    "retry_after", retryAfter
+            ));
+        }
+
+        String safetyResult = contentSafetyService.detectSensitive(question);
+        if (safetyResult != null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", contentSafetyService.getLabelHint(safetyResult)
+            ));
+        }
 
         if (userRepository.findById(userId) == null) {
             User newUser = new User();
@@ -90,6 +110,7 @@ public class MessageController {
         messagePayload.put("req_id", reqId);
         messagePayload.put("user_id", userId);
         messagePayload.put("question", question);
+        messagePayload.put("private", String.valueOf(isPrivate));
         if (preferred != null) {
             messagePayload.put("preferred_model_config_id", preferred);
         }
@@ -108,6 +129,130 @@ public class MessageController {
         }
 
         return ResponseEntity.accepted().body(Map.of("id", m.id, "req_id", reqId, "status", "queued", "user_id", userId));    }
+
+    @PostMapping("/with-file")
+    public ResponseEntity<?> createMessageWithFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("question") String question,
+            @RequestParam("user_id") Long userId,
+            @RequestParam("req_id") String reqId) {
+
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "文件不能为空"));
+        }
+
+        if (!rateLimitService.isAllowed(userId)) {
+            long retryAfter = rateLimitService.getRemainingSeconds(userId);
+            return ResponseEntity.status(429).body(Map.of(
+                    "error", "请求过于频繁，请 " + retryAfter + " 秒后再试",
+                    "retry_after", retryAfter
+            ));
+        }
+
+        String safetyResult = contentSafetyService.detectSensitive(question);
+        if (safetyResult != null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", contentSafetyService.getLabelHint(safetyResult)
+            ));
+        }
+
+        if (userRepository.findById(userId) == null) {
+            User newUser = new User();
+            newUser.email = "user_" + userId + "@chat.local";
+            newUser.name = "";
+            newUser.guestName = "用户" + userId;
+            newUser.role = "user";
+            newUser.passwordHash = "";
+            userRepository.insert(newUser);
+            userId = newUser.id;
+            newUser.guestName = "用户" + userId;
+            userRepository.updateRegister(newUser);
+        }
+
+        String mimeType = file.getContentType();
+        boolean isImage = mimeType != null && mimeType.startsWith("image/");
+        String storedQuestion;
+
+        if (isImage) {
+            storedQuestion = question + " [附带图片: " + file.getOriginalFilename() + "]";
+        } else {
+            try {
+                String lowerName = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
+                String fileText;
+                if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+                    fileText = extractExcelText(file.getBytes());
+                } else if (lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt")) {
+                    fileText = extractPptText(file.getBytes());
+                } else {
+                    fileText = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+                if (fileText.length() > 10000) {
+                    fileText = fileText.substring(0, 10000) + "\n...[内容过长，已截断]";
+                }
+                storedQuestion = question + "\n\n--- 以下是文件 [" + file.getOriginalFilename() + "] 的内容 ---\n" + fileText + "\n--- 文件内容结束 ---";
+            } catch (Exception ex) {
+                System.err.println("[WARN] Failed to extract file content for storage: " + ex.getMessage());
+                storedQuestion = question + " [附带文件: " + file.getOriginalFilename() + "]";
+            }
+        }
+
+        Message m = new Message();
+        m.reqId = reqId;
+        m.userId = userId;
+        m.question = storedQuestion;
+        m.status = "queued";
+        m.isPrivate = 1;
+        messageRepository.insert(m);
+
+        try {
+            chatProcessor.processWithFile(reqId, userId, question,
+                    file.getOriginalFilename(), file.getBytes(), mimeType);
+        } catch (Exception ex) {
+            System.err.println("processWithFile failed: " + ex.getMessage());
+            simpMessagingTemplate.convertAndSend("/topic/user." + userId,
+                    Map.of("type", "error", "req_id", reqId, "message", "文件处理失败: " + ex.getMessage()));
+        }
+
+        return ResponseEntity.accepted().body(Map.of("id", m.id, "req_id", reqId, "status", "queued", "user_id", userId));
+    }
+
+    private String extractExcelText(byte[] data) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (org.apache.poi.xssf.usermodel.XSSFWorkbook wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(data))) {
+            for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+                var sheet = wb.getSheetAt(i);
+                sb.append("=== Sheet: ").append(sheet.getSheetName()).append(" ===\n");
+                for (int r = 0; r <= sheet.getLastRowNum(); r++) {
+                    var row = sheet.getRow(r);
+                    if (row == null) { sb.append("\n"); continue; }
+                    java.util.List<String> cells = new java.util.ArrayList<>();
+                    for (int c = 0; c < row.getLastCellNum(); c++) {
+                        var cell = row.getCell(c);
+                        cells.add(cell != null ? cell.toString().trim() : "");
+                    }
+                    sb.append(String.join("\t", cells)).append("\n");
+                }
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private String extractPptText(byte[] data) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (org.apache.poi.xslf.usermodel.XMLSlideShow ppt = new org.apache.poi.xslf.usermodel.XMLSlideShow(new java.io.ByteArrayInputStream(data))) {
+            var slides = ppt.getSlides();
+            for (int i = 0; i < slides.size(); i++) {
+                sb.append("=== Slide ").append(i + 1).append(" ===\n");
+                for (var shape : slides.get(i).getShapes()) {
+                    if (shape instanceof org.apache.poi.xslf.usermodel.XSLFTextShape ts) {
+                        String t = ts.getText().trim();
+                        if (!t.isEmpty()) sb.append(t).append("\n");
+                    }
+                }
+            }
+        }
+        return sb.toString().trim();
+    }
 
     @GetMapping
     public ResponseEntity<?> listMessages(@RequestParam(value = "user_id", defaultValue = "0") Long userId) {

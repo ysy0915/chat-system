@@ -49,4 +49,10 @@ public class WebSocketSessionTracker {
     public int getTotalCount() {
         return pageUsers.values().stream().mapToInt(Set::size).sum();
     }
+
+    public Map<String, Integer> getAllCounts() {
+        Map<String, Integer> result = new java.util.HashMap<>();
+        pageUsers.forEach((page, users) -> result.put(page, users.size()));
+        return result;
+    }
 }

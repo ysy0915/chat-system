@@ -63,13 +63,17 @@ public class RabbitConfig {
     @Bean
     public CommandLineRunner purgeOldQueue(RabbitAdmin rabbitAdmin) {
         return args -> {
-            try {
-                // purge any existing (possibly Java-serialized) messages from the queue to avoid conversion errors
-                System.out.println("[INFO] Purging queue: " + CHAT_REQUESTS_QUEUE);
-                rabbitAdmin.purgeQueue(CHAT_REQUESTS_QUEUE, true);
-            } catch (Exception ex) {
-                System.err.println("[WARN] Failed to purge queue " + CHAT_REQUESTS_QUEUE + ": " + ex.getMessage());
-            }
+            Thread purgeThread = new Thread(() -> {
+                try {
+                    System.out.println("[INFO] Purging queue: " + CHAT_REQUESTS_QUEUE);
+                    rabbitAdmin.purgeQueue(CHAT_REQUESTS_QUEUE, true);
+                    System.out.println("[INFO] Queue purged successfully");
+                } catch (Exception ex) {
+                    System.err.println("[WARN] Failed to purge queue: " + ex.getMessage());
+                }
+            });
+            purgeThread.setDaemon(true);
+            purgeThread.start();
         };
     }
 }

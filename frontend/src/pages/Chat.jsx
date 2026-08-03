@@ -200,7 +200,12 @@ export default function ChatPage(){
     } catch (e) {
       console.error(e)
       setTyping(false)
-      setMessages(prev => [...prev, { role: 'system', content: '发送失败，请重试' }])
+      if (e.response?.status === 400) {
+        const msg = e.response.data?.error || '问题包含敏感内容，请修改后重试'
+        setMessages(prev => [...prev, { role: 'system', content: '🚫 ' + msg }])
+      } else {
+        setMessages(prev => [...prev, { role: 'system', content: '发送失败，请重试' }])
+      }
     }
   }
 

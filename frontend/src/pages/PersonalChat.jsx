@@ -24,6 +24,13 @@ export default function PersonalChat() {
   const [typing, setTyping] = useState(false)
   const [authUser, setAuthUser] = useState(null)
   const [onlineCount, setOnlineCount] = useState(0)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [circuitOpen, setCircuitOpen] = useState(false)
+  const fileInputRef = useRef(null)
+  const failCountRef = useRef(0)
+  const circuitTimerRef = useRef(null)
+  const CIRCUIT_THRESHOLD = 3
+  const CIRCUIT_COOLDOWN = 30000
   const [userId, setUserId] = useState(() => {
     try {
       const authStr = localStorage.getItem('auth_user')
@@ -99,7 +106,16 @@ export default function PersonalChat() {
             const payload = JSON.parse(msg.body)
             if (payload.type === 'done' || payload.answer) {
               setTyping(false)
-              setMessages(prev => [...prev, { role: 'ai', content: payload.answer }])
+              failCountRef.current = 0
+              let answer = payload.answer
+              try {
+                const parsed = JSON.parse(answer)
+                if (parsed.answer) answer = parsed.answer
+              } catch {}
+              setMessages(prev => [...prev, { role: 'ai', content: answer }])
+            } else if (payload.type === 'error') {
+              setTyping(false)
+              triggerFailure()
             }
           } catch (e) { console.error(e) }
         })
@@ -141,32 +157,79 @@ export default function PersonalChat() {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typing])
 
+  const triggerFailure = () => {
+    failCountRef.current += 1
+    if (failCountRef.current >= CIRCUIT_THRESHOLD && !circuitTimerRef.current) {
+      setCircuitOpen(true)
+      setMessages(prev => [...prev, { role: 'system', content: '⚡ 当前请求过于频繁，服务暂时过载，请 30 秒后再试' }])
+      circuitTimerRef.current = setTimeout(() => {
+        setCircuitOpen(false)
+        failCountRef.current = 0
+        circuitTimerRef.current = null
+      }, CIRCUIT_COOLDOWN)
+    }
+  }
+
   const sendQuestion = async (e) => {
     e?.preventDefault?.()
-    if (!question.trim()) return
+    if (!question.trim() && !selectedFile) return
+    if (circuitOpen) {
+      setMessages(prev => [...prev, { role: 'system', content: '⚡ 服务熔断中，请稍后再试' }])
+      return
+    }
     const text = question.trim()
     const reqId = generateId()
-    setMessages(prev => [...prev, { role: 'user', content: text }])
+    const fileToSend = selectedFile
+
+    const fileLabel = fileToSend ? ` 📎 ${fileToSend.name}` : ''
+    setMessages(prev => [...prev, { role: 'user', content: text + fileLabel }])
     setQuestion('')
+    setSelectedFile(null)
     setTyping(true)
+
+    const timeoutMs = 120000
     try {
-      const res = await axios.post('/api/v1/messages', {
-        req_id: reqId,
-        question: text,
-        user_id: userId,
-        private: 'true',
-        ai_answer: true
-      })
-      const resolvedId = res.data?.user_id
-      if (resolvedId && resolvedId !== userId && !userIdResolved.current) {
-        userIdResolved.current = true
-        localStorage.setItem('chat_user_id', String(resolvedId))
-        setUserId(resolvedId)
+      if (fileToSend) {
+        const formData = new FormData()
+        formData.append('file', fileToSend)
+        formData.append('question', text)
+        formData.append('user_id', userId)
+        formData.append('req_id', reqId)
+        await axios.post('/api/v1/messages/with-file', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: timeoutMs
+        })
+      } else {
+        const res = await axios.post('/api/v1/messages', {
+          req_id: reqId,
+          question: text,
+          user_id: userId,
+          private: 'true',
+          ai_answer: true
+        }, { timeout: timeoutMs })
+        const resolvedId = res.data?.user_id
+        if (resolvedId && resolvedId !== userId && !userIdResolved.current) {
+          userIdResolved.current = true
+          localStorage.setItem('chat_user_id', String(resolvedId))
+          setUserId(resolvedId)
+        }
       }
     } catch (e) {
       console.error(e)
       setTyping(false)
-      setMessages(prev => [...prev, { role: 'system', content: '发送失败，请重试' }])
+      if (e.response?.status === 400) {
+        const msg = e.response.data?.error || '问题包含敏感内容，请修改后重试'
+        setMessages(prev => [...prev, { role: 'system', content: '🚫 ' + msg }])
+      } else if (e.response?.status === 429) {
+        const msg = e.response.data?.error || '请求过于频繁，请稍后再试'
+        triggerFailure()
+        setMessages(prev => [...prev, { role: 'system', content: '⏳ ' + msg }])
+      } else {
+        triggerFailure()
+        if (!circuitOpen) {
+          setMessages(prev => [...prev, { role: 'system', content: '发送失败，请重试' }])
+        }
+      }
     }
   }
 
@@ -259,11 +322,29 @@ export default function PersonalChat() {
       <div className="chat-input-area">
         <form className="chat-input-wrapper" onSubmit={sendQuestion}>
           <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            accept=".txt,.csv,.json,.log,.md,.xml,.xlsx,.xls,.pptx,.ppt,.jpg,.jpeg,.png,.gif,.webp"
+            onChange={e => setSelectedFile(e.target.files[0] || null)}
+          />
+          {selectedFile && (
+            <div className="file-preview-bar">
+              <span className="file-preview-name">📎 {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)}KB)</span>
+              <button type="button" className="file-preview-remove" onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}>✕</button>
+            </div>
+          )}
+          <input
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={handleKey}
             placeholder="输入你的私密问题..."
           />
+          <button type="button" className="attach-btn" onClick={() => fileInputRef.current?.click()} title="上传文件">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
           {speechSupported && (
             <button type="button" className={`voice-btn ${isRecording ? 'recording' : ''}`} onClick={toggleVoice}>
               {isRecording ? (

@@ -410,3 +410,51 @@
     50% { opacity: 0.3; }
 }
 
+.file-preview-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(56,189,248,0.08);
+    border: 1px solid rgba(56,189,248,0.15);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+.file-preview-name {
+    color: var(--text-secondary);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 250px;
+}
+.file-preview-remove {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+.file-preview-remove:hover {
+    background: rgba(239,68,68,0.15);
+    color: #ef4444;
+}
+.attach-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s;
+}
+.attach-btn:hover {
+    color: var(--accent);
+    background: rgba(56,189,248,0.1);
+}
+

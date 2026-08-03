@@ -20,13 +20,16 @@ public class DebateController {
     private final MessageRepository messageRepository;
     private final DebateRecordRepository debateRecordRepository;
     private final UserRepository userRepository;
+    private final com.example.chat.service.ContentSafetyService contentSafetyService;
 
     public DebateController(DebateProcessor debateProcessor, MessageRepository messageRepository,
-                            DebateRecordRepository debateRecordRepository, UserRepository userRepository) {
+                            DebateRecordRepository debateRecordRepository, UserRepository userRepository,
+                            com.example.chat.service.ContentSafetyService contentSafetyService) {
         this.debateProcessor = debateProcessor;
         this.messageRepository = messageRepository;
         this.debateRecordRepository = debateRecordRepository;
         this.userRepository = userRepository;
+        this.contentSafetyService = contentSafetyService;
     }
 
     @PostMapping
@@ -34,6 +37,13 @@ public class DebateController {
         String reqId = body.get("req_id") != null ? body.get("req_id").toString() : UUID.randomUUID().toString();
         String question = body.get("question") != null ? body.get("question").toString() : "";
         Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
+
+        String safetyResult = contentSafetyService.detectSensitive(question);
+        if (safetyResult != null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", contentSafetyService.getLabelHint(safetyResult)
+            ));
+        }
 
         String userName = "";
         try {

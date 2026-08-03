@@ -1,24 +1,44 @@
 // frontend/src/pages/Landing.jsx
 import React, { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 
 export default function Landing() {
   const animRef = useRef(null)
   const lastTimeRef = useRef(null)
-  const [baseCount, setBaseCount] = useState(() => Math.floor(Math.random() * 200) + 1)
+  const [baseCount, setBaseCount] = useState(() => {
+    const saved = localStorage.getItem('landing_base_count')
+    const savedTime = localStorage.getItem('landing_base_time')
+    const now = Date.now()
+    if (saved && savedTime && (now - parseInt(savedTime)) < 60000) {
+      return parseInt(saved)
+    }
+    const val = Math.floor(Math.random() * 201)
+    localStorage.setItem('landing_base_count', String(val))
+    localStorage.setItem('landing_base_time', String(now))
+    return val
+  })
   const [realUsers, setRealUsers] = useState(0)
+  const [totalUsage, setTotalUsage] = useState(0)
   const stompRef = useRef(null)
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setBaseCount(Math.floor(Math.random() * 200) + 1)
+      const val = Math.floor(Math.random() * 201)
+      setBaseCount(val)
+      localStorage.setItem('landing_base_count', String(val))
+      localStorage.setItem('landing_base_time', String(Date.now()))
     }, 60000)
     return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
+    axios.post('/api/v1/monitor/record').catch(() => {})
+    axios.get('/api/v1/monitor/total-usage').then(res => {
+      setTotalUsage(res.data?.totalUsage || 0)
+    }).catch(() => {})
     let landingId = localStorage.getItem('landing_visitor_id')
     if (!landingId) {
       landingId = 'landing-' + Math.floor(Math.random() * 100000)
@@ -57,10 +77,16 @@ export default function Landing() {
   return (
     <div className="landing">
       <section className="hero">
-        <h1 className="hero-title">博思AI聊天论坛</h1>
-        <div className="hero-online-badge">
-          <span className="online-dot"></span>
-          {onlineCount} 人在线
+        <h1 className="hero-title">博思AI智能体</h1>
+        <div className="hero-stats-row">
+          <div className="hero-online-badge">
+            <span className="online-dot"></span>
+            {onlineCount} 人在线
+          </div>
+          <div className="hero-usage-badge">
+            <span className="usage-icon">📈</span>
+            累计使用 {totalUsage >= 10000 ? (totalUsage / 10000).toFixed(1) + '万' : totalUsage.toLocaleString()} 次
+          </div>
         </div>
         <div className="hero-actions">
           <a href="#product-intro" className="btn-outline">产品简介</a>
@@ -76,7 +102,7 @@ export default function Landing() {
         <section className="product-intro" id="product-intro">
           <h2 className="section-title">产品简介</h2>
           <p className="product-lead">
-            博思（BoSi）是一个融合多模型AI能力的智能对话平台，基于 应用架构 · 中间件架构 · 基础设施与AI融合架构，集社交化对话、私密助手、多媒体生成、知识图谱于一体，打造面向未来的社交智能体。
+            博思（BoSi）是一个融合多模型AI能力的智能对话平台，核心功能为AI博弈——多个大模型同时针对你的问题给出答案，并展开互相讨论与辩论，最终整合输出最优解答，帮你高效解决生活或工作中的每一个问题。
           </p>
           <div className="feature-grid">
             <Link to="/debate" className="feature-card">
@@ -338,6 +364,11 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
+      {/* Disclaimer */}
+      <div className="landing-disclaimer">
+        <p>⚠️ 用户须知：请在使用本平台时遵守国家法律法规，文明发言，共同维护良好的网络环境。</p>
+      </div>
 
       {/* Footer */}
       <footer className="landing-footer">

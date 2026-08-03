@@ -36,13 +36,22 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("error", "用户名或密码错误"));
         }
         String token = jwtUtil.generateToken(u.email, u.id, u.role);
-        return ResponseEntity.ok(Map.of("access_token", token, "user", u));
+        return ResponseEntity.ok(Map.of("access_token", token, "user", Map.of(
+                "id", u.id, "name", u.name, "nickname", u.nickname, "email", u.email, "role", u.role
+        )));
     }
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
         String username = payload.get("username");
         String password = payload.get("password");
+
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "用户名和密码不能为空"));
+        }
+        if (username.length() > 50 || password.length() > 100) {
+            return ResponseEntity.badRequest().body(Map.of("error", "用户名或密码过长"));
+        }
 
         if (userRepository.findByName(username) != null) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名已被占用"));
@@ -57,6 +66,8 @@ public class AuthController {
         userRepository.insert(user);
 
         String token = jwtUtil.generateToken(user.email, user.id, user.role);
-        return ResponseEntity.status(201).body(Map.of("access_token", token, "user", user));
+        return ResponseEntity.status(201).body(Map.of("access_token", token, "user", Map.of(
+                "id", user.id, "name", user.name, "nickname", user.nickname, "email", user.email, "role", user.role
+        )));
     }
 }

@@ -196,8 +196,9 @@
     border-bottom: 1px solid rgba(56,189,248,0.15);
 }
 .sql-table td {
-    padding: 8px 14px; color: #cbd5e1; border-bottom: 1px solid rgba(148,163,184,0.06);
-    white-space: nowrap; max-width: 400px; overflow: hidden; text-overflow: ellipsis;
+    padding: 10px 14px;
+    color: var(--text-primary);
+    white-space: pre-wrap; word-break: break-word;
 }
 .sql-table tr:hover td { background: rgba(56,189,248,0.03); }
 .sql-table tr:last-child td { border-bottom: none; }

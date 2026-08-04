@@ -27,16 +27,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         taskScheduler.setPoolSize(1);
         taskScheduler.setThreadNamePrefix("ws-heartbeat-");
         taskScheduler.initialize();
+
         config.enableSimpleBroker("/topic")
                 .setHeartbeatValue(new long[]{25000, 25000})
                 .setTaskScheduler(taskScheduler);
+
         config.setApplicationDestinationPrefixes("/app");
     }
 
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
         registration.setMessageSizeLimit(128 * 1024)
-                .setSendTimeLimit(15 * 1000)
+                .setSendTimeLimit(15000)
                 .setSendBufferSizeLimit(512 * 1024);
     }
 

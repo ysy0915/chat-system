@@ -47,10 +47,12 @@ public class MonitorController {
         }
 
         Map<String, Integer> currentCounts = sessionTracker.getAllCounts();
+        Map<String, Integer> dailyVisits = onlineCountRedisService.getDailyVisitCounts(since);
 
         return ResponseEntity.ok(Map.of(
                 "history", grouped,
-                "current", currentCounts
+                "current", currentCounts,
+                "dailyVisits", dailyVisits
         ));
     }
 

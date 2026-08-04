@@ -83,13 +83,11 @@ export default function Landing() {
           </div>
         </div>
         <div className="hero-actions">
-          <a href="#product-intro" className="btn-outline">功能简介</a>
           <Link to="/debate" className="btn-outline">观点辩论场</Link>
           <Link to="/" className="btn-outline">AI伙伴群聊</Link>
           <Link to="/games" className="btn-outline">AI多人游戏</Link>
           <Link to="/personal" className="btn-outline">个人对话空间</Link>
           <Link to="/graph" className="btn-outline">知识脉络图</Link>
-          <a href="#arch" className="btn-outline">了解架构</a>
           <Link to="/about" className="btn-outline">制作人简介</Link>
         </div>
 
@@ -180,8 +178,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Architecture */}
-      <section className="arch" id="arch">
+      {/* Architecture - Hidden */}
+      <section className="arch" id="arch" style={{ display: 'none' }}>
         <h2 className="section-title">全栈融合架构</h2>
         <p className="product-lead">
           应用架构、中间件架构、基础设施与AI架构深度融合，构建具备感知、规划、执行与反思能力的企业级智能体。

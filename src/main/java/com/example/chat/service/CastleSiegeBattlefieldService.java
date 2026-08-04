@@ -17,11 +17,14 @@ public class CastleSiegeBattlefieldService {
     private final ConcurrentHashMap<String, String> sessionByPlayerKey = new ConcurrentHashMap<>();
     private final SimpMessagingTemplate messagingTemplate;
     private final CastleSiegeLordService lordService;
+    private final BroadcastService broadcastService;
 
     public CastleSiegeBattlefieldService(SimpMessagingTemplate messagingTemplate,
-                                         CastleSiegeLordService lordService) {
+                                         CastleSiegeLordService lordService,
+                                         BroadcastService broadcastService) {
         this.messagingTemplate = messagingTemplate;
         this.lordService = lordService;
+        this.broadcastService = broadcastService;
     }
 
     public void join(String sessionId, Map<String, Object> payload) {
@@ -133,7 +136,7 @@ public class CastleSiegeBattlefieldService {
                     "icon", player.icon()
             ));
         }
-        messagingTemplate.convertAndSend("/topic/castlesiege.state", Map.of("players", snapshot));
+        broadcastService.broadcast("/topic/castlesiege.state", Map.of("players", snapshot));
     }
 
     private Map<String, Long> extractRecruitedByType(Map<String, Object> payload) {

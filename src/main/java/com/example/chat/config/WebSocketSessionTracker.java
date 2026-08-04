@@ -1,15 +1,14 @@
 package com.example.chat.config;
 
+import com.example.chat.service.BroadcastService;
+import com.example.chat.service.OnlineCountRedisService;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -21,41 +20,55 @@ public class WebSocketSessionTracker {
             "sql", "monitor", "media", "global"
     );
 
-    private final ConcurrentHashMap<String, SessionPresence> sessionPresence = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Set<String>> pageSessions = new ConcurrentHashMap<>();
-    private final Set<String> knownPages = ConcurrentHashMap.newKeySet();
-    private final SimpMessagingTemplate messagingTemplate;
+    private static final String SESSION_PAGE_PREFIX = "ws:page:";
+    private static final String KNOWN_PAGES_KEY = "ws:known:pages";
 
-    public WebSocketSessionTracker(SimpMessagingTemplate messagingTemplate) {
+    private final ConcurrentHashMap<String, String> localSessions = new ConcurrentHashMap<>();
+    private final StringRedisTemplate redisTemplate;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final OnlineCountRedisService onlineCountRedisService;
+    private final BroadcastService broadcastService;
+
+    public WebSocketSessionTracker(StringRedisTemplate redisTemplate,
+                                   SimpMessagingTemplate messagingTemplate,
+                                   OnlineCountRedisService onlineCountRedisService,
+                                   BroadcastService broadcastService) {
+        this.redisTemplate = redisTemplate;
         this.messagingTemplate = messagingTemplate;
-        this.knownPages.addAll(DEFAULT_PAGES);
+        this.onlineCountRedisService = onlineCountRedisService;
+        this.broadcastService = broadcastService;
+        for (String page : DEFAULT_PAGES) {
+            redisTemplate.opsForSet().add(KNOWN_PAGES_KEY, page);
+        }
     }
 
     public void registerUser(String sessionId, String userId, String name, String page) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return;
-        }
+        if (sessionId == null || sessionId.isBlank()) return;
         String pageKey = normalizePage(page);
-        String safeUserId = userId == null || userId.isBlank() ? sessionId : userId;
-        knownPages.add(pageKey);
 
-        SessionPresence previous = sessionPresence.put(sessionId, new SessionPresence(safeUserId, defaultName(name, safeUserId), pageKey));
-        if (previous != null && !previous.page().equals(pageKey)) {
-            removeSessionFromPage(sessionId, previous.page());
-            broadcastPage(previous.page());
+        redisTemplate.opsForSet().add(KNOWN_PAGES_KEY, pageKey);
+
+        String previousPage = localSessions.get(sessionId);
+        if (previousPage != null && !previousPage.equals(pageKey)) {
+            removeSessionFromPage(sessionId, previousPage);
         }
 
-        pageSessions.computeIfAbsent(pageKey, key -> ConcurrentHashMap.newKeySet()).add(sessionId);
+        localSessions.put(sessionId, pageKey);
+        redisTemplate.opsForSet().add(SESSION_PAGE_PREFIX + pageKey, sessionId);
+
+        boolean isNewVisit = (previousPage == null || !previousPage.equals(pageKey));
+        if (isNewVisit) {
+            onlineCountRedisService.incrementVisitCount(pageKey, java.time.LocalDateTime.now());
+        }
+
         broadcastPage(pageKey);
         broadcastAll();
     }
 
     public void unregisterUser(String sessionId, String page) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return;
-        }
-        SessionPresence removed = sessionPresence.remove(sessionId);
-        String pageKey = removed != null ? removed.page() : normalizePage(page);
+        if (sessionId == null || sessionId.isBlank()) return;
+        String pageKey = localSessions.remove(sessionId);
+        if (pageKey == null) pageKey = normalizePage(page);
         removeSessionFromPage(sessionId, pageKey);
         broadcastPage(pageKey);
         broadcastAll();
@@ -63,14 +76,13 @@ public class WebSocketSessionTracker {
 
     @EventListener
     public void handleDisconnect(SessionDisconnectEvent event) {
-        if (event == null) {
-            return;
-        }
+        if (event == null) return;
         unregisterUser(event.getSessionId(), null);
     }
 
     public int getCount(String page) {
-        return pageSessions.getOrDefault(normalizePage(page), Collections.emptySet()).size();
+        Long size = redisTemplate.opsForSet().size(SESSION_PAGE_PREFIX + normalizePage(page));
+        return size != null ? size.intValue() : 0;
     }
 
     public int getTotalCount() {
@@ -79,54 +91,31 @@ public class WebSocketSessionTracker {
 
     public Map<String, Integer> getAllCounts() {
         Map<String, Integer> result = new LinkedHashMap<>();
-        Set<String> pages = new LinkedHashSet<>(knownPages);
-        pageSessions.forEach((page, sessions) -> pages.add(page));
-        for (String page : pages) {
-            result.put(page, pageSessions.getOrDefault(page, Collections.emptySet()).size());
+        Set<String> pages = redisTemplate.opsForSet().members(KNOWN_PAGES_KEY);
+        if (pages != null) {
+            for (String page : pages) {
+                result.put(page, getCount(page));
+            }
         }
         return result;
     }
 
-    public Set<String> getKnownPages() {
-        return new LinkedHashSet<>(knownPages);
-    }
-
     private void removeSessionFromPage(String sessionId, String pageKey) {
-        Set<String> sessions = pageSessions.get(pageKey);
-        if (sessions == null) {
-            return;
-        }
-        sessions.remove(sessionId);
-        if (sessions.isEmpty()) {
-            pageSessions.remove(pageKey);
-        }
+        redisTemplate.opsForSet().remove(SESSION_PAGE_PREFIX + pageKey, sessionId);
     }
 
     private void broadcastPage(String pageKey) {
         int count = getCount(pageKey);
-        messagingTemplate.convertAndSend("/topic/online-count/" + pageKey,
+        broadcastService.broadcast("/topic/online-count/" + pageKey,
                 Map.of("count", count, "page", pageKey));
     }
 
     private void broadcastAll() {
-        messagingTemplate.convertAndSend("/topic/online-count/all",
-                Map.of(
-                        "total", getTotalCount(),
-                        "pages", getAllCounts()
-                ));
+        broadcastService.broadcast("/topic/online-count/all",
+                Map.of("total", getTotalCount(), "pages", getAllCounts()));
     }
 
     private String normalizePage(String page) {
         return page == null || page.isBlank() ? "global" : page.trim();
-    }
-
-    private String defaultName(String name, String userId) {
-        if (name != null && !name.isBlank()) {
-            return name.trim();
-        }
-        return "用户" + userId;
-    }
-
-    private record SessionPresence(String userId, String name, String page) {
     }
 }

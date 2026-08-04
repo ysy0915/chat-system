@@ -41,7 +41,7 @@ export default function Debate() {
   })
 
   useEffect(() => {
-    const sock = new SockJS('/ws/chat')
+    const sock = new SockJS('/ws/chat?userId=' + userId)
     const client = new Client({
       webSocketFactory: () => sock,
       debug: (str) => console.log('[STOMP]', str),

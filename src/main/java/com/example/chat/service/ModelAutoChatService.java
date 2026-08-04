@@ -23,6 +23,7 @@ public class ModelAutoChatService {
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final BroadcastService broadcastService;
 
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
 
@@ -35,10 +36,12 @@ public class ModelAutoChatService {
 
     public ModelAutoChatService(ModelConfigRepository modelConfigRepository,
                                 SimpMessagingTemplate messagingTemplate,
-                                ObjectMapper objectMapper) {
+                                ObjectMapper objectMapper,
+                                BroadcastService broadcastService) {
         this.modelConfigRepository = modelConfigRepository;
         this.messagingTemplate = messagingTemplate;
         this.objectMapper = objectMapper;
+        this.broadcastService = broadcastService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(HTTP_TIMEOUT)
                 .build();
@@ -91,7 +94,7 @@ public class ModelAutoChatService {
             final String broadcastReqId = reqId;
             final String q = question;
 
-            messagingTemplate.convertAndSend("/topic/public-questions",
+            broadcastService.broadcast("/topic/public-questions",
                     Map.of("type", "auto_question", "req_id", broadcastReqId,
                             "question", q, "user_name", askerName,
                             "auto_chat", true));
@@ -117,14 +120,14 @@ public class ModelAutoChatService {
                 try {
                     String answer1 = answer1Future.get();
                     if (answer1.length() > 20) answer1 = answer1.substring(0, 20);
-                    messagingTemplate.convertAndSend("/topic/public-questions",
+                    broadcastService.broadcast("/topic/public-questions",
                             Map.of("type", "auto_answer", "req_id", broadcastReqId + "-1",
                                     "answer", answer1, "user_name", answerer1Name,
                                     "auto_chat", true));
 
                     String answer2 = answer2Future.get();
                     if (answer2.length() > 20) answer2 = answer2.substring(0, 20);
-                    messagingTemplate.convertAndSend("/topic/public-questions",
+                    broadcastService.broadcast("/topic/public-questions",
                             Map.of("type", "auto_answer", "req_id", broadcastReqId + "-2",
                                     "answer", answer2, "user_name", answerer2Name,
                                     "auto_chat", true));

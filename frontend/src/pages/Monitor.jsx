@@ -51,6 +51,7 @@ function getLabel(page) {
 export default function Monitor() {
   const [history, setHistory] = useState({})
   const [current, setCurrent] = useState({})
+  const [dailyVisits, setDailyVisits] = useState({})
   const [days, setDays] = useState(1)
   const [loading, setLoading] = useState(true)
   const canvasRef = useRef(null)
@@ -122,6 +123,7 @@ export default function Monitor() {
       const res = await axios.get('/api/v1/monitor/online-history', { params: { days } })
       setHistory(res.data.history || {})
       setCurrent(res.data.current || {})
+      setDailyVisits(res.data.dailyVisits || {})
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -170,51 +172,21 @@ export default function Monitor() {
     windowStartDate.setHours(0, 0, 0, 0)
     const windowStart = windowStartDate.getTime()
 
-    const timeMap = new Map()
-    for (const page of allPages) {
-      const rawPoints = history[page] || []
-      for (const p of rawPoints) {
-        const t = new Date(p.time).getTime()
-        if (isNaN(t)) continue
-        if (!timeMap.has(t)) timeMap.set(t, 0)
-        timeMap.set(t, timeMap.get(t) + (p.count || 0))
-      }
+    function toLocalDateStr(ts) {
+      const d = new Date(ts)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
     }
 
-    const rawMergedPoints = [...timeMap.entries()]
-      .map(([time, count]) => ({ time, count }))
-      .filter(p => p.time >= windowStart - 120000)
-      .sort((a, b) => a.time - b.time)
-
-    const totalNow = Object.values(current).reduce((a, b) => a + b, 0)
-    if (rawMergedPoints.length > 0) {
-      const lastTime = rawMergedPoints[rawMergedPoints.length - 1].time
-      if (now - lastTime > 30000) {
-        rawMergedPoints.push({ time: now, count: totalNow })
-      } else {
-        rawMergedPoints[rawMergedPoints.length - 1] = { time: lastTime, count: totalNow }
-      }
-    } else {
-      rawMergedPoints.push({ time: now, count: totalNow })
+    const mergedPoints = []
+    for (let offset = 0; offset < days; offset++) {
+      const dayDate = new Date(windowStart + offset * dayMs)
+      const dateStr = toLocalDateStr(dayDate.getTime())
+      const visitCount = dailyVisits[dateStr] || 0
+      mergedPoints.push({ time: dayDate.getTime() + dayMs / 2, count: visitCount })
     }
-
-    const bucketedByDay = new Map()
-    for (const point of rawMergedPoints) {
-      const bucketDate = new Date(point.time)
-      bucketDate.setHours(0, 0, 0, 0)
-      const bucketTime = bucketDate.getTime()
-      const bucket = bucketedByDay.get(bucketTime) || { total: 0, samples: 0 }
-      bucket.total += point.count
-      bucket.samples += 1
-      bucketedByDay.set(bucketTime, bucket)
-    }
-
-    const mergedPoints = [...bucketedByDay.entries()]
-      .map(([time, bucket]) => ({
-        time,
-        count: Math.round(bucket.total / Math.max(bucket.samples, 1))
-      }))
-      .sort((a, b) => a.time - b.time)
 
     const allCounts = mergedPoints.map(p => p.count)
     allCounts.push(0)
@@ -242,7 +214,7 @@ export default function Monitor() {
     ctx.save()
     ctx.translate(12, pad.top + chartH / 2)
     ctx.rotate(-Math.PI / 2)
-    ctx.fillText('在线人数', 0, 0)
+    ctx.fillText('日访问量（次）', 0, 0)
     ctx.restore()
 
     ctx.strokeStyle = 'rgba(56,189,248,0.06)'
@@ -344,6 +316,7 @@ export default function Monitor() {
     ctx.lineWidth = 2
     ctx.stroke()
 
+    const totalVisits = Object.values(dailyVisits).reduce((a, b) => a + b, 0)
     const legendW = 130
     const legendH = 34
     ctx.fillStyle = 'rgba(15,23,42,0.85)'
@@ -360,7 +333,7 @@ export default function Monitor() {
     ctx.fillStyle = '#cbd5e1'
     ctx.font = '12px sans-serif'
     ctx.textAlign = 'left'
-    ctx.fillText(`日均在线 (${totalNow})`, pad.left + 36, pad.top + 26)
+    ctx.fillText(`日访问量 (${totalVisits})`, pad.left + 36, pad.top + 26)
   }
 
   const totalCurrent = Object.values(current).reduce((a, b) => a + b, 0)

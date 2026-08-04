@@ -4,6 +4,7 @@ import com.example.chat.entity.Message;
 import com.example.chat.entity.User;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.UserRepository;
+import com.example.chat.service.BroadcastService;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.Header;
@@ -29,8 +30,9 @@ public class MessageController {
     private final com.example.chat.config.WebSocketSessionTracker sessionTracker;
     private final com.example.chat.service.RateLimitService rateLimitService;
     private final com.example.chat.service.ContentSafetyService contentSafetyService;
+    private final BroadcastService broadcastService;
 
-    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit, com.example.chat.config.WebSocketSessionTracker sessionTracker, com.example.chat.service.RateLimitService rateLimitService, com.example.chat.service.ContentSafetyService contentSafetyService) {
+    public MessageController(MessageRepository messageRepository, RabbitTemplate rabbitTemplate, com.example.chat.service.ChatProcessor chatProcessor, UserRepository userRepository, SimpMessagingTemplate simpMessagingTemplate, @org.springframework.beans.factory.annotation.Value("${app.use-rabbit:true}") boolean useRabbit, com.example.chat.config.WebSocketSessionTracker sessionTracker, com.example.chat.service.RateLimitService rateLimitService, com.example.chat.service.ContentSafetyService contentSafetyService, BroadcastService broadcastService) {
         this.messageRepository = messageRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.chatProcessor = chatProcessor;
@@ -40,6 +42,7 @@ public class MessageController {
         this.sessionTracker = sessionTracker;
         this.rateLimitService = rateLimitService;
         this.contentSafetyService = contentSafetyService;
+        this.broadcastService = broadcastService;
     }
 
     @PostMapping
@@ -70,21 +73,8 @@ public class MessageController {
             ));
         }
 
-        if (userRepository.findById(userId) == null) {
-            User newUser = new User();
-            newUser.email = "user_" + userId + "@chat.local";
-            newUser.name = "";
-            newUser.guestName = "用户" + userId;
-            newUser.role = "user";
-            newUser.passwordHash = "";
-            userRepository.insert(newUser);
-            userId = newUser.id;
-            newUser.guestName = "用户" + userId;
-            userRepository.updateRegister(newUser);
-            System.out.println("[DEBUG] Auto-created user id=" + userId + " guest_name=" + newUser.guestName);
-        }
-
-        User user = userRepository.findById(userId);
+        User user = resolveOrCreateMessageUser(userId);
+        userId = user.id;
         String userName = user != null && user.nickname != null && !user.nickname.isBlank() ? user.nickname : "用户" + userId;
 
         System.out.println("[DEBUG] createMessage body=" + body + " resolved reqId=" + reqId);
@@ -102,7 +92,7 @@ public class MessageController {
             broadcastPayload.put("user_name", userName);
             broadcastPayload.put("question", question);
             broadcastPayload.put("req_id", reqId);
-            simpMessagingTemplate.convertAndSend("/topic/public-questions", broadcastPayload);
+            broadcastService.broadcast("/topic/public-questions", broadcastPayload);
         }
 
         Object preferred = body.get("preferred_model_config_id");
@@ -157,18 +147,8 @@ public class MessageController {
             ));
         }
 
-        if (userRepository.findById(userId) == null) {
-            User newUser = new User();
-            newUser.email = "user_" + userId + "@chat.local";
-            newUser.name = "";
-            newUser.guestName = "用户" + userId;
-            newUser.role = "user";
-            newUser.passwordHash = "";
-            userRepository.insert(newUser);
-            userId = newUser.id;
-            newUser.guestName = "用户" + userId;
-            userRepository.updateRegister(newUser);
-        }
+        User user = resolveOrCreateMessageUser(userId);
+        userId = user.id;
 
         String mimeType = file.getContentType();
         boolean isImage = mimeType != null && mimeType.startsWith("image/");
@@ -210,11 +190,37 @@ public class MessageController {
                     file.getOriginalFilename(), file.getBytes(), mimeType);
         } catch (Exception ex) {
             System.err.println("processWithFile failed: " + ex.getMessage());
-            simpMessagingTemplate.convertAndSend("/topic/user." + userId,
+            broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", "文件处理失败: " + ex.getMessage()));
         }
 
         return ResponseEntity.accepted().body(Map.of("id", m.id, "req_id", reqId, "status", "queued", "user_id", userId));
+    }
+
+    private User resolveOrCreateMessageUser(Long rawUserId) {
+        if (rawUserId == null) {
+            rawUserId = 0L;
+        }
+
+        User existingById = userRepository.findById(rawUserId);
+        if (existingById != null) {
+            return existingById;
+        }
+
+        String guestEmail = "user_" + rawUserId + "@chat.local";
+        User existingByEmail = userRepository.findByEmail(guestEmail);
+        if (existingByEmail != null) {
+            return existingByEmail;
+        }
+
+        User newUser = new User();
+        newUser.email = guestEmail;
+        newUser.name = "";
+        newUser.guestName = "用户" + rawUserId;
+        newUser.role = "user";
+        newUser.passwordHash = "";
+        userRepository.insert(newUser);
+        return newUser;
     }
 
     private String extractExcelText(byte[] data) throws Exception {

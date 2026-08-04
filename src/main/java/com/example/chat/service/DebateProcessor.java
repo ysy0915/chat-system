@@ -27,6 +27,7 @@ public class DebateProcessor {
     private final HttpClient httpClient;
     private final ExecutorService debateExecutor;
     private final DebateRecordRepository debateRecordRepository;
+    private final BroadcastService broadcastService;
 
     @org.springframework.beans.factory.annotation.Value("${app.llm.api-key:}")
     private String defaultApiKey;
@@ -37,12 +38,14 @@ public class DebateProcessor {
                            ModelConfigRepository modelConfigRepository,
                            SimpMessagingTemplate messagingTemplate,
                            ObjectMapper objectMapper,
-                           DebateRecordRepository debateRecordRepository) {
+                           DebateRecordRepository debateRecordRepository,
+                           BroadcastService broadcastService) {
         this.messageRepository = messageRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.messagingTemplate = messagingTemplate;
         this.objectMapper = objectMapper;
         this.debateRecordRepository = debateRecordRepository;
+        this.broadcastService = broadcastService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
@@ -58,7 +61,7 @@ public class DebateProcessor {
 
         List<ModelConfig> models = modelConfigRepository.findByIds(List.of(1L, 2L, 3L));
         if (models.size() < 3) {
-            messagingTemplate.convertAndSend("/topic/debate." + userId,
+            broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", "辩论模型配置不足，需要3个模型"));
             return;
         }
@@ -68,7 +71,7 @@ public class DebateProcessor {
             modelMap.put(m.id, m);
         }
 
-        messagingTemplate.convertAndSend("/topic/debate." + userId,
+        broadcastService.broadcast("/topic/debate." + userId,
                 Map.of("type", "start", "req_id", reqId,
                         "models", List.of(
                                 Map.of("id", 1, "name", modelMap.get(1L).provider),
@@ -82,7 +85,7 @@ public class DebateProcessor {
             } catch (Exception e) {
                 System.err.println("[ERROR] DebateProcessor: " + e.getMessage());
                 e.printStackTrace();
-                messagingTemplate.convertAndSend("/topic/debate." + userId,
+                broadcastService.broadcast("/topic/debate." + userId,
                         Map.of("type", "error", "req_id", reqId, "message", e.getMessage()));
             }
         });
@@ -97,7 +100,7 @@ public class DebateProcessor {
             List<Map<String, String>> roundResponses = Collections.synchronizedList(new ArrayList<>());
             allRounds.add(roundResponses);
 
-            messagingTemplate.convertAndSend("/topic/debate." + userId,
+            broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "round_start", "req_id", reqId, "round", round));
 
             List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -116,7 +119,7 @@ public class DebateProcessor {
                 }, debateExecutor).thenAccept(result -> {
                     roundResponses.add(result);
                     try {
-                        messagingTemplate.convertAndSend("/topic/debate." + userId,
+                        broadcastService.broadcast("/topic/debate." + userId,
                                 Map.of("type", "round_response", "req_id", reqId,
                                         "round", currentRound, "model_id", modelId,
                                         "provider", result.get("provider"), "answer", result.get("answer")));
@@ -129,11 +132,11 @@ public class DebateProcessor {
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-            messagingTemplate.convertAndSend("/topic/debate." + userId,
+            broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "round_end", "req_id", reqId, "round", currentRound));
         }
 
-        messagingTemplate.convertAndSend("/topic/debate." + userId,
+        broadcastService.broadcast("/topic/debate." + userId,
                 Map.of("type", "synthesizing", "req_id", reqId));
 
         ModelConfig synthesizer = modelMap.get(2L);
@@ -142,7 +145,7 @@ public class DebateProcessor {
         try {
             String finalAnswer = callLLM(synthesizer, synthesisPrompt);
 
-            messagingTemplate.convertAndSend("/topic/debate." + userId,
+            broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "done", "req_id", reqId, "answer", finalAnswer));
 
             String answerJson = objectMapper.writeValueAsString(Map.of("answer", finalAnswer));
@@ -164,7 +167,7 @@ public class DebateProcessor {
                 debateRecordRepository.updateAnswer(debateRecord);
             }
         } catch (Exception e) {
-            messagingTemplate.convertAndSend("/topic/debate." + userId,
+            broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", "最终整合失败: " + e.getMessage()));
         }
     }

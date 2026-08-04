@@ -46,6 +46,7 @@ public class ChatProcessor {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ExecutorService modelExecutor;
+    private final BroadcastService broadcastService;
 
     @org.springframework.beans.factory.annotation.Value("${app.llm.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
     private String defaultBaseUrl;
@@ -66,12 +67,14 @@ public class ChatProcessor {
                          ModelConfigRepository modelConfigRepository,
                          SimpMessagingTemplate messagingTemplate,
                          RedisTemplate<String, String> redisTemplate,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         BroadcastService broadcastService) {
         this.messageRepository = messageRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.messagingTemplate = messagingTemplate;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.broadcastService = broadcastService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(HTTP_TIMEOUT)
                 .build();
@@ -121,7 +124,7 @@ public class ChatProcessor {
                         m.status = "done";
                         messageRepository.updateByReqId(m);
                     }
-                    messagingTemplate.convertAndSend("/topic/user." + userId,
+                    broadcastService.broadcast("/topic/user." + userId,
                             Map.of("type", "done", "req_id", reqId, "answer", switchResult));
                     return;
                 }
@@ -135,7 +138,7 @@ public class ChatProcessor {
             }
 
             if (cached != null) {
-                messagingTemplate.convertAndSend("/topic/user." + userId,
+                broadcastService.broadcast("/topic/user." + userId,
                         Map.of("type", "done", "req_id", reqId, "answer", cached));
                 Message m = messageRepository.findByReqId(reqId);
                 if (m != null) {
@@ -212,7 +215,7 @@ public class ChatProcessor {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((unused, ex) -> {
                 if (!completed.get()) {
                     String message = ex != null ? ex.getMessage() : "所有模型调用均失败";
-                    messagingTemplate.convertAndSend("/topic/user." + userId,
+                    broadcastService.broadcast("/topic/user." + userId,
                             Map.of("type", "error", "req_id", reqId, "message", message));
                 }
             });
@@ -220,7 +223,7 @@ public class ChatProcessor {
         } catch (Exception ex) {
             System.err.println("[ERROR] ChatProcessor: " + ex.getMessage());
             ex.printStackTrace();
-            messagingTemplate.convertAndSend("/topic/user." + userId,
+            broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
         }
     }
@@ -346,14 +349,14 @@ public class ChatProcessor {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((unused, ex) -> {
                 if (!completed.get()) {
                     String message = ex != null ? ex.getMessage() : "所有模型调用均失败";
-                    messagingTemplate.convertAndSend("/topic/user." + userId,
+                    broadcastService.broadcast("/topic/user." + userId,
                             Map.of("type", "error", "req_id", reqId, "message", message));
                 }
             });
 
         } catch (Exception ex) {
             System.err.println("[ERROR] ChatProcessor processWithFile: " + ex.getMessage());
-            messagingTemplate.convertAndSend("/topic/user." + userId,
+            broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
         }
     }
@@ -598,10 +601,10 @@ public class ChatProcessor {
     }
 
     private void completeWithAnswer(String reqId, Long userId, String question, String answer, String provider, String model) {
-        messagingTemplate.convertAndSend("/topic/user." + userId,
+        broadcastService.broadcast("/topic/user." + userId,
                 Map.of("type", "done", "req_id", reqId, "answer", answer));
 
-        messagingTemplate.convertAndSend("/topic/public-questions",
+        broadcastService.broadcast("/topic/public-questions",
                 Map.of("type", "answer", "req_id", reqId, "user_id", userId, "answer", answer));
 
         String cacheKey = buildCacheKey(question, provider, model);

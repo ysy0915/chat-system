@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -20,7 +21,9 @@ public class OnlineCountRedisService {
 
     private static final String PAGE_SET_KEY = "monitor:online:pages";
     private static final String HISTORY_PREFIX = "monitor:online:history:";
+    private static final String VISIT_PREFIX = "monitor:visit:";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -87,6 +90,44 @@ public class OnlineCountRedisService {
         }
 
         return history;
+    }
+
+    public void incrementVisitCount(String page, LocalDateTime recordedAt) {
+        if (page == null || page.isBlank() || recordedAt == null) return;
+        String pageKey = normalizePage(page);
+        String dateStr = recordedAt.format(DATE_FORMATTER);
+        String visitKey = VISIT_PREFIX + pageKey + ":" + dateStr;
+        redisTemplate.opsForValue().increment(visitKey, 1);
+        redisTemplate.expire(visitKey, 10, TimeUnit.DAYS);
+    }
+
+    public Map<String, Integer> getDailyVisitCounts(LocalDateTime since) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        if (since == null) return result;
+
+        Set<String> pages = redisTemplate.opsForSet().members(PAGE_SET_KEY);
+        if (pages == null || pages.isEmpty()) return result;
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate startDate = since.toLocalDate();
+        LocalDate endDate = now.toLocalDate();
+
+        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+            String dateStr = date.format(DATE_FORMATTER);
+            int dayTotal = 0;
+            for (String rawPage : pages) {
+                String page = normalizePage(rawPage);
+                String visitKey = VISIT_PREFIX + page + ":" + dateStr;
+                String val = redisTemplate.opsForValue().get(visitKey);
+                if (val != null) {
+                    try {
+                        dayTotal += Integer.parseInt(val);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            result.put(dateStr, dayTotal);
+        }
+        return result;
     }
 
     private String normalizePage(String page) {

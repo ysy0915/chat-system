@@ -246,7 +246,7 @@ export default function ChatPage(){
 
         {messages.length === 0 && (
             <div className="chat-welcome">
-              <h1>✦ 博思</h1>
+              <h1>✦ 博思AI</h1>
               <p>有什么想问的？我来帮你解答</p>
               <div className="chat-online-badge" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
                 <span className="online-dot"></span>

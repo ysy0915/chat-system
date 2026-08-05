@@ -1,0 +1,508 @@
+/* ─── 情绪树洞 ─── */
+
+.treehole-page {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: linear-gradient(135deg, #fdf6f0 0%, #fce8f4 50%, #ede9f8 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.treehole-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 60% 40% at 20% 20%, rgba(255, 182, 193, 0.25) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 50% at 80% 80%, rgba(186, 160, 234, 0.2) 0%, transparent 60%);
+    pointer-events: none;
+}
+
+/* ── Header ── */
+.treehole-header {
+    padding: 24px 32px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.treehole-header-main {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.treehole-icon {
+    width: 52px;
+    height: 52px;
+    background: linear-gradient(135deg, #f9a8d4 0%, #c084fc 100%);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    box-shadow: 0 4px 20px rgba(192, 132, 252, 0.35);
+    flex-shrink: 0;
+}
+
+.treehole-header-text h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #4a2040;
+    margin: 0 0 4px;
+    letter-spacing: 0.5px;
+}
+
+.treehole-header-text p {
+    font-size: 13px;
+    color: rgba(74, 32, 64, 0.55);
+    margin: 0;
+}
+
+/* ── Mood selector ── */
+.treehole-mood-bar {
+    padding: 0 32px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.treehole-mood-label {
+    font-size: 13px;
+    color: rgba(74, 32, 64, 0.5);
+    margin-right: 4px;
+}
+
+.treehole-mood-btn {
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1.5px solid rgba(192, 132, 252, 0.3);
+    background: rgba(255, 255, 255, 0.6);
+    color: rgba(74, 32, 64, 0.7);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    white-space: nowrap;
+}
+
+.treehole-mood-btn:hover {
+    border-color: rgba(192, 132, 252, 0.6);
+    background: rgba(192, 132, 252, 0.12);
+    color: #7c3aed;
+}
+
+.treehole-mood-btn.selected {
+    background: linear-gradient(135deg, #f9a8d4 0%, #c084fc 100%);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(192, 132, 252, 0.4);
+}
+
+/* ── Messages ── */
+.treehole-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 32px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
+    scroll-behavior: smooth;
+}
+
+.treehole-messages::-webkit-scrollbar {
+    width: 4px;
+}
+.treehole-messages::-webkit-scrollbar-thumb {
+    background: rgba(192, 132, 252, 0.25);
+    border-radius: 4px;
+}
+
+.treehole-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: rgba(74, 32, 64, 0.4);
+}
+
+.treehole-empty-icon {
+    font-size: 54px;
+    filter: drop-shadow(0 4px 12px rgba(192, 132, 252, 0.3));
+}
+
+.treehole-empty p {
+    font-size: 15px;
+    margin: 0;
+}
+
+.treehole-empty small {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+/* ── Message bubble ── */
+.treehole-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    animation: thMsgIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes thMsgIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.treehole-msg-user {
+    align-self: flex-end;
+    max-width: 72%;
+}
+
+.treehole-msg-ai {
+    align-self: flex-start;
+    max-width: 82%;
+}
+
+.treehole-bubble-user {
+    padding: 12px 18px;
+    background: linear-gradient(135deg, #f9a8d4 0%, #c084fc 100%);
+    color: #fff;
+    border-radius: 18px 18px 4px 18px;
+    font-size: 15px;
+    line-height: 1.6;
+    box-shadow: 0 4px 18px rgba(192, 132, 252, 0.3);
+    word-break: break-word;
+}
+
+.treehole-bubble-ai {
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: #3d1f38;
+    border-radius: 4px 18px 18px 18px;
+    font-size: 15px;
+    line-height: 1.8;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.5);
+    word-break: break-word;
+    border: 1px solid rgba(249, 168, 212, 0.2);
+}
+
+.treehole-bubble-ai p {
+    margin: 0 0 6px;
+}
+
+.treehole-bubble-ai p:last-child {
+    margin-bottom: 0;
+}
+
+.treehole-msg-meta {
+    font-size: 11px;
+    color: rgba(74, 32, 64, 0.35);
+    padding: 0 4px;
+}
+
+.treehole-msg-user .treehole-msg-meta {
+    text-align: right;
+}
+
+.treehole-mood-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(249, 168, 212, 0.2);
+    color: #be185d;
+    margin-left: 6px;
+}
+
+/* ── Typing indicator ── */
+.treehole-typing {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 4px;
+    animation: thMsgIn 0.3s ease both;
+}
+
+.treehole-typing-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f9a8d4 0%, #c084fc 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.treehole-typing-dots {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 10px 16px;
+    border-radius: 18px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.treehole-typing-dots span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f9a8d4, #c084fc);
+    animation: thDotBounce 1.2s ease-in-out infinite;
+}
+
+.treehole-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.treehole-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thDotBounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-7px); opacity: 1; }
+}
+
+/* ── Input area ── */
+.treehole-input-wrap {
+    padding: 16px 32px 20px;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+/* 与个人对话空间 .chat-input-wrapper 保持一致的结构和尺寸 */
+.treehole-input-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(249, 168, 212, 0.35);
+    border-radius: 16px;
+    padding: 6px 6px 6px 18px;
+    box-shadow: 0 2px 8px rgba(192, 132, 252, 0.08);
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.treehole-input-box:focus-within {
+    border-color: rgba(192, 132, 252, 0.6);
+    box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.12);
+}
+
+/* textarea 改为单行高度，与 PersonalChat input 视觉一致 */
+.treehole-textarea {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    color: #3d1f38;
+    resize: none;
+    outline: none;
+    line-height: 1.6;
+    min-height: 24px;
+    max-height: 120px;
+    padding: 8px 0;
+    font-family: inherit;
+    scrollbar-width: none;
+}
+
+.treehole-textarea::-webkit-scrollbar { display: none; }
+
+.treehole-textarea::placeholder {
+    color: rgba(74, 32, 64, 0.4);
+    opacity: 0.7;
+}
+
+/* 发送按钮与 PersonalChat .send-btn 完全一致的尺寸 */
+.treehole-send-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f9a8d4 0%, #c084fc 100%);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(192, 132, 252, 0.35);
+}
+
+.treehole-send-btn:hover:not(:disabled) {
+    transform: scale(1.05);
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.5);
+}
+
+.treehole-send-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.treehole-send-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.treehole-send-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: #fff;
+}
+
+.treehole-hint {
+    text-align: center;
+    font-size: 11px;
+    color: rgba(74, 32, 64, 0.3);
+    margin-top: 8px;
+}
+
+/* ── Login prompt ── */
+.treehole-login-prompt {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    position: relative;
+    z-index: 1;
+}
+
+.treehole-login-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(249, 168, 212, 0.3);
+    border-radius: 24px;
+    padding: 40px 48px;
+    text-align: center;
+    box-shadow: 0 8px 40px rgba(192, 132, 252, 0.15);
+}
+
+.treehole-login-card .treehole-empty-icon {
+    margin-bottom: 8px;
+}
+
+.treehole-login-card h2 {
+    font-size: 20px;
+    color: #4a2040;
+    margin: 0 0 8px;
+}
+
+.treehole-login-card p {
+    font-size: 14px;
+    color: rgba(74, 32, 64, 0.55);
+    margin: 0 0 24px;
+}
+
+.treehole-login-btn {
+    padding: 11px 36px;
+    background: linear-gradient(135deg, #f9a8d4 0%, #c084fc 100%);
+    border: none;
+    border-radius: 14px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    box-shadow: 0 4px 18px rgba(192, 132, 252, 0.4);
+}
+
+.treehole-login-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 24px rgba(192, 132, 252, 0.5);
+}
+
+/* ── Error ── */
+.treehole-error {
+    margin: 0 32px 12px;
+    padding: 10px 16px;
+    background: rgba(255, 100, 100, 0.08);
+    border: 1px solid rgba(255, 100, 100, 0.2);
+    border-radius: 12px;
+    font-size: 13px;
+    color: #c0392b;
+    position: relative;
+    z-index: 1;
+}
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+    .treehole-header {
+        padding: 20px 16px 14px;
+    }
+
+    .treehole-icon {
+        width: 44px;
+        height: 44px;
+        font-size: 22px;
+        border-radius: 13px;
+    }
+
+    .treehole-header-text h1 {
+        font-size: 18px;
+    }
+
+    .treehole-mood-bar {
+        padding: 0 16px 12px;
+        gap: 6px;
+    }
+
+    .treehole-mood-btn {
+        font-size: 12px;
+        padding: 4px 11px;
+    }
+
+    .treehole-messages {
+        padding: 8px 16px 12px;
+    }
+
+    .treehole-msg-user {
+        max-width: 88%;
+    }
+
+    .treehole-msg-ai {
+        max-width: 95%;
+    }
+
+    .treehole-input-wrap {
+        padding: 12px 16px 16px;
+    }
+
+    .treehole-input-box {
+        padding: 6px 6px 6px 14px;
+        border-radius: 14px;
+    }
+
+    .treehole-textarea {
+        font-size: 15px;
+    }
+
+    .treehole-login-card {
+        padding: 32px 28px;
+        margin: 0 16px;
+    }
+
+    .treehole-error {
+        margin: 0 16px 10px;
+    }
+}

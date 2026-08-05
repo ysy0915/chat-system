@@ -130,6 +130,32 @@ public class OnlineCountRedisService {
         return result;
     }
 
+    public int getHourlyPeakTotal() {
+        long maxScore = System.currentTimeMillis();
+        long minScore = maxScore - 60 * 60 * 1000L;
+        Set<String> pages = redisTemplate.opsForSet().members(PAGE_SET_KEY);
+        if (pages == null || pages.isEmpty()) return 0;
+
+        int total = 0;
+        for (String rawPage : pages) {
+            String page = normalizePage(rawPage);
+            Set<String> members = redisTemplate.opsForZSet().rangeByScore(HISTORY_PREFIX + page, minScore, maxScore);
+            if (members == null || members.isEmpty()) continue;
+
+            int peak = 0;
+            for (String member : members) {
+                int separator = member.indexOf(':');
+                if (separator <= 0 || separator >= member.length() - 1) continue;
+                try {
+                    int count = Integer.parseInt(member.substring(separator + 1));
+                    if (count > peak) peak = count;
+                } catch (NumberFormatException ignored) {}
+            }
+            total += peak;
+        }
+        return total;
+    }
+
     private String normalizePage(String page) {
         return page == null || page.isBlank() ? "global" : page.trim();
     }

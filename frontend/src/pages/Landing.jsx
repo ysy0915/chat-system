@@ -86,7 +86,7 @@ export default function Landing() {
           <Link to="/debate" className="btn-outline">观点辩论场</Link>
           <Link to="/" className="btn-outline">AI伙伴群聊</Link>
           <Link to="/games" className="btn-outline">AI多人游戏</Link>
-          <Link to="/personal" className="btn-outline">个人对话空间</Link>
+          <Link to="/treehole" className="btn-outline">情绪树洞</Link>
           <Link to="/graph" className="btn-outline">知识脉络图</Link>
           <Link to="/about" className="btn-outline">制作人简介</Link>
         </div>
@@ -107,6 +107,11 @@ export default function Landing() {
               <div className="feature-icon">🎮</div>
               <h3>AI多人游戏</h3>
               <p>和真人玩家、AI模型同场竞技，在蛇王争霸、城池争夺战与AI乒乓球中体验更有代入感的多人对抗乐趣。</p>
+            </Link>
+            <Link to="/treehole" className="feature-card">
+              <div className="feature-icon">🌳</div>
+              <h3>情绪树洞</h3>
+              <p>有情绪无处安放？在这里悄悄说出来，AI会温柔倾听、真诚回应，陪你走过每一段情绪低谷。</p>
             </Link>
             <Link to="/personal" className="feature-card">
               <div className="feature-icon">🔒</div>

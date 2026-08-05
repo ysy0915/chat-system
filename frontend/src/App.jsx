@@ -19,6 +19,7 @@ import Games from './pages/game'
 import PingPong from './pages/pingpang'
 import SnakeKing from './pages/snakeking'
 import CastleSiege from './pages/castlesiege'
+import TreeHole from './pages/TreeHole'
 
 function getPresencePage(pathname) {
     if (pathname === '/' || pathname === '') return 'chat'
@@ -37,6 +38,7 @@ function getPresencePage(pathname) {
     if (pathname === '/sql') return 'sql'
     if (pathname === '/monitor') return 'monitor'
     if (pathname === '/media') return 'media'
+    if (pathname === '/treehole') return 'treehole'
     return 'landing'
 }
 
@@ -133,6 +135,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
     const location = useLocation()
     const isActive = (path) => location.pathname === path ? 'active' : ''
     const [mobileOpen, setMobileOpen] = useState(false)
+    const [announcementOpen, setAnnouncementOpen] = useState(false)
 
     const closeMobile = () => setMobileOpen(false)
 
@@ -143,6 +146,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/home', label: '首页' },
         { to: '/debate', label: '观点辩论场' },
         { to: '/personal', label: '个人对话空间' },
+        { to: '/treehole', label: '情绪树洞' },
         { to: '/', label: 'AI伙伴群聊' },
         { to: '/graph', label: '知识脉络图' },
         { to: '/media', label: '图片与视频' },
@@ -156,6 +160,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
     const mobileNavLinks = [
         { to: '/home', label: '首页' },
         { to: '/debate', label: '观点辩论场' },
+        { to: '/treehole', label: '情绪树洞' },
         { to: '/personal', label: '个人对话空间' },
         { to: '/games', label: 'AI多人游戏' },
         { to: '/', label: 'AI伙伴群聊' },
@@ -172,7 +177,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
             <nav className="navbar">
                 <Link to="/home" className="navbar-brand">
                     <img src="/chat/logo.png" alt="logo" className="logo" />
-                    博思
+                    博思AI
                 </Link>
                 <div className="navbar-links">
                     {navLinks.map(l => (
@@ -193,19 +198,56 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                     )}
                 </div>
                 <div className="navbar-credit">制作者：杨思义</div>
-                <button 
-                    className="navbar-hamburger" 
-                    onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log('Hamburger clicked, opening drawer');
-                        setMobileOpen(true);
-                    }}
-                    type="button"
-                >
-                    <span /><span /><span />
-                </button>
+                <div className="navbar-mobile-actions">
+                    <button
+                        className="navbar-announcement-btn"
+                        onClick={() => setAnnouncementOpen(true)}
+                        type="button"
+                        title="公告"
+                    >
+                        📢
+                    </button>
+                    <button
+                        className="navbar-hamburger"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('Hamburger clicked, opening drawer');
+                            setMobileOpen(true);
+                        }}
+                        type="button"
+                    >
+                        <span /><span /><span />
+                    </button>
+                </div>
             </nav>
+            {announcementOpen && (
+                <div
+                    className="announcement-overlay"
+                    onClick={() => setAnnouncementOpen(false)}
+                >
+                    <div className="announcement-modal" onClick={e => e.stopPropagation()}>
+                        <button
+                            className="announcement-close"
+                            onClick={() => setAnnouncementOpen(false)}
+                            type="button"
+                        >✕</button>
+                        <h3 className="announcement-title"> 系统公告</h3>
+                        <div className="announcement-content">
+                            <p><strong>🎉 博思AI智能体 v2.0 正式上线！</strong></p>
+                            <p>打破人机边界，融合真人社交与AI智慧，打造懂你、助你的全能数字伙伴。</p>
+                            <p><strong>🔥 核心功能：</strong></p>
+                            <p>️ <strong>观点辩论场</strong> — 三位AI专家为你展开辩论，在思想交锋中获得更全面的结论</p>
+                            <p>💬 <strong>AI伙伴群聊</strong> — 多AI角色实时互动，畅聊无限话题</p>
+                            <p>🎮 <strong>AI多人游戏</strong> — 乒乓球、蛇王争霸、城池争夺战，与AI同台竞技</p>
+                            <p>🧠 <strong>知识脉络图</strong> — 可视化知识图谱，探索问答关联</p>
+                            <p>🎨 <strong>图片与视频</strong> — AI多模态生成，创意无限</p>
+                            <p>🔒 <strong>个人对话空间</strong> — 私密模式，专属AI对话体验</p>
+                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月 · 博思AI团队</p>
+                        </div>
+                    </div>
+                </div>
+            )}
             {mobileOpen && (
                 <div 
                     className="mobile-drawer-overlay active" 
@@ -397,6 +439,7 @@ function AppShell(){
                 <Route path="/admin/models" element={<AdminModels/>} />
                 <Route path="/sql" element={<SqlExecutor/>} />
                 <Route path="/monitor" element={<Monitor/>} />
+                <Route path="/treehole" element={<TreeHole/>} />
                 <Route path="*" element={<Landing/>} />
             </Routes>
             {authModal && (

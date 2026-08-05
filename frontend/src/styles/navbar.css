@@ -49,6 +49,34 @@
     background: var(--accent-dim);
 }
 
+.navbar-mobile-actions {
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.navbar-announcement-btn {
+    display: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 12px;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    flex-shrink: 0;
+}
+
+.navbar-announcement-btn:active {
+    background: rgba(56, 189, 248, 0.25);
+    transform: scale(0.92);
+    border-color: rgba(56, 189, 248, 0.5);
+}
+
 .navbar-hamburger {
     display: none;
     flex-direction: column;

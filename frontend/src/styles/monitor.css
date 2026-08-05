@@ -9,6 +9,17 @@
     flex-direction: column;
     align-items: center;
     box-sizing: border-box;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+body:has(.monitor-page) {
+    overflow: auto;
+}
+
+body:has(.monitor-page) .app-layout {
+    height: auto;
+    min-height: 100vh;
 }
 
 .monitor-title {

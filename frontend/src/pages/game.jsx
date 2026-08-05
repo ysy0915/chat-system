@@ -17,8 +17,7 @@ export default function Games() {
             title: 'AI蛇王争霸',
             icon: '🐍',
             description: '和 DeepSeek蛇、Doubao蛇、千问蛇同场厮杀，抢无敌、咬尾巴、舔残骸，争夺蛇王宝座！',
-            tag: '开发中',
-            disabled: true
+            tag: '热门'
         },
         {
             id: 'pingpong',

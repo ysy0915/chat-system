@@ -54,6 +54,7 @@ export default function Monitor() {
   const [dailyVisits, setDailyVisits] = useState({})
   const [days, setDays] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [hourlyTotal, setHourlyTotal] = useState(0)
   const canvasRef = useRef(null)
   const stompRef = useRef(null)
   const containerRef = useRef(null)
@@ -124,6 +125,7 @@ export default function Monitor() {
       setHistory(res.data.history || {})
       setCurrent(res.data.current || {})
       setDailyVisits(res.data.dailyVisits || {})
+      setHourlyTotal(res.data.hourlyTotal || 0)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -345,6 +347,10 @@ export default function Monitor() {
       <p className="monitor-subtitle">按天查看各页面在线人数变化趋势 · 每60秒自动记录</p>
 
       <div className="monitor-stats">
+        <div className="monitor-stat-card">
+          <div className="monitor-stat-label">当前1小时总在线</div>
+          <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{hourlyTotal}</div>
+        </div>
         <div className="monitor-stat-card">
           <div className="monitor-stat-label">当前总在线</div>
           <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{totalCurrent}</div>

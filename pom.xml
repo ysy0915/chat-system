@@ -107,6 +107,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- H2 内存数据库（测试环境代替 MySQL） -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Alibaba Cloud Content Moderation (内容安全) -->
         <dependency>
             <groupId>com.aliyun</groupId>
@@ -123,6 +130,19 @@
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
+                </configuration>
+            </plugin>
+
+            <!-- Mockito 在 Java 17+ 需要开放字节码操作权限 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>
+                        -XX:+EnableDynamicAgentLoading
+                        --add-opens java.base/java.lang=ALL-UNNAMED
+                        --add-opens java.base/java.util=ALL-UNNAMED
+                    </argLine>
                 </configuration>
             </plugin>
             <plugin>

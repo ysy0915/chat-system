@@ -242,6 +242,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                             <p>🎮 <strong>AI多人游戏</strong> — 乒乓球、蛇王争霸、城池争夺战，与AI同台竞技</p>
                             <p>🧠 <strong>知识脉络图</strong> — 可视化知识图谱，探索问答关联</p>
                             <p>🎨 <strong>图片与视频</strong> — AI多模态生成，创意无限</p>
+                            <p>🌳 <strong>情绪树洞</strong> — 有情绪无处安放？AI温柔倾听，陪你走过每一段情绪低谷</p>
                             <p>🔒 <strong>个人对话空间</strong> — 私密模式，专属AI对话体验</p>
                             <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月 · 博思AI团队</p>
                         </div>

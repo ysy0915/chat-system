@@ -746,8 +746,28 @@ function resolveBattle(game, left, right, now) {
     const leftInvincible = hasActiveEffect(left, 'invincible', now)
     const rightInvincible = hasActiveEffect(right, 'invincible', now)
 
-    let damageToRight = leftInvincible && !rightInvincible ? 3 : 1 + (hasActiveEffect(left, 'attack', now) ? 1 : 0)
-    let damageToLeft = rightInvincible && !leftInvincible ? 3 : 1 + (hasActiveEffect(right, 'attack', now) ? 1 : 0)
+    // 动态伤害：基于攻方兵种攻击力 × 兵力规模，缩放到 100~1000 范围
+    // 兵力相近时（差距 < 20%）双方伤害压低到 100~200 区间
+    function calcDynDamage(attacker) {
+        const atk = getArmyAttack(attacker)
+        const troops = clampValue(getArmyTotal(attacker), 1, 20)
+        const raw = atk * troops * 8
+        return clampValue(Math.round(raw / 100) * 100, 100, 1000)
+    }
+
+    const leftTroops = getArmyTotal(left)
+    const rightTroops = getArmyTotal(right)
+    const maxTroops = Math.max(leftTroops, rightTroops, 1)
+    const diffRatio = Math.abs(leftTroops - rightTroops) / maxTroops
+    // diffRatio < 0.2 → 兵力相近，系数从 0.15 线性增长到 1.0（差距 >= 0.5 时满额）
+    const balanceFactor = clampValue(diffRatio / 0.5, 0.15, 1.0)
+
+    let damageToRight = leftInvincible && !rightInvincible ? calcDynDamage(left) * 3 : calcDynDamage(left) * (hasActiveEffect(left, 'attack', now) ? 2 : 1)
+    let damageToLeft = rightInvincible && !leftInvincible ? calcDynDamage(right) * 3 : calcDynDamage(right) * (hasActiveEffect(right, 'attack', now) ? 2 : 1)
+
+    // 应用相近系数，并确保底线 100
+    damageToRight = clampValue(Math.round(damageToRight * balanceFactor / 100) * 100, 100, 3000)
+    damageToLeft = clampValue(Math.round(damageToLeft * balanceFactor / 100) * 100, 100, 3000)
 
     if (leftInvincible && !rightInvincible) {
         damageToLeft = 0
@@ -762,7 +782,7 @@ function resolveBattle(game, left, right, now) {
             left.defenseShieldReady = false
             addFloatingText(game, left.x, left.y - 30, '免疫首次碰撞', 'shield')
         } else if (!rightInvincible) {
-            damageToLeft = Math.max(0, damageToLeft - 1)
+            damageToLeft = Math.max(0, Math.round(damageToLeft * 0.5))
         }
     }
 
@@ -772,27 +792,27 @@ function resolveBattle(game, left, right, now) {
             right.defenseShieldReady = false
             addFloatingText(game, right.x, right.y - 30, '免疫首次碰撞', 'shield')
         } else if (!leftInvincible) {
-            damageToRight = Math.max(0, damageToRight - 1)
+            damageToRight = Math.max(0, Math.round(damageToRight * 0.5))
         }
     }
 
     if (hasActiveEffect(left, 'defense', now) && !rightInvincible) {
-        damageToLeft = Math.max(0, damageToLeft - 1)
+        damageToLeft = Math.max(0, Math.round(damageToLeft * 0.6))
     }
     if (hasActiveEffect(right, 'defense', now) && !leftInvincible) {
-        damageToRight = Math.max(0, damageToRight - 1)
+        damageToRight = Math.max(0, Math.round(damageToRight * 0.6))
     }
 
-    applyTroopDamage(left, damageToLeft * 100)
-    applyTroopDamage(right, damageToRight * 100)
+    applyTroopDamage(left, damageToLeft)
+    applyTroopDamage(right, damageToRight)
 
     left.attackCooldownUntil = now + ATTACK_COOLDOWN_MS
     right.attackCooldownUntil = now + ATTACK_COOLDOWN_MS
     left.battleUntil = now + BATTLE_MARK_MS
     right.battleUntil = now + BATTLE_MARK_MS
 
-    addFloatingText(game, left.x, left.y - 16, `-${damageToLeft * 100}`, damageToLeft > 0 ? 'danger' : 'shield')
-    addFloatingText(game, right.x, right.y - 16, `-${damageToRight * 100}`, damageToRight > 0 ? 'danger' : 'shield')
+    addFloatingText(game, left.x, left.y - 16, `-${damageToLeft}`, damageToLeft > 0 ? 'danger' : 'shield')
+    addFloatingText(game, right.x, right.y - 16, `-${damageToRight}`, damageToRight > 0 ? 'danger' : 'shield')
 
     if (getArmyTotal(left) <= 0) {
         killArmy(game, left, right.name)
@@ -952,62 +972,548 @@ function drawCastle(ctx, castle, occupant, now) {
     ctx.restore()
 }
 
+// ── 骑兵人形模型 ────────────────────────────────────────────────────────────
+// s = 基础缩放单位（约等于 radius / 2.2）
+// 每个 armyId 对应不同的头盔/装饰造型，颜色来自 army.color
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── 站立铠甲士兵模型 ─────────────────────────────────────────────────────────
+// 坐标系：(x, y) 为士兵重心，s 为缩放单位
+// helmetStyle: 0=玩家皇家骑士  1=DeepSeek暗影武士  2=Doubao圣光卫士  3=千问炎魔战士
+// ─────────────────────────────────────────────────────────────────────────────
+function drawSoldierModel(ctx, x, y, s, armorColor, accentColor, helmetStyle, battleActive, defenseActive, now) {
+    const c = armorColor
+    const ac = accentColor
+
+    // ── 腿部 ──────────────────────────────────────────────────
+    // 大腿（装甲裙摆形）
+    ctx.fillStyle = c
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.1
+    ctx.beginPath()
+    ctx.moveTo(x - s * 0.28, y + s * 0.08)
+    ctx.lineTo(x - s * 0.35, y + s * 0.62)
+    ctx.lineTo(x - s * 0.08, y + s * 0.62)
+    ctx.lineTo(x, y + s * 0.08)
+    ctx.closePath()
+    ctx.fill(); ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(x + s * 0.28, y + s * 0.08)
+    ctx.lineTo(x + s * 0.35, y + s * 0.62)
+    ctx.lineTo(x + s * 0.08, y + s * 0.62)
+    ctx.lineTo(x, y + s * 0.08)
+    ctx.closePath()
+    ctx.fill(); ctx.stroke()
+
+    // 小腿（深色护腿甲）
+    ctx.fillStyle = ac
+    ctx.strokeStyle = c
+    ctx.lineWidth = s * 0.08
+    ;[[-0.28, -0.08], [0.08, 0.28]].forEach(([lx, rx]) => {
+        const cx2 = x + (lx + rx) / 2 * s
+        ctx.beginPath()
+        ctx.roundRect(cx2 - s * 0.12, y + s * 0.62, s * 0.24, s * 0.38, s * 0.05)
+        ctx.fill(); ctx.stroke()
+    })
+
+    // 靴子
+    ctx.fillStyle = '#2d1a08'
+    ctx.strokeStyle = '#1a0e04'
+    ctx.lineWidth = s * 0.07
+    ;[-0.18, 0.18].forEach((ox) => {
+        ctx.beginPath()
+        ctx.ellipse(x + ox * s, y + s * 1.02, s * 0.16, s * 0.08, 0, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+    })
+
+    // ── 腰带 ───────────────────────────────────────────────────
+    ctx.fillStyle = '#7c5c2e'
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.08
+    ctx.beginPath()
+    ctx.roundRect(x - s * 0.3, y + s * 0.05, s * 0.6, s * 0.12, s * 0.04)
+    ctx.fill(); ctx.stroke()
+    // 腰带扣
+    ctx.fillStyle = ac
+    ctx.beginPath()
+    ctx.roundRect(x - s * 0.07, y + s * 0.07, s * 0.14, s * 0.08, s * 0.02)
+    ctx.fill()
+
+    // ── 躯干（胸甲）─────────────────────────────────────────────
+    ctx.fillStyle = c
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.12
+    ctx.beginPath()
+    ctx.moveTo(x - s * 0.32, y - s * 0.62)
+    ctx.lineTo(x - s * 0.28, y + s * 0.08)
+    ctx.lineTo(x + s * 0.28, y + s * 0.08)
+    ctx.lineTo(x + s * 0.32, y - s * 0.62)
+    ctx.quadraticCurveTo(x + s * 0.28, y - s * 0.68, x, y - s * 0.7)
+    ctx.quadraticCurveTo(x - s * 0.28, y - s * 0.68, x - s * 0.32, y - s * 0.62)
+    ctx.closePath()
+    ctx.fill(); ctx.stroke()
+
+    // 胸甲中线装饰
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.06
+    ctx.beginPath()
+    ctx.moveTo(x, y - s * 0.65)
+    ctx.lineTo(x, y + s * 0.08)
+    ctx.stroke()
+
+    // 胸甲横向肋线
+    ctx.lineWidth = s * 0.04
+    ;[-0.35, -0.1].forEach((oy) => {
+        ctx.beginPath()
+        ctx.moveTo(x - s * 0.28, y + oy * s)
+        ctx.lineTo(x + s * 0.28, y + oy * s)
+        ctx.stroke()
+    })
+
+    // ── 肩甲 ───────────────────────────────────────────────────
+    ctx.fillStyle = ac
+    ctx.strokeStyle = c
+    ctx.lineWidth = s * 0.08
+    ;[-1, 1].forEach((d) => {
+        ctx.beginPath()
+        ctx.ellipse(x + d * s * 0.38, y - s * 0.58, s * 0.16, s * 0.12, d * 0.3, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+        // 肩甲下片
+        ctx.beginPath()
+        ctx.ellipse(x + d * s * 0.4, y - s * 0.44, s * 0.13, s * 0.08, d * 0.3, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+    })
+
+    // ── 武器（右手）────────────────────────────────────────────
+    // 右前臂
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.12
+    ctx.beginPath()
+    ctx.moveTo(x + s * 0.36, y - s * 0.5)
+    ctx.lineTo(x + s * 0.48, y - s * 0.12)
+    ctx.stroke()
+
+    if (helmetStyle === 0) {
+        // 玩家：长剑（直刃）
+        ctx.strokeStyle = '#d4d4d8'
+        ctx.lineWidth = s * 0.08
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.5, y - s * 0.08)
+        ctx.lineTo(x + s * 0.58, y - s * 1.02)
+        ctx.stroke()
+        // 护手
+        ctx.fillStyle = '#fbbf24'
+        ctx.strokeStyle = '#b45309'
+        ctx.lineWidth = s * 0.06
+        ctx.beginPath()
+        ctx.roundRect(x + s * 0.42, y - s * 0.28, s * 0.24, s * 0.08, s * 0.02)
+        ctx.fill(); ctx.stroke()
+        // 剑尖
+        ctx.fillStyle = '#e4e4e7'
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.58, y - s * 1.02)
+        ctx.lineTo(x + s * 0.52, y - s * 0.88)
+        ctx.lineTo(x + s * 0.64, y - s * 0.88)
+        ctx.closePath()
+        ctx.fill()
+    } else if (helmetStyle === 1) {
+        // DeepSeek：双手战斧
+        ctx.strokeStyle = '#94a3b8'
+        ctx.lineWidth = s * 0.07
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.5, y - s * 0.08)
+        ctx.lineTo(x + s * 0.52, y - s * 0.88)
+        ctx.stroke()
+        // 斧头
+        ctx.fillStyle = '#94a3b8'
+        ctx.strokeStyle = '#64748b'
+        ctx.lineWidth = s * 0.05
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.52, y - s * 0.88)
+        ctx.lineTo(x + s * 0.34, y - s * 0.72)
+        ctx.lineTo(x + s * 0.38, y - s * 0.58)
+        ctx.lineTo(x + s * 0.68, y - s * 0.62)
+        ctx.lineTo(x + s * 0.7, y - s * 0.78)
+        ctx.closePath()
+        ctx.fill(); ctx.stroke()
+    } else if (helmetStyle === 2) {
+        // Doubao：圣光法杖
+        ctx.strokeStyle = '#a0784a'
+        ctx.lineWidth = s * 0.08
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.5, y - s * 0.08)
+        ctx.lineTo(x + s * 0.5, y - s * 0.95)
+        ctx.stroke()
+        // 杖顶宝珠
+        ctx.fillStyle = '#fde68a'
+        ctx.strokeStyle = '#fbbf24'
+        ctx.lineWidth = s * 0.07
+        ctx.beginPath()
+        ctx.arc(x + s * 0.5, y - s * 1.02, s * 0.12, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+        // 十字光芒
+        ctx.strokeStyle = 'rgba(253,230,138,0.8)'
+        ctx.lineWidth = s * 0.04
+        ;[[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([dx, dy]) => {
+            ctx.beginPath()
+            ctx.moveTo(x + s * 0.5, y - s * 1.02)
+            ctx.lineTo(x + s * 0.5 + dx * s * 0.22, y - s * 1.02 + dy * s * 0.22)
+            ctx.stroke()
+        })
+    } else {
+        // 千问：火焰长矛
+        ctx.strokeStyle = '#a0784a'
+        ctx.lineWidth = s * 0.07
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.5, y - s * 0.08)
+        ctx.lineTo(x + s * 0.54, y - s * 0.96)
+        ctx.stroke()
+        // 矛尖
+        ctx.fillStyle = '#f97316'
+        ctx.strokeStyle = '#ea580c'
+        ctx.lineWidth = s * 0.05
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.54, y - s * 0.96)
+        ctx.lineTo(x + s * 0.44, y - s * 0.76)
+        ctx.lineTo(x + s * 0.64, y - s * 0.76)
+        ctx.closePath()
+        ctx.fill(); ctx.stroke()
+        // 火焰纹
+        ctx.strokeStyle = 'rgba(251,191,36,0.7)'
+        ctx.lineWidth = s * 0.04
+        ctx.beginPath()
+        ctx.moveTo(x + s * 0.44, y - s * 0.76)
+        ctx.quadraticCurveTo(x + s * 0.38, y - s * 0.64, x + s * 0.46, y - s * 0.56)
+        ctx.stroke()
+    }
+
+    // ── 盾牌（左手）────────────────────────────────────────────
+    // 左前臂
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.12
+    ctx.beginPath()
+    ctx.moveTo(x - s * 0.36, y - s * 0.5)
+    ctx.lineTo(x - s * 0.5, y - s * 0.18)
+    ctx.stroke()
+
+    // 盾形
+    ctx.fillStyle = c
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.1
+    ctx.beginPath()
+    ctx.moveTo(x - s * 0.5, y - s * 0.52)
+    ctx.lineTo(x - s * 0.72, y - s * 0.4)
+    ctx.lineTo(x - s * 0.72, y - s * 0.1)
+    ctx.quadraticCurveTo(x - s * 0.72, y + s * 0.06, x - s * 0.56, y + s * 0.12)
+    ctx.lineTo(x - s * 0.5, y + s * 0.1)
+    ctx.lineTo(x - s * 0.5, y - s * 0.52)
+    ctx.closePath()
+    ctx.fill(); ctx.stroke()
+
+    // 盾纹
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.05
+    const sx = x - s * 0.61, sy = y - s * 0.2
+    if (helmetStyle === 0) {
+        // 金色十字
+        ctx.strokeStyle = '#fbbf24'
+        ctx.lineWidth = s * 0.07
+        ctx.beginPath()
+        ctx.moveTo(sx, sy - s * 0.14); ctx.lineTo(sx, sy + s * 0.14)
+        ctx.moveTo(sx - s * 0.1, sy); ctx.lineTo(sx + s * 0.1, sy)
+        ctx.stroke()
+    } else if (helmetStyle === 1) {
+        // 暗影斜纹
+        ctx.lineWidth = s * 0.05
+        ctx.beginPath()
+        ctx.moveTo(sx - s * 0.1, sy - s * 0.15); ctx.lineTo(sx + s * 0.1, sy + s * 0.15)
+        ctx.moveTo(sx + s * 0.0, sy - s * 0.15); ctx.lineTo(sx + s * 0.1, sy + s * 0.0)
+        ctx.stroke()
+    } else if (helmetStyle === 2) {
+        // 圣光圆环
+        ctx.beginPath()
+        ctx.arc(sx, sy, s * 0.1, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(sx, sy, s * 0.04, 0, Math.PI * 2)
+        ctx.stroke()
+    } else {
+        // 炎魔火焰符文
+        ctx.strokeStyle = '#f97316'
+        ctx.lineWidth = s * 0.05
+        ctx.beginPath()
+        ctx.moveTo(sx, sy + s * 0.15)
+        ctx.quadraticCurveTo(sx - s * 0.1, sy, sx, sy - s * 0.08)
+        ctx.quadraticCurveTo(sx + s * 0.1, sy - s * 0.18, sx, sy - s * 0.15)
+        ctx.stroke()
+    }
+
+    // ── 头部 ───────────────────────────────────────────────────
+    // 脖子
+    ctx.fillStyle = '#e8c4a0'
+    ctx.beginPath()
+    ctx.roundRect(x - s * 0.09, y - s * 0.72, s * 0.18, s * 0.12, s * 0.04)
+    ctx.fill()
+
+    // 脸（头盔缝隙处）
+    ctx.fillStyle = '#f5d0a9'
+    ctx.strokeStyle = '#d4956a'
+    ctx.lineWidth = s * 0.06
+    ctx.beginPath()
+    ctx.ellipse(x, y - s * 0.88, s * 0.17, s * 0.14, 0, 0, Math.PI * 2)
+    ctx.fill(); ctx.stroke()
+
+    // 眼睛
+    ctx.fillStyle = '#1e293b'
+    ;[-0.07, 0.07].forEach((ox) => {
+        ctx.beginPath()
+        ctx.arc(x + ox * s, y - s * 0.9, s * 0.03, 0, Math.PI * 2)
+        ctx.fill()
+    })
+
+    // ── 头盔 ───────────────────────────────────────────────────
+    ctx.fillStyle = c
+    ctx.strokeStyle = ac
+    ctx.lineWidth = s * 0.12
+
+    if (helmetStyle === 0) {
+        // 皇家全包盔：圆顶 + 护颊 + 鼻梁护片 + 金色冠饰
+        ctx.beginPath()
+        ctx.arc(x, y - s * 0.95, s * 0.28, -Math.PI * 0.95, Math.PI * 0.05)
+        ctx.lineTo(x + s * 0.26, y - s * 0.72)
+        ctx.lineTo(x + s * 0.2, y - s * 0.72)
+        ctx.arc(x, y - s * 0.82, s * 0.2, 0.15, Math.PI - 0.15)
+        ctx.lineTo(x - s * 0.26, y - s * 0.72)
+        ctx.closePath()
+        ctx.fill(); ctx.stroke()
+        // 护颊片
+        ;[-1, 1].forEach((d) => {
+            ctx.beginPath()
+            ctx.moveTo(x + d * s * 0.22, y - s * 0.78)
+            ctx.lineTo(x + d * s * 0.28, y - s * 0.72)
+            ctx.lineTo(x + d * s * 0.22, y - s * 0.64)
+            ctx.lineTo(x + d * s * 0.16, y - s * 0.66)
+            ctx.closePath()
+            ctx.fill(); ctx.stroke()
+        })
+        // 鼻梁护片
+        ctx.fillStyle = ac
+        ctx.beginPath()
+        ctx.roundRect(x - s * 0.04, y - s * 0.96, s * 0.08, s * 0.2, s * 0.02)
+        ctx.fill()
+        // 金冠
+        ctx.fillStyle = '#fbbf24'
+        ctx.strokeStyle = '#b45309'
+        ctx.lineWidth = s * 0.06
+        for (let i = -1; i <= 1; i++) {
+            ctx.beginPath()
+            ctx.moveTo(x + i * s * 0.15, y - s * 1.18)
+            ctx.lineTo(x + i * s * 0.15 - s * 0.07, y - s * 1.04)
+            ctx.lineTo(x + i * s * 0.15 + s * 0.07, y - s * 1.04)
+            ctx.closePath()
+            ctx.fill(); ctx.stroke()
+        }
+        ctx.fillStyle = '#fbbf24'
+        ctx.beginPath()
+        ctx.roundRect(x - s * 0.24, y - s * 1.06, s * 0.48, s * 0.08, s * 0.04)
+        ctx.fill(); ctx.stroke()
+    } else if (helmetStyle === 1) {
+        // 暗影武士：全封闭面具盔 + T形眼缝
+        ctx.beginPath()
+        ctx.arc(x, y - s * 0.93, s * 0.28, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+        // 面具遮片
+        ctx.fillStyle = '#1e293b'
+        ctx.beginPath()
+        ctx.roundRect(x - s * 0.2, y - s * 0.96, s * 0.40, s * 0.2, s * 0.04)
+        ctx.fill()
+        // T形眼缝
+        ctx.strokeStyle = '#38bdf8'
+        ctx.lineWidth = s * 0.05
+        ctx.beginPath()
+        ctx.moveTo(x - s * 0.16, y - s * 0.9)
+        ctx.lineTo(x + s * 0.16, y - s * 0.9)
+        ctx.moveTo(x, y - s * 0.9)
+        ctx.lineTo(x, y - s * 0.78)
+        ctx.stroke()
+        // 双角
+        ctx.fillStyle = c
+        ctx.strokeStyle = ac
+        ctx.lineWidth = s * 0.08
+        ;[-1, 1].forEach((d) => {
+            ctx.beginPath()
+            ctx.moveTo(x + d * s * 0.18, y - s * 1.12)
+            ctx.lineTo(x + d * s * 0.1, y - s * 1.02)
+            ctx.lineTo(x + d * s * 0.26, y - s * 1.0)
+            ctx.closePath()
+            ctx.fill(); ctx.stroke()
+        })
+    } else if (helmetStyle === 2) {
+        // 圣光卫士：圆顶宽檐盔 + 白羽饰
+        ctx.beginPath()
+        ctx.arc(x, y - s * 0.95, s * 0.28, -Math.PI * 0.9, Math.PI * 0.1)
+        ctx.lineTo(x + s * 0.32, y - s * 0.76)
+        ctx.lineTo(x - s * 0.32, y - s * 0.76)
+        ctx.closePath()
+        ctx.fill(); ctx.stroke()
+        // 宽帽檐
+        ctx.fillStyle = ac
+        ctx.beginPath()
+        ctx.roundRect(x - s * 0.36, y - s * 0.8, s * 0.72, s * 0.1, s * 0.04)
+        ctx.fill(); ctx.stroke()
+        // 白羽饰
+        ctx.strokeStyle = '#f1f5f9'
+        ctx.lineWidth = s * 0.06
+        for (let i = -1; i <= 1; i++) {
+            ctx.beginPath()
+            ctx.moveTo(x + i * s * 0.08, y - s * 1.18)
+            ctx.quadraticCurveTo(x + i * s * 0.14 + s * 0.02, y - s * 1.05, x + i * s * 0.08, y - s * 0.98)
+            ctx.stroke()
+        }
+    } else {
+        // 炎魔战士：尖刺火焰盔
+        ctx.beginPath()
+        ctx.arc(x, y - s * 0.93, s * 0.28, 0, Math.PI * 2)
+        ctx.fill(); ctx.stroke()
+        // 中央火焰尖刺
+        ctx.fillStyle = '#f97316'
+        ctx.strokeStyle = '#ea580c'
+        ctx.lineWidth = s * 0.07
+        ctx.beginPath()
+        ctx.moveTo(x, y - s * 1.22)
+        ctx.lineTo(x - s * 0.07, y - s * 1.02)
+        ctx.lineTo(x + s * 0.07, y - s * 1.02)
+        ctx.closePath()
+        ctx.fill(); ctx.stroke()
+        // 左右小刺
+        ;[-1, 1].forEach((d) => {
+            ctx.fillStyle = c
+            ctx.strokeStyle = ac
+            ctx.lineWidth = s * 0.06
+            ctx.beginPath()
+            ctx.moveTo(x + d * s * 0.24, y - s * 1.1)
+            ctx.lineTo(x + d * s * 0.16, y - s * 1.0)
+            ctx.lineTo(x + d * s * 0.3, y - s * 0.98)
+            ctx.closePath()
+            ctx.fill(); ctx.stroke()
+        })
+        // 火焰眼缝
+        ctx.strokeStyle = '#fbbf24'
+        ctx.lineWidth = s * 0.06
+        ctx.beginPath()
+        ctx.moveTo(x - s * 0.15, y - s * 0.93)
+        ctx.lineTo(x - s * 0.04, y - s * 0.98)
+        ctx.lineTo(x + s * 0.04, y - s * 0.98)
+        ctx.lineTo(x + s * 0.15, y - s * 0.93)
+        ctx.stroke()
+    }
+
+    // ── 战斗/防御光环 ──────────────────────────────────────────
+    if (defenseActive) {
+        ctx.strokeStyle = 'rgba(96,165,250,0.6)'
+        ctx.lineWidth = s * 0.18
+        ctx.beginPath()
+        ctx.arc(x, y - s * 0.3, s * 1.2 + Math.sin(now / 180) * s * 0.1, 0, Math.PI * 2)
+        ctx.stroke()
+    }
+    if (battleActive) {
+        ctx.strokeStyle = 'rgba(248,113,113,0.65)'
+        ctx.lineWidth = s * 0.15
+        ctx.beginPath()
+        ctx.arc(x, y - s * 0.3, s * 1.28, 0, Math.PI * 2)
+        ctx.stroke()
+    }
+}
+
+function getHelmetStyle(army) {
+    if (army.id === 'player') return 0
+    if (army.id?.includes('deepseek') || army.name?.includes('DeepSeek')) return 1
+    if (army.id?.includes('doubao') || army.name?.includes('Doubao')) return 2
+    return 3
+}
+
+function getAccentColor(army, isPlayer) {
+    if (isPlayer) return '#fbbf24'
+    // 基于 color 生成加亮 accent
+    const map = {
+        '#2563eb': '#93c5fd',
+        '#22c55e': '#86efac',
+        '#8b5cf6': '#c4b5fd',
+        '#f97316': '#fdba74',
+    }
+    return map[army.color] || '#e2e8f0'
+}
+
 function drawArmy(ctx, army, now) {
     if (!army.alive) return
 
     const radius = getArmyRadius(army)
     const battleActive = army.battleUntil > now
+    const isPlayer = army.id === 'player'
+    const s = radius / 1.8
 
     ctx.save()
-    ctx.shadowBlur = army.defenseActive ? 24 : 12
-    ctx.shadowColor = army.defenseActive ? 'rgba(59, 130, 246, 0.45)' : army.glow
+    ctx.shadowBlur = army.defenseActive ? 28 : 16
+    ctx.shadowColor = isPlayer
+        ? 'rgba(251, 191, 36, 0.55)'
+        : army.defenseActive ? 'rgba(59, 130, 246, 0.5)' : army.glow
 
-    ctx.fillStyle = army.color
-    ctx.beginPath()
-    ctx.arc(army.x, army.y, radius, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.strokeStyle = army.defenseActive ? 'rgba(191, 219, 254, 0.95)' : battleActive ? 'rgba(248, 113, 113, 0.9)' : 'rgba(255,255,255,0.25)'
-    ctx.lineWidth = army.defenseActive ? 5 : 2.5
-    ctx.beginPath()
-    ctx.arc(army.x, army.y, radius - 2, 0, Math.PI * 2)
-    ctx.stroke()
-
-    if (army.defenseActive) {
-        ctx.strokeStyle = 'rgba(96, 165, 250, 0.72)'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.arc(army.x, army.y, radius + 9 + Math.sin(now / 180) * 3, 0, Math.PI * 2)
-        ctx.stroke()
-    }
-
+    // 无敌光环
     if (hasActiveEffect(army, 'invincible', now)) {
-        ctx.strokeStyle = 'rgba(250, 204, 21, 0.86)'
-        ctx.lineWidth = 3
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)'
+        ctx.lineWidth = s * 0.25
         ctx.beginPath()
-        ctx.arc(army.x, army.y, radius + 14 + Math.sin(now / 120) * 4, 0, Math.PI * 2)
+        ctx.arc(army.x, army.y - s * 0.3, radius + s * 0.6 + Math.sin(now / 120) * s * 0.15, 0, Math.PI * 2)
         ctx.stroke()
     }
+
+    // 铠甲士兵
+    const armorColor = isPlayer ? '#f59e0b' : army.color
+    const accentColor = getAccentColor(army, isPlayer)
+    const helmetStyle = getHelmetStyle(army)
+    drawSoldierModel(ctx, army.x, army.y, s, armorColor, accentColor, helmetStyle, battleActive, army.defenseActive, now)
 
     ctx.shadowBlur = 0
-    ctx.fillStyle = '#fff'
-    ctx.font = 'bold 18px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(army.icon, army.x, army.y - 4)
-    ctx.font = 'bold 13px sans-serif'
-    ctx.fillText(`${getDisplayedTroops(army)}`, army.x, army.y + 14)
-    ctx.font = army.id === 'player' ? 'bold 12px sans-serif' : '11px sans-serif'
-    ctx.fillStyle = army.id === 'player' ? '#fde68a' : 'rgba(255,255,255,0.92)'
-    ctx.fillText(army.name, army.x, army.y - radius - 14)
 
-    const activeIcons = POWERUP_KEYS.filter((key) => hasActiveEffect(army, key, now)).map((key) => POWERUP_TYPES[key].icon).join(' ')
-    if (activeIcons) {
-        ctx.font = '11px sans-serif'
-        ctx.fillStyle = '#f8fafc'
-        ctx.fillText(activeIcons, army.x, army.y - radius - 30)
+    // 兵力数字（头顶上方）
+    ctx.font = `bold ${Math.max(10, s * 1.1)}px sans-serif`
+    ctx.fillStyle = isPlayer ? '#fde68a' : '#fff'
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+    ctx.lineWidth = 2.5
+    ctx.strokeText(`${getDisplayedTroops(army)}`, army.x, army.y - radius - 2)
+    ctx.fillText(`${getDisplayedTroops(army)}`, army.x, army.y - radius - 2)
+
+    // 称号
+    if (army.title) {
+        ctx.font = `bold ${Math.max(9, s * 0.95)}px sans-serif`
+        ctx.fillStyle = isPlayer ? '#fbbf24' : 'rgba(251,191,36,0.9)'
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+        ctx.lineWidth = 2
+        ctx.strokeText(`【${army.title}】`, army.x, army.y - radius - 18)
+        ctx.fillText(`【${army.title}】`, army.x, army.y - radius - 18)
     }
 
+    // 名字
+    const nameY = army.y - radius - (army.title ? 32 : 16)
+    ctx.font = isPlayer ? `bold ${Math.max(10, s * 1.0)}px sans-serif` : `${Math.max(9, s * 0.9)}px sans-serif`
+    ctx.fillStyle = isPlayer ? '#fde68a' : 'rgba(255,255,255,0.92)'
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+    ctx.lineWidth = 2.5
+    ctx.strokeText(army.name, army.x, nameY)
+    ctx.fillText(army.name, army.x, nameY)
+
+    // 道具图标
+    const activeIcons = POWERUP_KEYS.filter((key) => hasActiveEffect(army, key, now)).map((key) => POWERUP_TYPES[key].icon).join(' ')
+    if (activeIcons) {
+        const iconY = army.y - radius - (army.title ? 46 : 30)
+        ctx.font = '11px sans-serif'
+        ctx.fillStyle = '#f8fafc'
+        ctx.fillText(activeIcons, army.x, iconY)
+    }
+
+    // 兵种徽标（马脚下方）
     const unitBadges = UNIT_KEYS.filter((key) => army.units[key] > 0)
         .slice(0, 4)
         .map((key) => UNIT_TYPES[key].icon)
@@ -1015,7 +1521,7 @@ function drawArmy(ctx, army, now) {
     if (unitBadges) {
         ctx.font = '10px sans-serif'
         ctx.fillStyle = 'rgba(255,255,255,0.82)'
-        ctx.fillText(unitBadges, army.x, army.y + radius + 12)
+        ctx.fillText(unitBadges, army.x, army.y + radius + 13)
     }
     ctx.restore()
 }
@@ -1196,14 +1702,30 @@ export default function CastleSiege() {
     const [lordPanelOpen, setLordPanelOpen] = useState(false)
     const [lordEligible, setLordEligible] = useState(() => getCurrentPlayerContext().eligibleForLeaderboard)
 
+    // 将 ranking 中的称号同步到画布（写入 army.title）
+    const syncTitlesToCanvas = useCallback((ranking) => {
+        if (!ranking?.length) return
+        const game = gameRef.current
+        const context = getCurrentPlayerContext()
+        // playerKey → title 映射
+        const titleMap = Object.fromEntries(ranking.map((entry) => [entry.playerKey, entry.title || '']))
+        // 将玩家自身称号写入 player army
+        const playerArmy = game.armies.find((army) => army.id === 'player')
+        if (playerArmy) {
+            playerArmy.title = titleMap[context.playerKey] || ''
+        }
+    }, [])
+
     const loadLordRanking = useCallback(async () => {
         try {
             const response = await axios.get(`/api/v1/games/castlesiege/lords?limit=${LORD_LEADERBOARD_LIMIT}`)
-            setLordRanking(response.data?.ranking || [])
+            const ranking = response.data?.ranking || []
+            setLordRanking(ranking)
+            syncTitlesToCanvas(ranking)
         } catch {
             setLordRanking([])
         }
-    }, [])
+    }, [syncTitlesToCanvas])
 
     const submitLordProgress = useCallback(async ({ useBeacon = false } = {}) => {
         const game = gameRef.current
@@ -1453,6 +1975,7 @@ export default function CastleSiege() {
             const ranking = await submitLordProgress()
             if (ranking) {
                 setLordRanking(ranking)
+                syncTitlesToCanvas(ranking)
             }
         } catch {
         }
@@ -1494,15 +2017,15 @@ export default function CastleSiege() {
             <Link to="/games" className="btn-back-home">← 返回游戏列表</Link>
             <div className="castlewar-header">
                 <div className="castlewar-header-main">
-                    <h2>AI城池争夺战</h2>
-                    <p>从 1 个士兵起步，招募野兵、占据城堡、与 DeepSeek、Doubao、千问三路 AI 展开混战。</p>
+                    <h2 className="castlewar-title">🏰 AI 城池争夺战</h2>
+                    <p className="castlewar-subtitle">从 1 个士兵起步，招募野兵 · 占据城堡 · 与 DeepSeek · Doubao · 千问三路 AI 展开混战</p>
                 </div>
                 <div className="castlewar-header-actions">
-                    <button type="button" className="castlewar-action-btn" onClick={() => setLordPanelOpen((open) => !open)}>
-                        领主排行榜
+                    <button type="button" className="castlewar-action-btn castlewar-action-btn--rank" onClick={() => setLordPanelOpen((open) => !open)}>
+                        🏆 领主排行榜
                     </button>
-                    <button type="button" className="castlewar-action-btn" onClick={handleRestart}>
-                        重新开战
+                    <button type="button" className="castlewar-action-btn castlewar-action-btn--restart" onClick={handleRestart}>
+                        ⚔️ 重新开战
                     </button>
                 </div>
             </div>

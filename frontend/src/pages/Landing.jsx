@@ -82,14 +82,7 @@ export default function Landing() {
             累计使用 {totalUsage >= 10000 ? (totalUsage / 10000).toFixed(1) + '万' : totalUsage.toLocaleString()} 次
           </div>
         </div>
-        <div className="hero-actions">
-          <Link to="/debate" className="btn-outline">观点辩论场</Link>
-          <Link to="/" className="btn-outline">AI伙伴群聊</Link>
-          <Link to="/games" className="btn-outline">AI多人游戏</Link>
-          <Link to="/treehole" className="btn-outline">情绪树洞</Link>
-          <Link to="/graph" className="btn-outline">知识脉络图</Link>
-          <Link to="/about" className="btn-outline">制作人简介</Link>
-        </div>
+
 
         {/* Product Intro */}
         <section className="product-intro" id="product-intro">
@@ -97,6 +90,7 @@ export default function Landing() {
           <p className="product-lead">
             打破人机边界，融合真人社交与AI智慧，打造懂你、助你的全能数字伙伴。
           </p>
+          <p className="product-tip">点击卡片即可使用对应功能 👆</p>
           <div className="feature-grid">
             <Link to="/debate" className="feature-card">
               <div className="feature-icon">🤖</div>

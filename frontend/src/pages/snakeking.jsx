@@ -173,6 +173,9 @@ function cellOccupiedBySnakes(game, position) {
 function createGameState() {
     SNAKE_PROFILES.player.name = getCurrentPlayerName()
     const snakes = Object.values(SNAKE_PROFILES).map((profile) => createSnake(profile))
+    // 击败次数统计：{ snakeId -> kills }
+    const killStats = {}
+    snakes.forEach((s) => { killStats[s.id] = 0 })
     const game = {
         snakes,
         items: [],
@@ -181,6 +184,7 @@ function createGameState() {
         nextPowerOrbAt: Date.now() + randomBetween(30000, 60000),
         mouseTarget: null,
         keys: {},
+        pendingDirection: null,
         joystick: { x: 0, y: 0, active: false },
         toast: null,
         shakeUntil: 0,
@@ -188,7 +192,8 @@ function createGameState() {
         lastHudUpdate: 0,
         frameId: null,
         lastTimestamp: 0,
-        accumulator: 0
+        accumulator: 0,
+        killStats
     }
 
     replenishFood(game)
@@ -277,7 +282,7 @@ function setToast(game, text, tone = 'normal') {
     }
 }
 
-function killSnake(game, snake, killerName, reason = 'body') {
+function killSnake(game, snake, killerName, reason = 'body', killerId = null) {
     if (!snake.alive) return
 
     const segmentCount = snake.segments.length
@@ -291,6 +296,11 @@ function killSnake(game, snake, killerName, reason = 'body') {
     snake.segments = []
     game.shakeUntil = Date.now() + 260
     game.slowUntil = Date.now() + 500
+
+    // 记录击败次数
+    if (killerId && game.killStats && killerId in game.killStats) {
+        game.killStats[killerId] = (game.killStats[killerId] || 0) + 1
+    }
 
     if (killerName) {
         setToast(game, `${killerName} 击败了 ${snake.name}`, reason === 'tail' ? 'tail' : 'danger')
@@ -564,6 +574,14 @@ function sanitizeDirection(snake, proposed) {
 }
 
 function chooseDirectionForPlayer(game, snake) {
+    // 优先消费 keydown 时立即锁存的方向（解决快速按键丢帧问题）
+    if (game.pendingDirection) {
+        const dir = game.pendingDirection
+        game.pendingDirection = null
+        const result = sanitizeDirection(snake, dir)
+        return result
+    }
+
     const keyDirection = (() => {
         if (game.keys.ArrowUp || game.keys.w || game.keys.W) return { x: 0, y: -1 }
         if (game.keys.ArrowDown || game.keys.s || game.keys.S) return { x: 0, y: 1 }
@@ -675,16 +693,17 @@ function stepGame(game, now, deltaMs) {
     }
 
     const deaths = new Map()
-    const tailBites = []
+    // 碰撞减长记录：{ attacker, target } 双方各减 1 格
+    const collisionPairs = new Set() // 用 "idA-idB"（小字典序）去重，一对只处理一次
 
     for (const snake of movedSnakes) {
         const head = getSnakeHead(snake)
         if (!isInBounds(head)) {
-            deaths.set(snake.id, { snake, killerName: '边界', reason: 'wall' })
+            deaths.set(snake.id, { snake, killerName: '边界', reason: 'wall', killerId: null })
             continue
         }
         if (snakeOccupiesCell(snake, head, 1) !== -1) {
-            deaths.set(snake.id, { snake, killerName: snake.name, reason: 'self' })
+            deaths.set(snake.id, { snake, killerName: snake.name, reason: 'self', killerId: null })
         }
     }
 
@@ -701,13 +720,18 @@ function stepGame(game, now, deltaMs) {
         if (invincibleSnakes.length === 1) {
             for (const snake of group) {
                 if (snake.id !== invincibleSnakes[0].id) {
-                    deaths.set(snake.id, { snake, killerName: invincibleSnakes[0].name, reason: 'head' })
+                    deaths.set(snake.id, { snake, killerName: invincibleSnakes[0].name, reason: 'head', killerId: invincibleSnakes[0].id })
                 }
             }
             continue
         }
-        for (const snake of group) {
-            deaths.set(snake.id, { snake, killerName: '正面对撞', reason: 'head' })
+        // 正面对撞：双方各减 1 格（而非直接死亡）
+        for (let i = 0; i < group.length; i++) {
+            for (let j = i + 1; j < group.length; j++) {
+                const a = group[i], b = group[j]
+                const pairKey = [a.id, b.id].sort().join('-')
+                collisionPairs.add(pairKey + `|${a.id}|${b.id}`)
+            }
         }
     }
 
@@ -721,41 +745,54 @@ function stepGame(game, now, deltaMs) {
             if (hitIndex === -1) continue
 
             if (isInvincible(target, now) && !isInvincible(attacker, now)) {
-                deaths.set(attacker.id, { snake: attacker, killerName: target.name, reason: 'invincible' })
+                deaths.set(attacker.id, { snake: attacker, killerName: target.name, reason: 'invincible', killerId: target.id })
                 break
             }
 
             if (isInvincible(attacker, now)) {
-                deaths.set(target.id, { snake: target, killerName: attacker.name, reason: 'invincible' })
+                deaths.set(target.id, { snake: target, killerName: attacker.name, reason: 'invincible', killerId: attacker.id })
                 continue
             }
 
-            const tailStart = Math.max(1, target.segments.length - 3)
-            if (hitIndex >= tailStart) {
-                tailBites.push({ attacker, target })
-                break
-            }
-
-            deaths.set(attacker.id, { snake: attacker, killerName: target.name, reason: 'body' })
+            // 新规则：碰到对方任意位置 → 双方各减 1 格，先归零者死亡
+            const pairKey = [attacker.id, target.id].sort().join('-')
+            collisionPairs.add(pairKey + `|${attacker.id}|${target.id}`)
             break
         }
     }
 
-    const bittenTargets = new Set()
-    for (const bite of tailBites) {
-        if (deaths.has(bite.attacker.id) || deaths.has(bite.target.id) || bittenTargets.has(bite.target.id)) continue
-        const removable = Math.min(3, Math.max(1, bite.target.segments.length - 2))
-        const removedSegments = bite.target.segments.splice(bite.target.segments.length - removable, removable)
-        bite.attacker.pendingGrowth += removable
-        bite.attacker.score += removable * 10
-        scatterRemains(game, removedSegments, removable)
-        game.shakeUntil = now + 260
-        setToast(game, `${bite.attacker.name} 咬掉了 ${bite.target.name} 的尾巴`, 'tail')
-        bittenTargets.add(bite.target.id)
+    // 处理所有碰撞对：双方各移除尾部 1 格，若剩余 < 2 则死亡
+    const processedPairs = new Set()
+    for (const entry of collisionPairs) {
+        const [pairKey, idA, idB] = entry.split('|')
+        if (processedPairs.has(pairKey)) continue
+        processedPairs.add(pairKey)
+
+        const snakeA = game.snakes.find((s) => s.id === idA)
+        const snakeB = game.snakes.find((s) => s.id === idB)
+        if (!snakeA || !snakeB) continue
+        if (deaths.has(snakeA.id) || deaths.has(snakeB.id)) continue
+
+        // 各减 1 格（移除尾部）
+        const removedA = snakeA.segments.splice(snakeA.segments.length - 1, 1)
+        const removedB = snakeB.segments.splice(snakeB.segments.length - 1, 1)
+        if (removedA.length) scatterRemains(game, removedA, 1)
+        if (removedB.length) scatterRemains(game, removedB, 1)
+
+        game.shakeUntil = now + 200
+        setToast(game, `💥 ${snakeA.name} ↔ ${snakeB.name} 互相碰撞，各损 1 格`, 'tail')
+
+        // 长度不足 2 则死亡
+        if (snakeA.segments.length < 2) {
+            deaths.set(snakeA.id, { snake: snakeA, killerName: snakeB.name, reason: 'body', killerId: snakeB.id })
+        }
+        if (snakeB.segments.length < 2) {
+            deaths.set(snakeB.id, { snake: snakeB, killerName: snakeA.name, reason: 'body', killerId: snakeA.id })
+        }
     }
 
-    for (const { snake, killerName, reason } of deaths.values()) {
-        killSnake(game, snake, killerName, reason)
+    for (const { snake, killerName, reason, killerId } of deaths.values()) {
+        killSnake(game, snake, killerName, reason, killerId)
     }
 
     for (const snake of game.snakes) {
@@ -985,6 +1022,17 @@ function buildHud(game, now) {
         }))
         .slice(0, 4)
 
+    // 击败次数排行榜，按击败数降序
+    const killboard = [...game.snakes]
+        .map((snake) => ({
+            id: snake.id,
+            icon: snake.icon,
+            name: snake.name,
+            kills: game.killStats ? (game.killStats[snake.id] || 0) : 0,
+            color: snake.color
+        }))
+        .sort((a, b) => b.kills - a.kills)
+
     const player = findSnakeById(game, 'player')
     const aliveSnakes = game.snakes.filter((snake) => snake.alive).length
     const playerStatus = !player.alive
@@ -995,6 +1043,7 @@ function buildHud(game, now) {
 
     return {
         leaderboard,
+        killboard,
         playerStatus,
         toast: game.toast && game.toast.until > now ? game.toast : null,
         shake: game.shakeUntil > now,
@@ -1070,8 +1119,25 @@ export default function SnakeKing() {
             setHud(buildHud(gameRef.current, now))
         }
 
+        const KEY_DIR_MAP = {
+            ArrowUp:    { x: 0, y: -1 },
+            ArrowDown:  { x: 0, y:  1 },
+            ArrowLeft:  { x: -1, y: 0 },
+            ArrowRight: { x:  1, y: 0 },
+            w: { x: 0, y: -1 }, W: { x: 0, y: -1 },
+            s: { x: 0, y:  1 }, S: { x: 0, y:  1 },
+            a: { x: -1, y: 0 }, A: { x: -1, y: 0 },
+            d: { x:  1, y: 0 }, D: { x:  1, y: 0 },
+        }
+
         const handleKeyDown = (event) => {
             gameRef.current.keys[event.key] = true
+            // 立即锁存方向，避免快速按键在帧间被遗漏
+            const dir = KEY_DIR_MAP[event.key]
+            if (dir) {
+                gameRef.current.pendingDirection = dir
+                event.preventDefault()
+            }
         }
 
         const handleKeyUp = (event) => {
@@ -1146,25 +1212,27 @@ export default function SnakeKing() {
     return (
         <div className="snakeking-page">
             <Link to="/games" className="btn-back-home">← 返回游戏列表</Link>
+
             <div className="snakeking-header">
-                <div>
-                    <h2>AI蛇王争霸</h2>
-                    <p>与 DeepSeek蛇、Doubao蛇、千问蛇同场争夺资源，咬尾、抢无敌、舔残骸。</p>
+                <div className="snakeking-title-wrap">
+                    <h2 className="snakeking-title">🐍 AI 蛇王争霸</h2>
+                    <p className="snakeking-subtitle">与 DeepSeek · Doubao · 千问 三路 AI 同场厮杀，咬尾夺无敌，争夺蛇王宝座</p>
                 </div>
                 <button type="button" className="snake-action-btn" onClick={handleRestart}>
-                    重新开局
+                    🔄 重新开局
                 </button>
             </div>
 
             <div className={`snake-board-shell ${hud.shake ? 'shake' : ''}`}>
                 <div className="snake-overlay snake-overlay-left">
                     <div className="snake-overlay-card">
-                        <div className="snake-overlay-title">排行榜</div>
+                        <div className="snake-overlay-title">🏆 排行榜</div>
                         <div className="snake-rank-list">
                             {hud.leaderboard.map((entry, index) => (
                                 <div key={entry.id} className={`snake-rank-item ${entry.alive ? '' : 'dead'}`}>
-                                    <span>{index + 1}. {entry.icon} {entry.name}</span>
-                                    <strong>{entry.length}</strong>
+                                    <span className="snake-rank-pos">{['🥇','🥈','🥉','4️⃣'][index]}</span>
+                                    <span className="snake-rank-name">{entry.icon} {entry.name}</span>
+                                    <strong className="snake-rank-len">{entry.length}</strong>
                                 </div>
                             ))}
                         </div>
@@ -1172,10 +1240,22 @@ export default function SnakeKing() {
                 </div>
 
                 <div className="snake-overlay snake-overlay-right">
-                    <div className="snake-overlay-card">
-                        <div className="snake-overlay-title">当前状态</div>
+                    <div className="snake-overlay-card snake-status-card">
+                        <div className="snake-overlay-title">📡 当前状态</div>
                         <div className="snake-status-text">{hud.playerStatus}</div>
-                        <div className="snake-status-note">开局最小最慢，随着吃豆逐步变长变快；2倍镜头始终跟随玩家蛇</div>
+                        <div className="snake-status-note">吃豆变长变快 · 镜头 2× 跟随 · 抢⚡无敌球</div>
+                    </div>
+                    <div className="snake-overlay-card snake-kill-card">
+                        <div className="snake-overlay-title">⚔️ 击败榜</div>
+                        <div className="snake-rank-list">
+                            {hud.killboard.map((entry, index) => (
+                                <div key={entry.id} className="snake-rank-item">
+                                    <span className="snake-rank-pos">{index === 0 && entry.kills > 0 ? '🔥' : `${index + 1}.`}</span>
+                                    <span className="snake-rank-name" style={{ color: entry.color }}>{entry.icon} {entry.name}</span>
+                                    <strong className="snake-kill-count">{entry.kills}</strong>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -1228,7 +1308,7 @@ export default function SnakeKing() {
             </div>
 
             <div className="snake-joystick-panel">
-                <div className="snake-joystick-hint">拖动摇杆控制蛇头方向，摇杆只会锁定上下左右</div>
+                <div className="snake-joystick-hint">👆 拖动摇杆控制方向（仅锁定上下左右）</div>
                 <div
                     ref={joystickRef}
                     className="snake-joystick-pad"
@@ -1254,12 +1334,12 @@ export default function SnakeKing() {
 
             <div className="snake-info-grid">
                 <div className="snake-info-card">
-                    <h3>规则亮点</h3>
-                    <p>普通圆点 +1 长度并持续提速；无敌圆点持续 5 秒；被咬尾会掉 3 格并爆出残骸；玩家与玩家、玩家与AI、AI与AI 之间都可正常碰撞淘汰。</p>
+                    <h3>⚡ 规则亮点</h3>
+                    <p>普通圆点 +1 长度并提速；<span className="snake-highlight">无敌球</span>持续 5 秒可碾压一切；被咬尾掉 3 格并爆出残骸；全员互相碰撞淘汰，无安全区。</p>
                 </div>
                 <div className="snake-info-card">
-                    <h3>AI 风格</h3>
-                    <p>DeepSeek蛇激进追尾，Doubao蛇绕圈做墙，千问蛇稳健发育并在混战后收割战场。</p>
+                    <h3>🤖 AI 风格</h3>
+                    <p><span className="snake-highlight-blue">DeepSeek</span> 激进追尾；<span className="snake-highlight-green">Doubao</span> 绕圈筑墙；<span className="snake-highlight-purple">千问</span> 稳健发育，混战后收割。</p>
                 </div>
             </div>
         </div>

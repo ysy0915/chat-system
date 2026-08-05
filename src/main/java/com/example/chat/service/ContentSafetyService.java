@@ -5,6 +5,8 @@ import com.aliyun.green20220302.models.TextModerationRequest;
 import com.aliyun.green20220302.models.TextModerationResponse;
 import com.aliyun.green20220302.models.TextModerationResponseBody;
 import com.aliyun.teaopenapi.models.Config;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +14,8 @@ import jakarta.annotation.PostConstruct;
 
 @Service
 public class ContentSafetyService {
+
+    private static final Logger log = LoggerFactory.getLogger(ContentSafetyService.class);
 
     @Value("${content-safety.enabled:true}")
     private boolean enabled;
@@ -35,11 +39,11 @@ public class ContentSafetyService {
     @PostConstruct
     public void init() {
         if (!enabled) {
-            System.out.println("[ContentSafety] 内容安全服务已禁用");
+            log.info("[ContentSafety] 内容安全服务已禁用");
             return;
         }
         if (accessKeyId == null || accessKeyId.isBlank() || accessKeySecret == null || accessKeySecret.isBlank()) {
-            System.out.println("[ContentSafety] WARN: AccessKey 未配置，内容安全检测将跳过");
+            log.warn("[ContentSafety] WARN: AccessKey 未配置，内容安全检测将跳过");
             return;
         }
         try {
@@ -50,9 +54,9 @@ public class ContentSafetyService {
             config.regionId = regionId;
             this.client = new Client(config);
             this.clientReady = true;
-            System.out.println("[ContentSafety] 阿里云内容安全服务初始化成功, endpoint=" + endpoint);
+            log.info("[ContentSafety] 阿里云内容安全服务初始化成功, endpoint={}", endpoint);
         } catch (Exception e) {
-            System.err.println("[ContentSafety] 初始化失败: " + e.getMessage());
+            log.error("[ContentSafety] 初始化失败: {}", e.getMessage());
         }
     }
 
@@ -62,12 +66,12 @@ public class ContentSafetyService {
      */
     public String detectSensitive(String text) {
         if (!enabled || !clientReady || text == null || text.isBlank()) {
-            System.out.println("[ContentSafety] 跳过检测: enabled=" + enabled + ", clientReady=" + clientReady + ", textEmpty=" + (text == null || text.isBlank()));
+            log.debug("[ContentSafety] 跳过检测: enabled={}, clientReady={}, textEmpty={}", enabled, clientReady, (text == null || text.isBlank()));
             return null;
         }
         try {
             String preview = text.length() > 50 ? text.substring(0, 50) + "..." : text;
-            System.out.println("[ContentSafety] 开始检测, text=" + preview);
+            log.info("[ContentSafety] 开始检测, text={}", preview);
 
             TextModerationRequest request = new TextModerationRequest();
             request.setService("chat_detection");
@@ -80,16 +84,16 @@ public class ContentSafetyService {
             if (body != null && body.getData() != null) {
                 String labels = body.getData().getLabels();
                 if (labels != null && !labels.isEmpty() && !"nonLabel".equals(labels)) {
-                    System.out.println("[ContentSafety] ❌ 拦截: labels=" + labels + ", text=" + preview);
+                    log.warn("[ContentSafety] ❌ 拦截: labels={}, text={}", labels, preview);
                     return labels;
                 }
-                System.out.println("[ContentSafety] ✅ 通过: labels=" + labels + ", text=" + preview);
+                log.info("[ContentSafety] ✅ 通过: labels={}, text={}", labels, preview);
             } else {
-                System.out.println("[ContentSafety] ✅ 通过: 无返回数据, text=" + preview);
+                log.info("[ContentSafety] ✅ 通过: 无返回数据, text={}", preview);
             }
             return null;
         } catch (Exception e) {
-            System.err.println("[ContentSafety] ⚠️ 异常放行: " + e.getMessage() + ", text=" + (text.length() > 50 ? text.substring(0, 50) + "..." : text));
+            log.error("[ContentSafety] ⚠️ 异常放行: {}, text={}", e.getMessage(), (text.length() > 50 ? text.substring(0, 50) + "..." : text));
             return null;
         }
     }

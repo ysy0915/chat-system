@@ -1,5 +1,7 @@
 package com.example.chat.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
@@ -15,6 +17,7 @@ import org.springframework.boot.CommandLineRunner;
 
 @Configuration
 public class RabbitConfig {
+    private static final Logger log = LoggerFactory.getLogger(RabbitConfig.class);
     public static final String CHAT_REQUESTS_QUEUE = "chat.requests";
     public static final String CHAT_EXCHANGE = "chat.exchange";
     public static final String CHAT_ROUTING_KEY = "chat.request";
@@ -65,11 +68,11 @@ public class RabbitConfig {
         return args -> {
             Thread purgeThread = new Thread(() -> {
                 try {
-                    System.out.println("[INFO] Purging queue: " + CHAT_REQUESTS_QUEUE);
+                    log.info("[INFO] Purging queue: {}", CHAT_REQUESTS_QUEUE);
                     rabbitAdmin.purgeQueue(CHAT_REQUESTS_QUEUE, true);
-                    System.out.println("[INFO] Queue purged successfully");
+                    log.info("[INFO] Queue purged successfully");
                 } catch (Exception ex) {
-                    System.err.println("[WARN] Failed to purge queue: " + ex.getMessage());
+                    log.warn("[WARN] Failed to purge queue: {}", ex.getMessage());
                 }
             });
             purgeThread.setDaemon(true);

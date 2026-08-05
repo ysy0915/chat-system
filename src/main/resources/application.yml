@@ -51,7 +51,11 @@ jwt:
 
 # SQL执行器
 sql-executor:
-  password: ${SQL_EXECUTOR_PASSWORD:19641025}
+  password: ${SQL_EXECUTOR_PASSWORD:LiYuHong@0929}
+
+# 在线人数监控
+monitor:
+  password: ${MONITOR_PASSWORD:19641025}
 
 # 阿里云内容安全
 content-safety:

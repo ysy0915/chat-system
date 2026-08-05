@@ -5,6 +5,8 @@ import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -39,6 +41,7 @@ import org.apache.poi.xslf.usermodel.XSLFTextShape;
 
 @Service
 public class ChatProcessor {
+    private static final Logger log = LoggerFactory.getLogger(ChatProcessor.class);
     private final MessageRepository messageRepository;
     private final ModelConfigRepository modelConfigRepository;
     private final SimpMessagingTemplate messagingTemplate;
@@ -99,9 +102,7 @@ public class ChatProcessor {
         boolean isPrivate = "true".equals(String.valueOf(payload.get("private")));
 
         try {
-            List<Long> chatModelIds = List.of(1L, 2L, 3L);
-            List<ModelConfig> allConfigs = modelConfigRepository.findByIds(chatModelIds).stream()
-                    .filter(config -> config.enabled != null && config.enabled)
+            List<ModelConfig> allConfigs = modelConfigRepository.findAllEnabled().stream()
                     .sorted(Comparator.comparingInt(config -> config.priority != null ? config.priority : 100))
                     .toList();
 
@@ -118,6 +119,12 @@ public class ChatProcessor {
             if (isPrivate) {
                 String switchResult = trySwitchModel(userId, question, allConfigs);
                 if (switchResult != null) {
+                    // switchResult 已是 {"answer":"..."} 合法 JSON
+                    String displayText = switchResult;
+                    try {
+                        Map<?, ?> parsed = objectMapper.readValue(switchResult, Map.class);
+                        displayText = (String) parsed.get("answer");
+                    } catch (Exception ignored) {}
                     Message m = messageRepository.findByReqId(reqId);
                     if (m != null) {
                         m.answerJson = switchResult;
@@ -125,7 +132,7 @@ public class ChatProcessor {
                         messageRepository.updateByReqId(m);
                     }
                     broadcastService.broadcast("/topic/user." + userId,
-                            Map.of("type", "done", "req_id", reqId, "answer", switchResult));
+                            Map.of("type", "done", "req_id", reqId, "answer", displayText));
                     return;
                 }
             }
@@ -134,7 +141,7 @@ public class ChatProcessor {
             try {
                 cached = redisTemplate.opsForValue().get(buildCacheKey(question));
             } catch (Exception ex) {
-                System.err.println("[WARN] Redis read failed, skipping cache: " + ex.getMessage());
+                log.warn("[WARN] Redis read failed, skipping cache: {}", ex.getMessage());
             }
 
             if (cached != null) {
@@ -142,7 +149,11 @@ public class ChatProcessor {
                         Map.of("type", "done", "req_id", reqId, "answer", cached));
                 Message m = messageRepository.findByReqId(reqId);
                 if (m != null) {
-                    m.answerJson = cached;
+                    try {
+                        m.answerJson = objectMapper.writeValueAsString(Map.of("answer", cached));
+                    } catch (Exception e) {
+                        m.answerJson = "{\"answer\":\"\"}";
+                    }
                     m.status = "done";
                     messageRepository.updateByReqId(m);
                 }
@@ -221,8 +232,7 @@ public class ChatProcessor {
             });
 
         } catch (Exception ex) {
-            System.err.println("[ERROR] ChatProcessor: " + ex.getMessage());
-            ex.printStackTrace();
+            log.error("[ERROR] ChatProcessor: {}", ex.getMessage(), ex);
             broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
         }
@@ -230,11 +240,13 @@ public class ChatProcessor {
 
     public void processWithFile(String reqId, Long userId, String question, String fileName, byte[] fileContent, String mimeType) {
         try {
+            log.info("[INFO] processWithFile 开始处理: reqId={}, fileName={}, mimeType={}, question={}", reqId, fileName, mimeType, question);
             final String lowerName = fileName != null ? fileName.toLowerCase() : "";
             final boolean isImage = mimeType != null && mimeType.startsWith("image/");
             final boolean isExcel = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
             final boolean isPpt = lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt");
             final boolean isCsv = lowerName.endsWith(".csv");
+            log.info("[INFO] 文件类型判断: isImage={}, isExcel={}, isPpt={}", isImage, isExcel, isPpt);
 
             final String fileTextContent;
             final String fileBase64;
@@ -265,9 +277,7 @@ public class ChatProcessor {
                 fileTextContent = raw;
             }
 
-            List<Long> chatModelIds = List.of(1L, 2L, 3L);
-            List<ModelConfig> allConfigs = modelConfigRepository.findByIds(chatModelIds).stream()
-                    .filter(config -> config.enabled != null && config.enabled)
+            List<ModelConfig> allConfigs = modelConfigRepository.findAllEnabled().stream()
                     .sorted(Comparator.comparingInt(config -> config.priority != null ? config.priority : 100))
                     .toList();
 
@@ -282,44 +292,60 @@ public class ChatProcessor {
             }
 
             List<ModelConfig> configs;
-            Long boundModelId = getPersonalModelId(userId);
-            if (boundModelId != null) {
-                configs = allConfigs.stream()
-                        .filter(c -> c.id != null && c.id.equals(boundModelId))
+            if (isImage) {
+                // 图片请求：强制使用 id=8 的 image_parse 专用模型
+                List<ModelConfig> imageParse = allConfigs.stream()
+                        .filter(c -> c.id != null && c.id == 8L && "image_parse".equals(c.modelType))
                         .toList();
-                if (configs.isEmpty()) {
-                    if (isImage) {
-                        List<ModelConfig> visionConfigs = allConfigs.stream()
-                                .filter(c -> "qwen".equalsIgnoreCase(c.provider))
-                                .toList();
-                        configs = visionConfigs.isEmpty() ? allConfigs : visionConfigs;
-                    } else {
-                        configs = allConfigs.stream()
-                                .filter(c -> "qwen".equalsIgnoreCase(c.provider))
-                                .toList();
-                        configs = configs.isEmpty() ? allConfigs : configs;
-                    }
+                if (imageParse.isEmpty()) {
+                    imageParse = allConfigs.stream()
+                            .filter(c -> "image_parse".equals(c.modelType))
+                            .toList();
                 }
+                configs = imageParse.isEmpty() ? allConfigs : imageParse;
+                log.info("[INFO] 图片请求，强制使用 image_parse 模型");
             } else {
-                if (isImage) {
-                    List<ModelConfig> visionConfigs = allConfigs.stream()
-                            .filter(c -> "qwen".equalsIgnoreCase(c.provider))
+                // 文档/文件解析：强制使用 id=9 的 text_parse 专用模型（智谱 glm-4.6v-flash）
+                List<ModelConfig> textParse = allConfigs.stream()
+                        .filter(c -> c.id != null && c.id == 9L && "text_parse".equals(c.modelType))
+                        .toList();
+                if (textParse.isEmpty()) {
+                    // 兜底：按 model_type=text_parse 筛选
+                    textParse = allConfigs.stream()
+                            .filter(c -> "text_parse".equals(c.modelType) && Boolean.TRUE.equals(c.enabled))
                             .toList();
-                    configs = visionConfigs.isEmpty() ? allConfigs : visionConfigs;
+                }
+                if (!textParse.isEmpty()) {
+                    configs = textParse;
+                    log.info("[INFO] 文档解析请求，强制使用 text_parse 模型");
                 } else {
-                    List<ModelConfig> textConfigs = allConfigs.stream()
-                            .filter(c -> "qwen".equalsIgnoreCase(c.provider))
-                            .toList();
-                    configs = textConfigs.isEmpty() ? allConfigs : textConfigs;
+                    // 极端兜底：找不到 text_parse 模型时退回原逻辑
+                    Long boundModelId = getPersonalModelId(userId);
+                    if (boundModelId != null) {
+                        List<ModelConfig> bound = allConfigs.stream()
+                                .filter(c -> c.id != null && c.id.equals(boundModelId))
+                                .toList();
+                        configs = bound.isEmpty() ? allConfigs : bound;
+                    } else {
+                        List<ModelConfig> textConfigs = allConfigs.stream()
+                                .filter(c -> "qwen".equalsIgnoreCase(c.provider))
+                                .toList();
+                        configs = textConfigs.isEmpty() ? allConfigs : textConfigs;
+                    }
                 }
             }
 
             final List<Map<String, Object>> fileHistoryMessages = buildFileHistoryMessages(userId, question, fileName, fileTextContent, isImage, fileBase64, mimeType);
 
-            List<CompletableFuture<LLMResult>> futures = new ArrayList<>();
+            log.info("[INFO] 筛选后的模型配置数量: {}", configs.size());
+            for (ModelConfig cfg : configs) {
+                log.info("  - 模型: {}/{} (id={}, enabled={})", cfg.provider, cfg.model, cfg.id, cfg.enabled);
+            }
+
+            List<CompletableFuture<?>> futures = new ArrayList<>();
             AtomicBoolean completed = new AtomicBoolean(false);
             for (ModelConfig config : configs) {
-                CompletableFuture<LLMResult> future = CompletableFuture.supplyAsync(() -> {
+                CompletableFuture<?> fullFuture = CompletableFuture.supplyAsync(() -> {
                     try {
                         String effectiveApiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                                 ? config.apiKeyEncrypted
@@ -328,34 +354,35 @@ public class ChatProcessor {
                             throw new IllegalStateException("未配置 API Key");
                         }
                         String effectiveBaseUrl = resolveBaseUrl(config);
-                        String answer = callLLMWithHistory(effectiveBaseUrl, effectiveApiKey, config.model, fileHistoryMessages, config.provider);
+                        String answer = callLLMWithHistory(effectiveBaseUrl, effectiveApiKey, config.model, fileHistoryMessages, config.provider, isImage);
                         return new LLMResult(config, answer);
                     } catch (Exception ex) {
-                        throw new RuntimeException(ex);
+                        log.error("[ERROR] processWithFile 模型调用失败 [{}/{}]: {}", config.provider, config.model, ex.getMessage());
+                        if (ex.getCause() != null) {
+                            log.error("  根本原因: {}", ex.getCause().getMessage());
+                        }
+                        return null;
                     }
-                }, modelExecutor);
-                futures.add(future);
-
-                future.thenAccept(result -> {
-                    if (completed.compareAndSet(false, true)) {
+                }, modelExecutor).thenAccept(result -> {
+                    // thenAccept 也在 allOf 等待范围内，确保 completed 先被设置
+                    if (result != null && completed.compareAndSet(false, true)) {
                         savePersonalModelId(userId, result.config.id);
                         completeWithAnswer(reqId, userId, question, result.answer, result.config.provider, result.config.model);
                     }
-                }).exceptionally(ex -> {
-                    return null;
                 });
+
+                futures.add(fullFuture);
             }
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((unused, ex) -> {
                 if (!completed.get()) {
-                    String message = ex != null ? ex.getMessage() : "所有模型调用均失败";
                     broadcastService.broadcast("/topic/user." + userId,
-                            Map.of("type", "error", "req_id", reqId, "message", message));
+                            Map.of("type", "error", "req_id", reqId, "message", "所有模型调用均失败，请检查模型配置或稍后重试"));
                 }
             });
 
         } catch (Exception ex) {
-            System.err.println("[ERROR] ChatProcessor processWithFile: " + ex.getMessage());
+            log.error("[ERROR] ChatProcessor processWithFile: {}", ex.getMessage());
             broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
         }
@@ -445,7 +472,7 @@ public class ChatProcessor {
                 return recent;
             }
         } catch (Exception ex) {
-            System.err.println("[WARN] Failed to load recent messages: " + ex.getMessage());
+            log.warn("[WARN] Failed to load recent messages: {}", ex.getMessage());
         }
         return null;
     }
@@ -464,8 +491,9 @@ public class ChatProcessor {
         }
 
         if (isImage) {
+            String imageQuestion = (question == null || question.isBlank()) ? "请描述这张图片" : question;
             List<Map<String, Object>> contentParts = new ArrayList<>();
-            contentParts.add(Map.of("type", "text", "text", question));
+            contentParts.add(Map.of("type", "text", "text", imageQuestion));
             contentParts.add(Map.of("type", "image_url", "image_url",
                     Map.of("url", "data:" + mimeType + ";base64," + fileBase64)));
             messages.add(Map.of("role", "user", "content", contentParts));
@@ -479,6 +507,11 @@ public class ChatProcessor {
 
     private String callLLMWithHistory(String baseUrl, String apiKey, String model,
                                        List<Map<String, Object>> messages, String provider) throws Exception {
+        return callLLMWithHistory(baseUrl, apiKey, model, messages, provider, false);
+    }
+
+    private String callLLMWithHistory(String baseUrl, String apiKey, String model,
+                                       List<Map<String, Object>> messages, String provider, boolean isVision) throws Exception {
         String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
 
         java.util.LinkedHashMap<String, Object> requestBody = new java.util.LinkedHashMap<>();
@@ -486,7 +519,8 @@ public class ChatProcessor {
         requestBody.put("messages", messages);
         requestBody.put("temperature", 0.7);
 
-        if ("qwen".equalsIgnoreCase(provider) || "doubao".equalsIgnoreCase(provider)) {
+        // 图片/多模态请求不能同时开启 enable_search
+        if (!isVision && ("qwen".equalsIgnoreCase(provider) || "doubao".equalsIgnoreCase(provider))) {
             requestBody.put("enable_search", true);
         }
 
@@ -500,8 +534,11 @@ public class ChatProcessor {
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
+        log.info("[INFO] callLLMWithHistory -> POST {} model={}", url, model);
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        log.info("[INFO] callLLMWithHistory <- status={}", response.statusCode());
         if (response.statusCode() != 200) {
+            log.error("[ERROR] LLM API 返回错误: status={}, body={}", response.statusCode(), response.body());
             throw new RuntimeException("LLM API returned status " + response.statusCode() + ": " + response.body());
         }
 
@@ -536,8 +573,11 @@ public class ChatProcessor {
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
+        log.info("[INFO] callLLMWithHistory -> POST {} model={}", url, model);
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        log.info("[INFO] callLLMWithHistory <- status={}", response.statusCode());
         if (response.statusCode() != 200) {
+            log.error("[ERROR] LLM API 返回错误: status={}, body={}", response.statusCode(), response.body());
             throw new RuntimeException("LLM API returned status " + response.statusCode() + ": " + response.body());
         }
         Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
@@ -597,7 +637,7 @@ public class ChatProcessor {
             return false;
         }
         String provider = config.provider.trim().toLowerCase();
-        return "deepseek".equals(provider) || "qwen".equals(provider) || "doubao".equals(provider);
+        return "deepseek".equals(provider) || "qwen".equals(provider) || "doubao".equals(provider) || "zhipu".equals(provider);
     }
 
     private void completeWithAnswer(String reqId, Long userId, String question, String answer, String provider, String model) {
@@ -611,22 +651,26 @@ public class ChatProcessor {
         try {
             redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
         } catch (Exception ex) {
-            System.err.println("[WARN] Redis write failed, skipping cache: " + ex.getMessage());
+            log.warn("[WARN] Redis write failed, skipping cache: {}", ex.getMessage());
         }
 
         Message m = messageRepository.findByReqId(reqId);
         if (m != null) {
-            m.answerJson = answer;
+            try {
+                m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
+            } catch (Exception e) {
+                m.answerJson = "{\"answer\":\"\"}";
+            }
             m.status = "done";
             m.provider = provider;
             m.model = model;
             messageRepository.updateByReqId(m);
-            System.out.println("[DEBUG] DB updated: reqId=" + reqId + " status=done provider=" + provider + " model=" + model);
+            log.debug("[DEBUG] DB updated: reqId={} status=done provider={} model={}", reqId, provider, model);
         } else {
-            System.err.println("[WARN] Message not found for reqId=" + reqId);
+            log.warn("[WARN] Message not found for reqId={}", reqId);
         }
 
-        System.out.println("[DEBUG] ChatProcessor: LLM call done for reqId=" + reqId + " provider=" + provider + " model=" + model);
+        log.debug("[DEBUG] ChatProcessor: LLM call done for reqId={} provider={} model={}", reqId, provider, model);
     }
 
     private String resolveBaseUrl(ModelConfig config) {
@@ -643,8 +687,29 @@ public class ChatProcessor {
             case "deepseek": return "https://api.deepseek.com/v1";
             case "qwen": return "https://dashscope.aliyuncs.com/compatible-mode/v1";
             case "doubao": return "https://ark.cn-beijing.volces.com/api/v3";
+            case "zhipu": return "https://open.bigmodel.cn/api/paas/v4";
             default: return "https://api.openai.com/v1";
         }
+    }
+
+    private boolean isVisionSupported(String provider) {
+        if (provider == null) return false;
+        switch (provider.toLowerCase()) {
+            case "qwen":
+            case "doubao":
+            case "openai":
+            case "azure":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isVisionModel(ModelConfig config) {
+        // 优先按 modelType 字段判断
+        if ("image_parse".equals(config.modelType)) return true;
+        // 兜底：按 provider 判断
+        return isVisionSupported(config.provider);
     }
 
     private String resolveVisionModel(ModelConfig config) {
@@ -652,6 +717,7 @@ public class ChatProcessor {
         switch (provider) {
             case "qwen": return "qwen-vl-max";
             case "doubao": return config.model;
+            case "openai": return "gpt-4o";
             default: return "qwen-vl-max";
         }
     }
@@ -683,7 +749,7 @@ public class ChatProcessor {
                 return Long.parseLong(val);
             }
         } catch (Exception ex) {
-            System.err.println("[WARN] Redis read personal_model failed: " + ex.getMessage());
+            log.warn("[WARN] Redis read personal_model failed: {}", ex.getMessage());
         }
         return null;
     }
@@ -691,9 +757,9 @@ public class ChatProcessor {
     private void savePersonalModelId(Long userId, Long modelId) {
         try {
             redisTemplate.opsForValue().set("personal_model:" + userId, String.valueOf(modelId), Duration.ofDays(365));
-            System.out.println("[DEBUG] Personal model bound: userId=" + userId + " modelId=" + modelId);
+            log.debug("[DEBUG] Personal model bound: userId={} modelId={}", userId, modelId);
         } catch (Exception ex) {
-            System.err.println("[WARN] Redis write personal_model failed: " + ex.getMessage());
+            log.warn("[WARN] Redis write personal_model failed: {}", ex.getMessage());
         }
     }
 
@@ -722,6 +788,11 @@ public class ChatProcessor {
                         target = config;
                     }
                     break;
+                case "zhipu":
+                    if (q.contains("智谱") || q.contains("zhipu") || q.contains("glm")) {
+                        target = config;
+                    }
+                    break;
             }
             if (target != null) break;
         }
@@ -733,10 +804,12 @@ public class ChatProcessor {
                 case "doubao": displayName = "豆包"; break;
                 case "qwen": displayName = "千问"; break;
                 case "deepseek": displayName = "DeepSeek"; break;
+                case "zhipu": displayName = "智谱 GLM"; break;
                 default: displayName = target.provider; break;
             }
-            System.out.println("[DEBUG] Model switch: userId=" + userId + " -> " + displayName + " (id=" + target.id + ")");
-            return "{\"answer\": \"✅ 已成功切换为「" + displayName + "」模型，后续所有问题都将由该模型回答。\"}";
+            log.debug("[DEBUG] Model switch: userId={} -> {} (id={})", userId, displayName, target.id);
+            String msg = "✅ 已成功切换为「" + displayName + "」模型，后续所有问题都将由该模型回答。";
+            return "{\"answer\":\"" + msg.replace("\"", "\\\"") + "\"}";
         }
 
         return null;

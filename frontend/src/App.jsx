@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect, useRef } from 'react'
+import { BrowserRouter, Link, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
@@ -12,7 +12,6 @@ import SqlExecutor from './pages/SqlExecutor'
 import MediaGen from './pages/MediaGen'
 import Profile from './pages/Profile'
 import PersonalChat from './pages/PersonalChat'
-import About from './pages/About'
 import Debate from './pages/Debate'
 import Monitor from './pages/Monitor'
 import Games from './pages/game'
@@ -32,7 +31,6 @@ function getPresencePage(pathname) {
     if (pathname === '/games/castlesiege') return 'castlesiege'
     if (pathname === '/history') return 'history'
     if (pathname === '/graph') return 'graph'
-    if (pathname === '/about') return 'about'
     if (pathname === '/profile') return 'profile'
     if (pathname === '/admin/models') return 'admin-models'
     if (pathname === '/sql') return 'sql'
@@ -89,7 +87,8 @@ function OnlinePresenceTracker({ authUser }) {
 
         if (!changed) return
 
-        if (active) {
+        // 先 unregister 旧 page，再 register 新 page（串行，避免乱序）
+        if (active && active.page !== desired.page) {
             publishPresence('/app/online.unregister', active)
         }
         publishPresence('/app/online.register', desired)
@@ -128,7 +127,115 @@ function OnlinePresenceTracker({ authUser }) {
         }
     }, [authUser, publishPresence, syncPresence])
 
-    return null
+    // 5 分钟无操作自动断开 STOMP 连接
+    const IDLE_TIMEOUT = 5 * 60 * 1000 // 5 分钟
+    const lastActivityRef = React.useRef(Date.now())
+    const idleTimerRef = React.useRef(null)
+    const disconnectedRef = React.useRef(false)
+    const [showIdleBanner, setShowIdleBanner] = useState(false)
+
+    // 用户操作事件重置计时
+    useEffect(() => {
+        const resetIdle = () => {
+            lastActivityRef.current = Date.now()
+            // 如果之前因无操作断开，恢复操作时重连
+            if (disconnectedRef.current && stompRef.current && !stompRef.current.connected) {
+                disconnectedRef.current = false
+                setShowIdleBanner(false)
+                stompRef.current.activate().catch(() => {})
+            }
+        }
+        const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
+        events.forEach(evt => window.addEventListener(evt, resetIdle, { passive: true }))
+        return () => {
+            events.forEach(evt => window.removeEventListener(evt, resetIdle))
+        }
+    }, [])
+
+    // 定时检查是否超时
+    useEffect(() => {
+        idleTimerRef.current = setInterval(() => {
+            const idleMs = Date.now() - lastActivityRef.current
+            const client = stompRef.current
+            if (idleMs >= IDLE_TIMEOUT && client && client.connected && !disconnectedRef.current) {
+                // 超时：主动 unregister 并断开
+                const active = activePresenceRef.current
+                if (active) {
+                    try { publishPresence('/app/online.unregister', active) } catch {}
+                }
+                disconnectedRef.current = true
+                setShowIdleBanner(true)
+                client.deactivate().catch(() => {})
+            }
+        }, 30000) // 每 30 秒检查一次
+        return () => clearInterval(idleTimerRef.current)
+    }, [publishPresence])
+
+    return showIdleBanner ? (
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9998,
+            padding: '10px 16px', textAlign: 'center',
+            background: 'rgba(239, 68, 68, 0.95)', color: '#fff',
+            fontSize: 13, fontWeight: 500,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+        }}>
+            您已 5 分钟无操作，连接已断开。点击页面任意位置或按任意键可重新连接。
+        </div>
+    ) : null
+}
+
+function AnnouncementModal({ onClose }) {
+    const COUNTDOWN = 3
+    const [count, setCount] = useState(COUNTDOWN)
+    const timerRef = useRef(null)
+
+    useEffect(() => {
+        timerRef.current = setInterval(() => {
+            setCount(c => {
+                if (c <= 1) {
+                    clearInterval(timerRef.current)
+                    return 0
+                }
+                return c - 1
+            })
+        }, 1000)
+        return () => clearInterval(timerRef.current)
+    }, [])
+
+    const acknowledged = count === 0
+
+    const handleAck = () => {
+        if (!acknowledged) return
+        sessionStorage.setItem('announcement_ack_v1', String(Date.now()))
+        onClose()
+    }
+
+    return (
+        <div className="announcement-overlay" onClick={(e) => e.stopPropagation()}>
+            <div className="announcement-modal announcement-disclaimer-modal" onClick={e => e.stopPropagation()}>
+                <h3 className="announcement-title">测试版本说明</h3>
+                <div className="announcement-content">
+                    <p>您正在访问"博思AI智能体"内部测试版本，仅通过 IP 地址向受邀用户开放体验，尚未正式对外上线。</p>
+                    <p>所有功能仅供测试与反馈，不构成正式服务承诺。我们正依法办理 ICP 备案及生成式人工智能服务信息登记手续，正式服务上线前将另行通知。</p>
+                    <p><strong>测试期间：</strong></p>
+                    <p>· 不开放公开注册、充值或付费入口</p>
+                    <p>· 不收集任何个人敏感信息</p>
+                    <p>· AI 生成内容均标注"AI生成"标识，并启用敏感词过滤</p>
+                    <p>· 测试数据仅用于功能验证，结束后将统一清除</p>
+                    <p>如您发现任何问题，请通过 [测试反馈邮箱] 联系我们。</p>
+                    <p>感谢您的理解与支持！</p>
+                </div>
+                <button
+                    type="button"
+                    className={`announcement-ack-btn ${acknowledged ? 'active' : ''}`}
+                    onClick={handleAck}
+                    disabled={!acknowledged}
+                >
+                    {acknowledged ? '我已了解并同意' : `我已了解并同意（${count}s）`}
+                </button>
+            </div>
+        </div>
+    )
 }
 
 function NavBar({ authUser, onLogout, onOpenAuth }) {
@@ -154,7 +261,6 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/profile', label: '个人信息' },
         { to: '/games', label: 'AI多人游戏' },
         { to: '/admin/models', label: '模型管理' },
-        { to: '/about', label: '制作人简介' },
     ]
 
     const mobileNavLinks = [
@@ -169,7 +275,6 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/history', label: '问答列表' },
         { to: '/profile', label: '个人信息' },
         { to: '/admin/models', label: '模型管理' },
-        { to: '/about', label: '制作人简介' },
     ]
 
     return (
@@ -212,12 +317,14 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            console.log('Hamburger clicked, opening drawer');
                             setMobileOpen(true);
                         }}
                         type="button"
                     >
-                        <span /><span /><span />
+                        <span className="navbar-hamburger-icon">
+                            <span /><span /><span />
+                        </span>
+                        <span className="navbar-hamburger-label">菜单</span>
                     </button>
                 </div>
             </nav>
@@ -288,7 +395,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
     )
 }
 
-function AuthModal({ mode, onClose, onSwitch }) {
+const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
     const [loginForm, setLoginForm] = useState({ username: '', password: '' })
     const [regForm, setRegForm] = useState({ username: '', nickname: '', password: '' })
     const [error, setError] = useState('')
@@ -372,7 +479,7 @@ function AuthModal({ mode, onClose, onSwitch }) {
                             <label>昵称</label>
                             <input type="text" value={regForm.nickname}
                                    onChange={e => setRegForm({ ...regForm, nickname: e.target.value })}
-                                   placeholder="请输入昵称" required />
+                                   placeholder="选填，不填则默认使用用户名" />
                         </div>
                         <div className="auth-field">
                             <label>密码</label>
@@ -388,11 +495,59 @@ function AuthModal({ mode, onClose, onSwitch }) {
             </div>
         </div>
     )
+})
+
+const KeepAliveRoute = React.memo(function KeepAliveRoute({ pathname, matchPath, children }) {
+    const visible = pathname === matchPath
+    return (
+        <div
+            style={{
+                display: visible ? 'flex' : 'none',
+                flex: 1,
+                minHeight: 0,
+                overflow: 'hidden',
+                flexDirection: 'column'
+            }}
+            aria-hidden={!visible}
+        >
+            {children}
+        </div>
+    )
+}, (prev, next) => prev.pathname === next.pathname && prev.matchPath === next.matchPath)
+
+const ROUTES = [
+    { path: '/home', element: <Landing/> },
+    { path: '/', element: <ChatPage/> },
+    { path: '/media', element: <MediaGen/> },
+    { path: '/personal', element: <PersonalChat/> },
+    { path: '/debate', element: <Debate/> },
+    { path: '/games', element: <Games/> },
+    { path: '/games/pingpong', element: <PingPong/> },
+    { path: '/games/snakeking', element: <SnakeKing/> },
+    { path: '/games/castlesiege', element: <CastleSiege/> },
+    { path: '/history', element: <History/> },
+    { path: '/graph', element: <KnowledgeGraph/> },
+    { path: '/profile', element: <Profile/> },
+    { path: '/admin/models', element: <AdminModels/> },
+    { path: '/sql', element: <SqlExecutor/> },
+    { path: '/treehole', element: <TreeHole/> },
+]
+
+function KeepAliveShell({ pathname }) {
+    return ROUTES.map(r => (
+        <KeepAliveRoute key={r.path} pathname={pathname} matchPath={r.path}>
+            {r.element}
+        </KeepAliveRoute>
+    ))
 }
+
+const KeepAliveShellMemo = React.memo(KeepAliveShell, (prev, next) => prev.pathname === next.pathname)
 
 function AppShell(){
     const [authUser, setAuthUser] = useState(null)
     const [authModal, setAuthModal] = useState(null)
+    const [disclaimerOpen, setDisclaimerOpen] = useState(false)
+    const location = useLocation()
 
     useEffect(() => {
         const token = localStorage.getItem('auth_token')
@@ -410,41 +565,41 @@ function AppShell(){
         }
     }, [])
 
+    // 首次访问（每个会话）立即弹出测试版本说明
+    useEffect(() => {
+        const ack = sessionStorage.getItem('announcement_ack_v1')
+        if (ack) return
+        setDisclaimerOpen(true)
+    }, [])
+
     const handleLogout = () => {
         localStorage.removeItem('auth_token')
         localStorage.removeItem('auth_user')
         setAuthUser(null)
     }
 
-    const openAuth = (mode) => setAuthModal(mode)
-    const closeAuth = () => setAuthModal(null)
+    const openAuth = React.useCallback((mode) => setAuthModal(mode), [])
+    const closeAuth = React.useCallback(() => setAuthModal(null), [])
+
+    // 后台页面：不常驻 DOM，仅当路径匹配时挂载
+    const isMonitorRoute = location.pathname === '/monitor'
 
     return (
         <div className="app-layout">
             <OnlinePresenceTracker authUser={authUser} />
             <NavBar authUser={authUser} onLogout={handleLogout} onOpenAuth={openAuth} />
-            <Routes>
-                <Route path="/home" element={<Landing/>} />
-                <Route path="/" element={<ChatPage/>} />
-                <Route path="/media" element={<MediaGen/>} />
-                <Route path="/personal" element={<PersonalChat/>} />
-                <Route path="/debate" element={<Debate/>} />
-                <Route path="/games" element={<Games/>} />
-                <Route path="/games/pingpong" element={<PingPong/>} />
-                <Route path="/games/snakeking" element={<SnakeKing/>} />
-                <Route path="/games/castlesiege" element={<CastleSiege/>} />
-                <Route path="/history" element={<History/>} />
-                <Route path="/graph" element={<KnowledgeGraph/>} />
-                <Route path="/about" element={<About/>} />
-                <Route path="/profile" element={<Profile/>} />
-                <Route path="/admin/models" element={<AdminModels/>} />
-                <Route path="/sql" element={<SqlExecutor/>} />
-                <Route path="/monitor" element={<Monitor/>} />
-                <Route path="/treehole" element={<TreeHole/>} />
-                <Route path="*" element={<Landing/>} />
-            </Routes>
+            <KeepAliveShellMemo pathname={location.pathname} />
+            {/* 后台页面：仅访问时挂载，离开即卸载 */}
+            {isMonitorRoute && <Monitor/>}
+            {/* 兜底：未知路径显示 Landing */}
+            {!ROUTES.some(r => r.path === location.pathname) && !isMonitorRoute && (
+                <Landing/>
+            )}
             {authModal && (
                 <AuthModal mode={authModal} onClose={closeAuth} onSwitch={setAuthModal} />
+            )}
+            {disclaimerOpen && (
+                <AnnouncementModal onClose={() => setDisclaimerOpen(false)} />
             )}
         </div>
     )

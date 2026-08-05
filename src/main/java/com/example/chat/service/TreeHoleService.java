@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -62,7 +63,7 @@ public class TreeHoleService {
                 .build();
     }
 
-    /** 固定使用 model_configs 中 id=2 的千问模型配置 */
+    /** 固定使用 model_configs 中 id=2 的千问模型配置（树洞主模型） */
     private ModelConfig resolveModelConfig() {
         try {
             ModelConfig config = modelConfigRepository.findById(2L);
@@ -70,12 +71,181 @@ public class TreeHoleService {
         } catch (Exception e) {
             log.warn("无法读取 model_configs id=2，使用默认配置: {}", e.getMessage());
         }
-        // 降级使用 @Value 默认值
         ModelConfig fallback = new ModelConfig();
         fallback.provider = "qwen";
         fallback.model = defaultModel;
         fallback.apiKeyEncrypted = defaultApiKey;
         return fallback;
+    }
+
+    /** 固定使用 text_parse 类型的智谱模型（glm-4.6v-flash, id=9）做文件解析 / 文档生成 */
+    private ModelConfig resolveZhipuConfig() {
+        try {
+            // 优先取 id=9
+            ModelConfig primary = modelConfigRepository.findById(9L);
+            if (primary != null && "text_parse".equals(primary.modelType)
+                    && "zhipu".equalsIgnoreCase(primary.provider)
+                    && Boolean.TRUE.equals(primary.enabled)) {
+                return primary;
+            }
+            // 兜底：按 model_type=text_parse + provider=zhipu 筛选
+            return modelConfigRepository.findAllEnabledByType("text_parse")
+                    .stream()
+                    .filter(c -> "zhipu".equalsIgnoreCase(c.provider))
+                    .findFirst()
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("无法读取智谱 text_parse 模型配置: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 固定使用 id=8 的 image_parse 模型做图片解析 */
+    private ModelConfig resolveImageParseConfig() {
+        try {
+            ModelConfig config = modelConfigRepository.findById(8L);
+            if (config != null && "image_parse".equals(config.modelType)) return config;
+            // 兜底：按 model_type=image_parse 筛选
+            return modelConfigRepository.findAllEnabledByType("image_parse")
+                    .stream().findFirst().orElse(null);
+        } catch (Exception e) {
+            log.warn("无法读取 image_parse 模型配置: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 带文件的树洞请求：
+     *   - 图片文件 → id=8 qwen-vl-max 视觉解析
+     *   - 其他文件 → 智谱文本解析
+     */
+    public TreeHoleMessage askWithFile(Long userId, String question, String mood,
+                                       String fileName, byte[] fileBytes) {
+        if (!rateLimitService.isAllowed(userId)) {
+            long retry = rateLimitService.getRemainingSeconds(userId);
+            throw new RuntimeException("发送太频繁，请 " + retry + " 秒后再试");
+        }
+
+        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        boolean isImage = lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
+                || lowerName.endsWith(".png") || lowerName.endsWith(".gif")
+                || lowerName.endsWith(".webp");
+
+        // 保存记录
+        TreeHoleMessage m = new TreeHoleMessage();
+        m.reqId = UUID.randomUUID().toString();
+        m.userId = userId;
+        m.question = (question != null ? question : "") + (fileName != null ? " 📎 " + fileName : "");
+        m.mood = mood;
+        m.status = "pending";
+        treeHoleRepository.insert(m);
+
+        try {
+            String answer;
+            if (isImage) {
+                answer = handleImageFile(question, mood, fileName, fileBytes);
+            } else {
+                answer = handleTextFile(question, mood, fileName, fileBytes);
+            }
+            m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
+            m.status = "done";
+        } catch (Exception e) {
+            log.error("TreeHole 文件解析失败: {}", e.getMessage());
+            Throwable root = e.getCause() != null ? e.getCause() : e;
+            String errMsg = root.getMessage() != null ? root.getMessage() : e.getMessage();
+            try {
+                m.answerJson = objectMapper.writeValueAsString(Map.of("answer", "解析失败：" + errMsg));
+            } catch (Exception je) {
+                m.answerJson = "{\"answer\":\"解析失败：未知错误\"}";
+            }
+            m.status = "error";
+        }
+
+        treeHoleRepository.updateByReqId(m);
+        return m;
+    }
+
+    /** 图片文件：用 qwen-vl-max 多模态解析 */
+    private String handleImageFile(String question, String mood, String fileName, byte[] fileBytes) throws Exception {
+        ModelConfig config = resolveImageParseConfig();
+        if (config == null) throw new RuntimeException("图片解析模型未配置（id=8）");
+
+        String baseUrl = resolveBaseUrl(config);
+        String apiKey = config.apiKeyEncrypted;
+
+        // 推断 mimeType
+        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        String mimeType = lowerName.endsWith(".png") ? "image/png"
+                : lowerName.endsWith(".gif") ? "image/gif"
+                : lowerName.endsWith(".webp") ? "image/webp"
+                : "image/jpeg";
+
+        String fileBase64 = Base64.getEncoder().encodeToString(fileBytes);
+        String imageQuestion = (question != null && !question.isBlank()) ? question : "请描述这张图片的内容";
+        if (mood != null && !mood.isBlank()) {
+            imageQuestion = "[情绪：" + mood + "] " + imageQuestion;
+        }
+
+        List<Map<String, Object>> contentParts = new ArrayList<>();
+        contentParts.add(Map.of("type", "text", "text", imageQuestion));
+        contentParts.add(Map.of("type", "image_url", "image_url",
+                Map.of("url", "data:" + mimeType + ";base64," + fileBase64)));
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT + "\n\n如果用户上传了图片，请结合图片内容给予温暖的情感陪伴与回应。"));
+        messages.add(Map.of("role", "user", "content", contentParts));
+
+        log.info("TreeHole 图片解析 -> {} model={}", baseUrl, config.model);
+        return callLLM(baseUrl, apiKey, config.model, messages);
+    }
+
+    /** 非图片文件：提取文本内容，用智谱解析 */
+    private String handleTextFile(String question, String mood, String fileName, byte[] fileBytes) throws Exception {
+        ModelConfig zhipu = resolveZhipuConfig();
+        if (zhipu == null) throw new RuntimeException("智谱模型未配置，请在模型管理中启用智谱");
+
+        String baseUrl = resolveBaseUrl(zhipu);
+        String apiKey = zhipu.apiKeyEncrypted;
+        String model = zhipu.model;
+
+        String fileText = "";
+        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        if (fileBytes != null && fileBytes.length > 0) {
+            if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") ||
+                lowerName.endsWith(".csv") || lowerName.endsWith(".json") ||
+                lowerName.endsWith(".log") || lowerName.endsWith(".xml")) {
+                fileText = new String(fileBytes, StandardCharsets.UTF_8);
+                if (fileText.length() > 8000) fileText = fileText.substring(0, 8000) + "\n...(内容已截断)";
+            } else {
+                fileText = "[已上传文件: " + fileName + "，共 " + fileBytes.length / 1024 + " KB]";
+            }
+        }
+
+        String lowerQ = question != null ? question.toLowerCase() : "";
+        boolean genDoc = lowerQ.contains("生成文档") || lowerQ.contains("生成word") || lowerQ.contains("生成报告");
+        boolean genPpt = lowerQ.contains("生成ppt") || lowerQ.contains("生成幻灯片") || lowerQ.contains("做ppt");
+
+        String systemPrompt;
+        if (genPpt) {
+            systemPrompt = "你是专业PPT内容策划师。请根据提供的材料，生成一份结构完整的PPT大纲，" +
+                    "包含标题页、目录、各章节要点（每页3~5条），以及结尾页。用Markdown格式输出，" +
+                    "每个章节用 ## 标注，每条要点用 - 开头。结尾加「供您参考」。";
+        } else if (genDoc) {
+            systemPrompt = "你是专业文档撰写助手。请根据提供的材料，生成一份结构完整、逻辑清晰的文档，" +
+                    "包含标题、摘要、正文各节（用 ## 标注）以及结语。结尾加「供您参考」。";
+        } else {
+            systemPrompt = SYSTEM_PROMPT + "\n\n请结合用户上传的文件内容进行温暖的情感陪伴与回应。";
+        }
+
+        String userContent = question != null && !question.isBlank() ? question : "请解析这份文件";
+        if (!fileText.isBlank()) userContent += "\n\n【文件内容】\n" + fileText;
+        if (mood != null && !mood.isBlank()) userContent = "[情绪：" + mood + "] " + userContent;
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", systemPrompt));
+        messages.add(Map.of("role", "user", "content", userContent));
+
+        return callLLM(baseUrl, apiKey, model, messages);
     }
 
     private String resolveBaseUrl(ModelConfig config) {
@@ -91,6 +261,7 @@ public class TreeHoleService {
             case "deepseek" -> "https://api.deepseek.com/v1";
             case "qwen"     -> "https://dashscope.aliyuncs.com/compatible-mode/v1";
             case "doubao"   -> "https://ark.cn-beijing.volces.com/api/v3";
+            case "zhipu"    -> "https://open.bigmodel.cn/api/paas/v4";
             default         -> defaultBaseUrl;
         };
     }
@@ -152,11 +323,11 @@ public class TreeHoleService {
         // 调用 AI
         try {
             String answer = callLLM(effectiveBaseUrl, effectiveApiKey, effectiveModel, messages);
-            m.answerJson = answer;
+            m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
             m.status = "done";
         } catch (Exception e) {
             log.error("TreeHole AI 调用失败: {}", e.getMessage());
-            m.answerJson = "树洞暂时出了点小问题，请稍后再试...";
+            m.answerJson = "{\"answer\":\"树洞暂时出了点小问题，请稍后再试...\"}";
             m.status = "error";
         }
 

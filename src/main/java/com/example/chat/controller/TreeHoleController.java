@@ -6,6 +6,7 @@ import com.example.chat.service.TreeHoleService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,27 @@ public class TreeHoleController {
             return ResponseEntity.ok(result);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /** 带文件的树洞请求（文件解析 / 生成文档 / 生成PPT，由智谱完成） */
+    @PostMapping("/ask-with-file")
+    public ResponseEntity<?> askWithFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "question", required = false, defaultValue = "") String question,
+            @RequestParam(value = "mood", required = false, defaultValue = "") String mood,
+            HttpServletRequest request) {
+        Long userId = extractUserId(request);
+        if (userId == null) return ResponseEntity.status(401).body("未登录");
+        if (file == null || file.isEmpty()) return ResponseEntity.badRequest().body("未上传文件");
+        try {
+            TreeHoleMessage result = treeHoleService.askWithFile(
+                    userId, question, mood, file.getOriginalFilename(), file.getBytes());
+            return ResponseEntity.ok(result);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("文件处理失败: " + e.getMessage());
         }
     }
 

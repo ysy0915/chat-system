@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -29,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @Tag("integration")
 class AiLiveCallTest {
 
+    private static final Logger log = LoggerFactory.getLogger(AiLiveCallTest.class);
     private static final String BASE_URL =
             "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
     private static final String MODEL = "qwen-plus";
@@ -52,7 +55,7 @@ class AiLiveCallTest {
 
         String answer = callLLM(apiKey, messages);
 
-        System.out.println("【千问回答】" + answer);
+        log.info("【千问回答】{}", answer);
         assertNotNull(answer);
         assertFalse(answer.isBlank(), "AI 回答不应为空");
         assertTrue(answer.length() > 10, "AI 回答应有实质内容");
@@ -74,7 +77,7 @@ class AiLiveCallTest {
 
         String answer = callLLM(apiKey, messages);
 
-        System.out.println("【多轮对话回答】" + answer);
+        log.info("【多轮对话回答】{}", answer);
         assertNotNull(answer);
         assertFalse(answer.isBlank());
     }

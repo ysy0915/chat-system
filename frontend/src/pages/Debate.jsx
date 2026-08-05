@@ -3,20 +3,15 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
-
-const generateId = () => {
-  return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 10)
-}
+import { formatText } from '../utils/format'
+import { generateId } from '../utils/id'
+import { useAutoScroll } from '../hooks/useAutoScroll'
 
 const MODEL_COLORS = {
-  1: { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.3)', accent: '#38bdf8', icon: '🔮' },
+  1: { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.3)', accent: '#38bdf8', icon: '🫧' },
   2: { bg: 'rgba(168, 85, 247, 0.08)', border: 'rgba(168, 85, 247, 0.3)', accent: '#a855f7', icon: '🤖' },
   3: { bg: 'rgba(239, 68, 68, 0.08)', border: 'rgba(239, 68, 68, 0.3)', accent: '#ef4444', icon: '🔥' },
-}
-
-const formatText = (text) => {
-  if (!text) return []
-  return text.split('\n').filter(s => s.trim()).map(s => s.trim())
+  4: { bg: 'rgba(52, 211, 153, 0.08)', border: 'rgba(52, 211, 153, 0.3)', accent: '#34d399', icon: '🧬' },
 }
 
 export default function Debate() {
@@ -27,11 +22,12 @@ export default function Debate() {
   const [thinking, setThinking] = useState([])
   const [finalAnswer, setFinalAnswer] = useState(null)
   const [synthesizing, setSynthesizing] = useState(false)
+  const [synthesizer, setSynthesizer] = useState('')
   const [error, setError] = useState(null)
   const [modelNames, setModelNames] = useState({})
   const [wsStatus, setWsStatus] = useState('connecting')
   const stompRef = useRef(null)
-  const scrollRef = useRef(null)
+  const scrollRef = useAutoScroll([rounds, finalAnswer, synthesizing])
   const [userId] = useState(() => {
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -44,7 +40,7 @@ export default function Debate() {
     const sock = new SockJS('/ws/chat?userId=' + userId)
     const client = new Client({
       webSocketFactory: () => sock,
-      debug: (str) => console.log('[STOMP]', str),
+      debug: () => {},
       onConnect: () => {
         setWsStatus('connected')
         client.subscribe('/topic/debate.' + userId, (msg) => {
@@ -80,6 +76,7 @@ export default function Debate() {
             } else if (p.type === 'synthesizing') {
               setThinking([])
               setSynthesizing(true)
+              setSynthesizer(p.synthesizer || '千问')
             } else if (p.type === 'done') {
               setFinalAnswer(p.answer)
               setDebating(false)
@@ -116,6 +113,7 @@ export default function Debate() {
     setCurrentRound(0)
     setFinalAnswer(null)
     setSynthesizing(false)
+    setSynthesizer('')
     setThinking([])
     setError(null)
     setModelNames({})
@@ -152,11 +150,17 @@ export default function Debate() {
       {!debating && !finalAnswer && rounds.length === 0 && !error && (
         <div className="chat-welcome">
           <h1>⚔️ AI 博弈</h1>
-          <p>三个大模型围绕你的问题展开辩论，3轮讨论后给出整合结论</p>
+          <p>三个大模型围绕你的问题展开辩论，3轮讨论后由千问整合结论</p>
           <div className="debate-models-preview">
-            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>🔮 模型 1</span>
-            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[2].border, color: MODEL_COLORS[2].accent }}>🤖 模型 2</span>
-            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[3].border, color: MODEL_COLORS[3].accent }}>🔥 模型 3</span>
+            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>
+              {MODEL_COLORS[1].icon} {modelNames[1] || '豆包'}
+            </span>
+            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[2].border, color: MODEL_COLORS[2].accent }}>
+              {MODEL_COLORS[2].icon} {modelNames[2] || '千问'}
+            </span>
+            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[3].border, color: MODEL_COLORS[3].accent }}>
+              {MODEL_COLORS[3].icon} {modelNames[3] || 'DeepSeek'}
+            </span>
           </div>
         </div>
       )}
@@ -194,6 +198,7 @@ export default function Debate() {
                       {formatText(resp.answer).map((line, i) => (
                         <p key={i}>{line}</p>
                       ))}
+                      <span className="ai-generated-tag">AI生成</span>
                     </div>
                   </div>
                 )
@@ -221,7 +226,7 @@ export default function Debate() {
         {synthesizing && (
           <div className="debate-synthesizing">
             <div className="debate-synth-spinner"></div>
-            <span>模型 2 正在整合各方观点，生成最终结论...</span>
+            <span>{synthesizer || '千问'} 正在整合各方观点，生成最终结论...</span>
           </div>
         )}
 
@@ -235,6 +240,7 @@ export default function Debate() {
               {formatText(finalAnswer).map((line, i) => (
                 <p key={i}>{line}</p>
               ))}
+              <span className="ai-generated-tag">AI生成</span>
             </div>
           </div>
         )}

@@ -1,6 +1,19 @@
 import React, { useState, useRef } from 'react'
 import axios from 'axios'
 
+const WRITE_KEYWORDS = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'GRANT', 'REVOKE', 'SHUTDOWN']
+const READ_KEYWORDS = ['SELECT', 'SHOW', 'DESC', 'EXPLAIN']
+
+function classifySql(sql) {
+  const upper = sql.trim().toUpperCase()
+  // 去掉开头注释和空白
+  const cleaned = upper.replace(/^--.*$/gm, '').replace(/^\/\*[\s\S]*?\*\//g, '').trim()
+  const firstWord = cleaned.split(/\s+/)[0]
+  if (WRITE_KEYWORDS.some(k => cleaned.includes(k))) return 'write'
+  if (READ_KEYWORDS.includes(firstWord)) return 'read'
+  return 'unknown'
+}
+
 export default function SqlExecutor() {
   const [token, setToken] = useState(localStorage.getItem('sql_token') || '')
   const [password, setPassword] = useState('')
@@ -10,6 +23,12 @@ export default function SqlExecutor() {
   const [executing, setExecuting] = useState(false)
   const [execTime, setExecTime] = useState(null)
   const textareaRef = useRef(null)
+  // 二次验证状态
+  const [confirmModal, setConfirmModal] = useState(null)
+  // { sqlType: 'write'|'read'|'unknown', sqlText: string }
+  const [verifyPwd, setVerifyPwd] = useState('')
+  const [verifyError, setVerifyError] = useState('')
+  const [verifying, setVerifying] = useState(false)
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -36,6 +55,14 @@ export default function SqlExecutor() {
       setResult({ error: 'SQL长度不能超过5000字符' })
       return
     }
+    // 进入二次确认流程
+    const sqlType = classifySql(sql)
+    setVerifyPwd('')
+    setVerifyError('')
+    setConfirmModal({ sqlType, sqlText: sql.trim() })
+  }
+
+  async function doExecute() {
     setExecuting(true)
     setResult(null)
     setExecTime(null)
@@ -52,6 +79,38 @@ export default function SqlExecutor() {
       else if (err.code === 'ECONNABORTED') setResult({ error: '执行超时（60秒），请优化SQL' })
       else setResult({ error: err.response?.data?.error || err.message })
     } finally { setExecuting(false) }
+  }
+
+  // 二次验证：写操作必须重新输入密码；读操作仅需确认
+  async function handleConfirmExecute() {
+    if (!confirmModal) return
+    const { sqlType } = confirmModal
+    if (sqlType === 'write') {
+      if (!verifyPwd.trim()) { setVerifyError('请输入管理密码进行二次验证'); return }
+      setVerifying(true)
+      setVerifyError('')
+      try {
+        // 复用 login 接口校验密码
+        await axios.post('/api/v1/sql/login', { password: verifyPwd })
+        setVerifying(false)
+        setConfirmModal(null)
+        setVerifyPwd('')
+        doExecute()
+      } catch {
+        setVerifying(false)
+        setVerifyError('密码错误，请重新输入')
+      }
+    } else {
+      // read / unknown：直接确认
+      setConfirmModal(null)
+      doExecute()
+    }
+  }
+
+  function handleCancelConfirm() {
+    setConfirmModal(null)
+    setVerifyPwd('')
+    setVerifyError('')
   }
 
   function handleKeyDown(e) {
@@ -193,6 +252,54 @@ export default function SqlExecutor() {
                 </>
               )}
             </div>
+        )}
+
+        {confirmModal && (
+          <div className="sql-confirm-overlay" onClick={handleCancelConfirm}>
+            <div className="sql-confirm-modal" onClick={e => e.stopPropagation()}>
+              <div className="sql-confirm-header">
+                <span className={`sql-confirm-type ${confirmModal.sqlType === 'write' ? 'danger' : confirmModal.sqlType === 'read' ? 'safe' : 'warn'}`}>
+                  {confirmModal.sqlType === 'write' ? '⚠️ 写操作' : confirmModal.sqlType === 'read' ? '📖 读操作' : '❓ 未知类型'}
+                </span>
+                <h3>二次确认</h3>
+              </div>
+              <div className="sql-confirm-body">
+                <p className="sql-confirm-tip">
+                  {confirmModal.sqlType === 'write'
+                    ? '检测到该 SQL 会修改数据，为安全起见，请再次输入管理密码以确认执行：'
+                    : confirmModal.sqlType === 'read'
+                      ? '即将执行查询操作，请确认 SQL 内容无误后继续。'
+                      : '无法识别该 SQL 类型，请仔细确认后继续。'}
+                </p>
+                <div className="sql-confirm-sql-preview">
+                  <code>{confirmModal.sqlText.length > 300 ? confirmModal.sqlText.slice(0, 300) + '...' : confirmModal.sqlText}</code>
+                </div>
+                {confirmModal.sqlType === 'write' && (
+                  <div className="sql-confirm-field">
+                    <input
+                      type="password"
+                      value={verifyPwd}
+                      onChange={e => setVerifyPwd(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleConfirmExecute() } }}
+                      placeholder="请输入管理密码"
+                      autoFocus
+                      className="sql-confirm-input"
+                      disabled={verifying}
+                    />
+                    {verifyError && <div className="sql-confirm-error">{verifyError}</div>}
+                  </div>
+                )}
+              </div>
+              <div className="sql-confirm-actions">
+                <button type="button" className="sql-confirm-btn cancel" onClick={handleCancelConfirm} disabled={verifying}>
+                  取消
+                </button>
+                <button type="button" className={`sql-confirm-btn ${confirmModal.sqlType === 'write' ? 'danger' : 'primary'}`} onClick={handleConfirmExecute} disabled={verifying}>
+                  {verifying ? '验证中...' : confirmModal.sqlType === 'write' ? '验证并执行' : '确认执行'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
   )

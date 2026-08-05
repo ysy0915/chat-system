@@ -267,3 +267,61 @@
     margin-bottom: 0;
 }
 
+/* ===== Disclaimer Modal（首次访问测试说明） ===== */
+.announcement-disclaimer-modal {
+    width: 380px;
+    max-width: 92vw;
+    max-height: 80vh;
+    padding: 24px 22px 20px;
+}
+
+.announcement-disclaimer-modal .announcement-title {
+    font-size: 18px;
+    text-align: center;
+    margin: 0 0 16px 0;
+    padding-right: 0;
+}
+
+.announcement-disclaimer-modal .announcement-content {
+    font-size: 13px;
+    line-height: 1.85;
+    color: var(--text-secondary);
+}
+
+.announcement-disclaimer-modal .announcement-content p {
+    margin: 0 0 8px 0;
+}
+
+.announcement-ack-btn {
+    display: block;
+    width: 100%;
+    margin-top: 18px;
+    padding: 11px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    background: rgba(56, 189, 248, 0.08);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: not-allowed;
+    transition: all 0.25s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.announcement-ack-btn.active {
+    background: linear-gradient(135deg, #38bdf8, #8b5cf6);
+    border-color: transparent;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.3);
+}
+
+.announcement-ack-btn.active:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
+}
+
+.announcement-ack-btn.active:active {
+    transform: scale(0.98);
+}
+

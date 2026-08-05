@@ -76,3 +76,18 @@ body::after {
     height: 100vh;
 }
 
+/* ─── AI 生成标识（全局通用） ─── */
+.ai-generated-tag {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 1px 8px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    letter-spacing: 0.3px;
+    user-select: none;
+}
+

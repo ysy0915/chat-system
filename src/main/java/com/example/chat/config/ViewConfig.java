@@ -1,12 +1,32 @@
 package com.example.chat.config;
 
+import com.example.chat.security.IpRateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class ViewConfig implements WebMvcConfigurer {
+
+    private final IpRateLimitInterceptor ipRateLimitInterceptor;
+
+    public ViewConfig(IpRateLimitInterceptor ipRateLimitInterceptor) {
+        this.ipRateLimitInterceptor = ipRateLimitInterceptor;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(ipRateLimitInterceptor)
+                .addPathPatterns("/api/**", "/ws/**")
+                .excludePathPatterns(
+                        "/chat/assets/**",
+                        "/chat/index.html",
+                        "/favicon.ico",
+                        "/actuator/**"
+                );
+    }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
@@ -29,7 +49,6 @@ public class ViewConfig implements WebMvcConfigurer {
         registry.addViewController("/chat/media").setViewName("forward:/chat/index.html");
         registry.addViewController("/chat/history").setViewName("forward:/chat/index.html");
         registry.addViewController("/chat/profile").setViewName("forward:/chat/index.html");
-        registry.addViewController("/chat/about").setViewName("forward:/chat/index.html");
         registry.addViewController("/chat/admin/models").setViewName("forward:/chat/index.html");
         registry.addViewController("/chat/sql").setViewName("forward:/chat/index.html");
         registry.addViewController("/chat/monitor").setViewName("forward:/chat/index.html");

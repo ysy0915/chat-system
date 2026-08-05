@@ -1,5 +1,7 @@
 package com.example.chat.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -7,6 +9,7 @@ import java.time.Duration;
 
 @Service
 public class RateLimitService {
+    private static final Logger log = LoggerFactory.getLogger(RateLimitService.class);
     private final RedisTemplate<String, String> redisTemplate;
 
     private static final int PER_MINUTE_LIMIT = 20;
@@ -26,7 +29,7 @@ public class RateLimitService {
                 redisTemplate.expire(minuteKey, Duration.ofMinutes(1));
             }
             if (minuteCount != null && minuteCount > PER_MINUTE_LIMIT) {
-                System.out.println("[RATE_LIMIT] userId=" + userId + " minuteCount=" + minuteCount + " BLOCKED");
+                log.warn("[RATE_LIMIT] userId={} minuteCount={} BLOCKED", userId, minuteCount);
                 return false;
             }
 
@@ -35,13 +38,13 @@ public class RateLimitService {
                 redisTemplate.expire(hourKey, Duration.ofHours(1));
             }
             if (hourCount != null && hourCount > PER_HOUR_LIMIT) {
-                System.out.println("[RATE_LIMIT] userId=" + userId + " hourCount=" + hourCount + " BLOCKED");
+                log.warn("[RATE_LIMIT] userId={} hourCount={} BLOCKED", userId, hourCount);
                 return false;
             }
 
             return true;
         } catch (Exception ex) {
-            System.err.println("[WARN] RateLimit Redis error, allowing request: " + ex.getMessage());
+            log.warn("[WARN] RateLimit Redis error, allowing request: {}", ex.getMessage());
             return true;
         }
     }

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import '../styles/treehole.css'
+import { formatAnswer } from '../utils/format'
+import { useAuthUser } from '../hooks/useAuthUser'
 
 const MOODS = [
     { label: '😢 难过', value: '难过' },
@@ -13,14 +15,6 @@ const MOODS = [
     { label: '🤔 迷茫', value: '迷茫' },
     { label: '😴 疲惫', value: '疲惫' },
 ]
-
-const formatAnswer = (text) => {
-    if (!text) return []
-    let result = text
-        .replace(/\n{2,}/g, '\n')
-        .replace(/([。！？；.!?;])(?=\S)/g, '$1\n')
-    return result.split('\n').map(s => s.trim()).filter(Boolean)
-}
 
 const formatTime = (ts) => {
     if (!ts) return ''
@@ -40,25 +34,16 @@ const getAuthHeaders = () => {
 }
 
 export default function TreeHole() {
-    const [authUser, setAuthUser] = useState(null)
+    const authUser = useAuthUser()
     const [messages, setMessages] = useState([])   // { role: 'user'|'ai', text, mood, time }
     const [input, setInput] = useState('')
     const [mood, setMood] = useState('')
     const [typing, setTyping] = useState(false)
     const [error, setError] = useState('')
+    const [selectedFile, setSelectedFile] = useState(null)
     const messagesEndRef = useRef(null)
     const textareaRef = useRef(null)
-
-    // 读取登录状态
-    useEffect(() => {
-        const userStr = localStorage.getItem('auth_user')
-        if (userStr) {
-            try { setAuthUser(JSON.parse(userStr)) } catch {}
-        }
-        const handler = (e) => setAuthUser(e.detail)
-        window.addEventListener('auth-changed', handler)
-        return () => window.removeEventListener('auth-changed', handler)
-    }, [])
+    const fileInputRef = useRef(null)
 
     // 加载历史记录
     useEffect(() => {
@@ -72,7 +57,9 @@ export default function TreeHole() {
                         msgs.push({ role: 'user', text: m.question, mood: m.mood, time: m.createdAt })
                     }
                     if (m.answerJson && m.status === 'done') {
-                        msgs.push({ role: 'ai', text: m.answerJson, time: m.createdAt })
+                        let aiText = m.answerJson
+                        try { const p = JSON.parse(aiText); if (p.answer) aiText = p.answer } catch {}
+                        msgs.push({ role: 'ai', text: aiText, time: m.createdAt })
                     }
                 })
                 setMessages(msgs)
@@ -95,39 +82,63 @@ export default function TreeHole() {
 
     const handleSend = useCallback(async () => {
         const text = input.trim()
-        if (!text || typing) return
+        if (!text && !selectedFile || typing) return
         setError('')
         setInput('')
 
-        // 追加用户消息
-        setMessages(prev => [...prev, { role: 'user', text, mood, time: new Date().toISOString() }])
+        const fileToSend = selectedFile
+        setSelectedFile(null)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+
+        const fileLabel = fileToSend ? ` 📎 ${fileToSend.name}` : ''
+        setMessages(prev => [...prev, { role: 'user', text: text + fileLabel, mood, time: new Date().toISOString() }])
         setTyping(true)
 
         try {
-            const res = await axios.post('/api/v1/treehole/ask',
-                { question: text, mood },
-                { headers: getAuthHeaders() }
-            )
-            const data = res.data
+            let data
+            if (fileToSend) {
+                const formData = new FormData()
+                formData.append('file', fileToSend, fileToSend.name)
+                formData.append('question', text)
+                formData.append('mood', mood)
+                const res = await axios.post('/api/v1/treehole/ask-with-file', formData, {
+                    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+                    timeout: 120000
+                })
+                data = res.data
+            } else {
+                const res = await axios.post('/api/v1/treehole/ask',
+                    { question: text, mood },
+                    { headers: getAuthHeaders() }
+                )
+                data = res.data
+            }
+
+            // 解析 answerJson（可能是 JSON 字符串或纯文本）
+            let answerText = data.answerJson || '树洞暂时没有回应...'
+            try {
+                const parsed = JSON.parse(answerText)
+                if (parsed.answer) answerText = parsed.answer
+            } catch {}
+
             setMessages(prev => [...prev, {
                 role: 'ai',
-                text: data.answerJson || '树洞暂时没有回应...',
+                text: answerText,
                 time: new Date().toISOString()
             }])
         } catch (err) {
             const msg = err.response?.data || '发送失败，请稍后重试'
             setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
-            // 移除最后一条用户消息（回滚）
             setMessages(prev => prev.slice(0, -1))
         } finally {
             setTyping(false)
         }
-    }, [input, mood, typing])
+    }, [input, mood, typing, selectedFile])
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            handleSend()
+            void handleSend()
         }
     }
 
@@ -206,6 +217,7 @@ export default function TreeHole() {
                                             {formatAnswer(msg.text).map((line, i) => (
                                                 <p key={i}>{line}</p>
                                             ))}
+                                            <span className="ai-generated-tag">AI生成</span>
                                         </div>
                                         <div className="treehole-msg-meta">{formatTime(msg.time)}</div>
                                     </>
@@ -228,6 +240,23 @@ export default function TreeHole() {
             {/* 输入区 */}
             <div className="treehole-input-wrap">
                 <div className="treehole-input-box">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
+                        accept=".txt,.csv,.json,.log,.md,.xml,.xlsx,.xls,.pptx,.ppt,.jpg,.jpeg,.png,.gif,.webp"
+                        onChange={e => setSelectedFile(e.target.files[0] || null)}
+                    />
+                    {selectedFile && (
+                        <div className="file-preview-bar">
+                            <span className="file-preview-name">📎 {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)}KB)</span>
+                            <button
+                                type="button"
+                                className="file-preview-remove"
+                                onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
+                            >✕</button>
+                        </div>
+                    )}
                     <textarea
                         ref={textareaRef}
                         className="treehole-textarea"
@@ -239,9 +268,20 @@ export default function TreeHole() {
                         disabled={typing}
                     />
                     <button
+                        type="button"
+                        className="attach-btn"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="上传文件（智谱解析）"
+                        style={{ marginRight: 4 }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </button>
+                    <button
                         className="treehole-send-btn"
                         onClick={handleSend}
-                        disabled={!input.trim() || typing}
+                        disabled={(!input.trim() && !selectedFile) || typing}
                         title="发送"
                     >
                         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -249,7 +289,7 @@ export default function TreeHole() {
                         </svg>
                     </button>
                 </div>
-                <div className="treehole-hint">按 Enter 发送 · Shift+Enter 换行 · 你的对话仅自己可见</div>
+                <div className="treehole-hint">按 Enter 发送 · Shift+Enter 换行 · 可上传文件由智谱解析 · 你的对话仅自己可见</div>
             </div>
         </div>
     )

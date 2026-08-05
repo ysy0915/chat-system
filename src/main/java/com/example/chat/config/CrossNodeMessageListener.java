@@ -1,6 +1,8 @@
 package com.example.chat.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -11,6 +13,8 @@ import java.util.Map;
 
 @Component
 public class CrossNodeMessageListener implements MessageListener {
+
+    private static final Logger log = LoggerFactory.getLogger(CrossNodeMessageListener.class);
 
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
@@ -44,7 +48,7 @@ public class CrossNodeMessageListener implements MessageListener {
             Object data = payload.get("data");
             messagingTemplate.convertAndSend(destination, data);
         } catch (Exception e) {
-            System.err.println("[CrossNode] 消息处理失败: " + e.getMessage());
+            log.warn("[CrossNode] 消息处理失败: {}", e.getMessage());
         }
     }
 }

@@ -5,6 +5,8 @@ import com.example.chat.entity.User;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.service.BroadcastService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.Header;
@@ -21,6 +23,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/messages")
 public class MessageController {
+    private static final Logger log = LoggerFactory.getLogger(MessageController.class);
     private final MessageRepository messageRepository;
     private final RabbitTemplate rabbitTemplate;
     private final com.example.chat.service.ChatProcessor chatProcessor;
@@ -77,7 +80,7 @@ public class MessageController {
         userId = user.id;
         String userName = user != null && user.nickname != null && !user.nickname.isBlank() ? user.nickname : "用户" + userId;
 
-        System.out.println("[DEBUG] createMessage body=" + body + " resolved reqId=" + reqId);
+        log.debug("[DEBUG] createMessage body={} resolved reqId={}", body, reqId);
         Message m = new Message();
         m.reqId = reqId;
         m.userId = userId;
@@ -111,7 +114,7 @@ public class MessageController {
                 try {
                     rabbitTemplate.convertAndSend("chat.exchange", "chat.request", messagePayload);
                 } catch (Exception ex) {
-                    System.err.println("Rabbit send failed, falling back: " + ex.getMessage());
+                    log.warn("Rabbit send failed, falling back: {}", ex.getMessage());
                     chatProcessor.process(messagePayload);
                 }
             } else {
@@ -172,7 +175,7 @@ public class MessageController {
                 }
                 storedQuestion = question + "\n\n--- 以下是文件 [" + file.getOriginalFilename() + "] 的内容 ---\n" + fileText + "\n--- 文件内容结束 ---";
             } catch (Exception ex) {
-                System.err.println("[WARN] Failed to extract file content for storage: " + ex.getMessage());
+                log.warn("[WARN] Failed to extract file content for storage: {}", ex.getMessage());
                 storedQuestion = question + " [附带文件: " + file.getOriginalFilename() + "]";
             }
         }
@@ -189,7 +192,7 @@ public class MessageController {
             chatProcessor.processWithFile(reqId, userId, question,
                     file.getOriginalFilename(), file.getBytes(), mimeType);
         } catch (Exception ex) {
-            System.err.println("processWithFile failed: " + ex.getMessage());
+            log.error("processWithFile failed: {}", ex.getMessage());
             broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", "文件处理失败: " + ex.getMessage()));
         }
@@ -316,7 +319,7 @@ public class MessageController {
                 }
             } catch (NumberFormatException ignored) {
             } catch (Exception e) {
-                System.err.println("[WARN] Failed to lookup user: " + e.getMessage());
+                log.warn("[WARN] Failed to lookup user: {}", e.getMessage());
             }
             sessionTracker.registerUser(sessionId, userId, displayName, page);
         }

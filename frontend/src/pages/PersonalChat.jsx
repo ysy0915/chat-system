@@ -3,26 +3,16 @@ import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-
-const formatAnswer = (text) => {
-  if (!text) return []
-  let result = text
-      .replace(/\n{2,}/g, '\n')
-      .replace(/([。！？；.!?;])(?=\S)/g, '$1\n')
-  return result.split('\n').map(s => s.trim()).filter(Boolean)
-}
-
-const generateId = () => {
-  return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 10)
-}
+import { formatAnswer } from '../utils/format'
+import { generateId } from '../utils/id'
+import { useAuthUser } from '../hooks/useAuthUser'
+import { useAutoScroll } from '../hooks/useAutoScroll'
+import { useVoiceInput } from '../hooks/useVoiceInput'
 
 export default function PersonalChat() {
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
-  const [authUser, setAuthUser] = useState(null)
   const [onlineCount, setOnlineCount] = useState(0)
   const [selectedFile, setSelectedFile] = useState(null)
   const [circuitOpen, setCircuitOpen] = useState(false)
@@ -45,27 +35,44 @@ export default function PersonalChat() {
     localStorage.setItem('chat_user_id', String(id))
     return id
   })
-  const [isRecording, setIsRecording] = useState(false)
-  const recognitionRef = useRef(null)
-  const [speechSupported, setSpeechSupported] = useState(false)
-  const messagesEnd = useRef(null)
+  const [speechSupported, setSpeechSupported] = useState(() => !!(window.SpeechRecognition || window.webkitSpeechRecognition))
   const userIdResolved = useRef(false)
   const clientRef = useRef(null)
   const connectedRef = useRef(false)
+  const [currentModel, setCurrentModel] = useState('AI')
+  const [showModelMenu, setShowModelMenu] = useState(false)
 
-  useEffect(() => {
-    const userStr = localStorage.getItem('auth_user')
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr)
-        setAuthUser(user)
-      } catch {}
+  const authUser = useAuthUser()
+  const scrollRef = useAutoScroll([messages, typing])
+  const { recording: isRecording, toggle: toggleVoice } = useVoiceInput(setQuestion)
+
+  const MODEL_LIST = [
+    { label: '智谱 GLM', keyword: '切换智谱', provider: 'zhipu' },
+    { label: '豆包', keyword: '切换豆包', provider: 'doubao' },
+    { label: 'DeepSeek', keyword: '切换deepseek', provider: 'deepseek' },
+    { label: '千问', keyword: '切换千问', provider: 'qwen' },
+  ]
+
+  const switchModel = async (model) => {
+    setShowModelMenu(false)
+    if (circuitOpen) return
+    const reqId = generateId()
+    setMessages(prev => [...prev, { role: 'user', content: model.keyword }])
+    setTyping(true)
+    try {
+      await axios.post('/api/v1/messages', {
+        req_id: reqId,
+        question: model.keyword,
+        user_id: userId,
+        private: 'true',
+        ai_answer: true
+      }, { timeout: 30000 })
+      setCurrentModel(model.label)
+    } catch (e) {
+      setTyping(false)
+      setMessages(prev => [...prev, { role: 'system', content: '切换失败，请重试' }])
     }
-  }, [])
-
-  useEffect(() => {
-    setSpeechSupported(!!SpeechRecognition)
-  }, [])
+  }
 
   useEffect(() => {
     if (!userId) return
@@ -119,6 +126,8 @@ export default function PersonalChat() {
             } else if (payload.type === 'error') {
               setTyping(false)
               triggerFailure()
+              const errMsg = payload.message || '处理失败，请稍后重试'
+              setMessages(prev => [...prev, { role: 'system', content: '❌ ' + errMsg }])
             }
           } catch (e) { console.error(e) }
         })
@@ -144,10 +153,6 @@ export default function PersonalChat() {
     }
   }, [userId])
 
-  useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, typing])
-
   const triggerFailure = () => {
     failCountRef.current += 1
     if (failCountRef.current >= CIRCUIT_THRESHOLD && !circuitTimerRef.current) {
@@ -168,9 +173,10 @@ export default function PersonalChat() {
       setMessages(prev => [...prev, { role: 'system', content: '⚡ 服务熔断中，请稍后再试' }])
       return
     }
-    const text = question.trim()
-    const reqId = generateId()
     const fileToSend = selectedFile
+    const isImageFile = fileToSend && fileToSend.type.startsWith('image/')
+    const text = question.trim() || (isImageFile ? '请描述这张图片' : (fileToSend ? '请分析这份文件' : ''))
+    const reqId = generateId()
 
     const fileLabel = fileToSend ? ` 📎 ${fileToSend.name}` : ''
     setMessages(prev => [...prev, { role: 'user', content: text + fileLabel }])
@@ -231,38 +237,12 @@ export default function PersonalChat() {
     }
   }
 
-  const toggleVoice = () => {
-    if (!SpeechRecognition) return
-    if (isRecording) { recognitionRef.current?.stop(); return }
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'zh-CN'
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.onstart = () => setIsRecording(true)
-    recognition.onresult = (event) => {
-      let transcript = ''
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript
-      }
-      setQuestion(transcript)
-    }
-    recognition.onerror = (event) => {
-      setIsRecording(false)
-      if (event.error === 'not-allowed') {
-        setMessages(prev => [...prev, { role: 'system', content: '请允许麦克风权限以使用语音输入' }])
-      }
-    }
-    recognition.onend = () => setIsRecording(false)
-    recognitionRef.current = recognition
-    recognition.start()
-  }
-
   const getUserAvatar = () => {
     return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f430.png'
   }
 
   return (
-    <div className="chat-container">
+    <div className="chat-container" onClick={() => showModelMenu && setShowModelMenu(false)}>
       <Link to="/home" className="btn-back-home">← 返回首页</Link>
 
       {messages.length === 0 && !typing && (
@@ -295,6 +275,7 @@ export default function PersonalChat() {
                 {formatAnswer(m.content).map((sentence, i) => (
                   <span key={i} style={{display:'block'}}>{sentence}</span>
                 ))}
+                <span className="ai-generated-tag">AI生成</span>
               </div>
             </div>
           ) : (
@@ -311,10 +292,66 @@ export default function PersonalChat() {
             </div>
           </div>
         )}
-        <div ref={messagesEnd} />
+        <div ref={scrollRef} />
       </div>
 
       <div className="chat-input-area">
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 4 }} onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => setShowModelMenu(v => !v)}
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              color: 'var(--text-secondary, #94a3b8)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 16,
+              padding: '5px 12px',
+              cursor: 'pointer',
+              fontSize: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span style={{ fontSize: 11 }}>⚡</span>
+            {currentModel}
+            <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
+          </button>
+          {showModelMenu && (
+            <div style={{
+              position: 'absolute',
+              bottom: '110%',
+              right: 0,
+              background: 'var(--bg-card, rgba(30,30,46,0.95))',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 10,
+              overflow: 'hidden',
+              boxShadow: '0 -4px 20px rgba(0,0,0,0.25)',
+              minWidth: 130,
+              backdropFilter: 'blur(12px)',
+            }}>
+              {MODEL_LIST.map(m => (
+                <div
+                  key={m.provider}
+                  onClick={() => switchModel(m)}
+                  style={{
+                    padding: '9px 14px',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    color: currentModel === m.label ? 'var(--accent, #818cf8)' : 'var(--text-primary, #e2e8f0)',
+                    fontWeight: currentModel === m.label ? 600 : 400,
+                    background: currentModel === m.label ? 'rgba(129,140,248,0.12)' : 'transparent',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+                  onMouseLeave={e => e.currentTarget.style.background = currentModel === m.label ? 'rgba(129,140,248,0.12)' : 'transparent'}
+                >
+                  {currentModel === m.label ? '✓ ' : ''}{m.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <form className="chat-input-wrapper" onSubmit={sendQuestion}>
           <input
             type="file"

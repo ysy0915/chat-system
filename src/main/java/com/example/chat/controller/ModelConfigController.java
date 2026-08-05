@@ -1,19 +1,11 @@
 package com.example.chat.controller;
 
-import com.example.chat.entity.ModelConfig;
-import com.example.chat.repository.ModelConfigRepository;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
-
 // @RestController
 // @RequestMapping("/api/v1")
 public class ModelConfigController {
-    private final ModelConfigRepository repo;
+    private final com.example.chat.repository.ModelConfigRepository repo;
 
-    public ModelConfigController(ModelConfigRepository repo) {
+    public ModelConfigController(com.example.chat.repository.ModelConfigRepository repo) {
         this.repo = repo;
     }
 

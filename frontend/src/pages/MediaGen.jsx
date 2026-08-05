@@ -158,6 +158,7 @@ export default function MediaGen() {
                         <line x1="12" y1="15" x2="12" y2="3"/>
                       </svg>
                     </a>
+                    <span className="ai-generated-tag">AI生成</span>
                   </div>
                 )}
               </div>

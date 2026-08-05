@@ -144,6 +144,8 @@ export default function KnowledgeGraph() {
   const degRef = useRef([])
   const baseNodesRef = useRef([])
   const allLoadedRef = useRef([])
+  const suppressSvgClickRef = useRef(false)
+  const isTouchDeviceRef = useRef(typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0))
   const [, setTick] = useState(0)
 
   useEffect(() => { fetchData() }, [])
@@ -232,6 +234,21 @@ export default function KnowledgeGraph() {
     }
   }
   const handleNodeLeave = () => { pausedRef.current = false; lastTimeRef.current = null; setHoveredIdx(null) }
+
+  // 手机端：点击节点显示/切换 tooltip，阻止冒泡到 svg 的 onClick
+  const handleNodeClick = (e, i) => {
+    e.stopPropagation()
+    e.preventDefault()
+    // 标记本次点击来自节点，svg 的 onClick 不应清除 hoveredIdx
+    suppressSvgClickRef.current = true
+    setTimeout(() => { suppressSvgClickRef.current = false }, 300)
+    if (hoveredIdx === i) {
+      // 再次点击同一节点 → 关闭
+      handleNodeLeave()
+    } else {
+      handleNodeEnter(i)
+    }
+  }
 
   async function fetchData() {
     setLoading(true)
@@ -377,7 +394,7 @@ export default function KnowledgeGraph() {
       {nodes.length > 0 && (
         <div className="kg-canvas">
           <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}
-               onClick={() => setHoveredIdx(null)}>
+               onClick={() => { if (!suppressSvgClickRef.current) setHoveredIdx(null) }}>
             <defs>
               <radialGradient id="globeGrad" cx="40%" cy="35%" r="60%">
                 <stop offset="0%" stopColor="rgba(59,130,246,0.12)" />
@@ -434,10 +451,11 @@ export default function KnowledgeGraph() {
 
                 return (
                   <g key={'n' + i}
-                     onMouseEnter={handleNodeEnter.bind(null, i)}
-                     onMouseLeave={handleNodeLeave}
-                     onClick={(e) => e.stopPropagation()}
-                     style={{ cursor: 'pointer' }}>
+                     onMouseEnter={!isTouchDeviceRef.current ? handleNodeEnter.bind(null, i) : undefined}
+                     onMouseLeave={!isTouchDeviceRef.current ? handleNodeLeave : undefined}
+                     onClick={(e) => handleNodeClick(e, i)}
+                     onTouchStart={(e) => { e.stopPropagation(); }}
+                     style={{ cursor: 'pointer', touchAction: 'manipulation' }}>
                     {highlighted && (
                       <circle cx={p.sx} cy={p.sy} r={r + 8}
                         fill="none" stroke="rgba(59,130,246,0.3)" strokeWidth="1" />
@@ -483,6 +501,7 @@ export default function KnowledgeGraph() {
                       {answerCache[nodes[hoveredIdx].msgId].length > 200
                         ? answerCache[nodes[hoveredIdx].msgId].substring(0, 200) + '...'
                         : answerCache[nodes[hoveredIdx].msgId]}
+                      <span className="ai-generated-tag" style={{ marginTop: 4 }}>AI生成</span>
                     </div>
                   ) : null}
                   {nodeDegrees[hoveredIdx] > 0 && (() => {

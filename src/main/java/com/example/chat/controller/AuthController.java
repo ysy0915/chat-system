@@ -50,11 +50,10 @@ public class AuthController {
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名和密码不能为空"));
         }
-        if (nickname == null || nickname.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "昵称不能为空"));
-        }
         String trimmedUsername = username.trim();
-        String trimmedNickname = nickname.trim();
+        // 昵称可选，未填则默认使用用户名
+        String trimmedNickname = (nickname == null || nickname.isBlank())
+                ? trimmedUsername : nickname.trim();
         if (trimmedUsername.length() > 50 || password.length() > 100 || trimmedNickname.length() > 50) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名、昵称或密码过长"));
         }

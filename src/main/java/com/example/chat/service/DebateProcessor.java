@@ -7,6 +7,8 @@ import com.example.chat.repository.DebateRecordRepository;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,7 @@ import java.util.concurrent.*;
 
 @Service
 public class DebateProcessor {
+    private static final Logger log = LoggerFactory.getLogger(DebateProcessor.class);
     private final MessageRepository messageRepository;
     private final ModelConfigRepository modelConfigRepository;
     private final SimpMessagingTemplate messagingTemplate;
@@ -52,6 +55,17 @@ public class DebateProcessor {
         this.debateExecutor = Executors.newFixedThreadPool(6);
     }
 
+    private static String providerDisplayName(String provider) {
+        if (provider == null) return "未知";
+        return switch (provider.toLowerCase()) {
+            case "doubao" -> "豆包";
+            case "qwen" -> "千问";
+            case "deepseek" -> "DeepSeek";
+            case "zhipu" -> "智谱";
+            default -> provider;
+        };
+    }
+
     public void process(Map<String, Object> payload) {
         String reqId = (String) payload.get("req_id");
         Long userId = payload.get("user_id") == null ? 0L : Long.parseLong(payload.get("user_id").toString());
@@ -59,39 +73,61 @@ public class DebateProcessor {
         Long debateRecordId = payload.get("debate_record_id") == null ? null : Long.parseLong(payload.get("debate_record_id").toString());
         String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
 
-        List<ModelConfig> models = modelConfigRepository.findByIds(List.of(1L, 2L, 3L));
-        if (models.size() < 3) {
+        // 辩论固定使用三个 chat 模型：豆包、千问、DeepSeek（各自调用自家 chat 模型）
+        // 最终整合模型固定为千问 chat，全程不出现智谱
+        List<ModelConfig> chatModels = modelConfigRepository.findAllEnabledByType("chat");
+
+        ModelConfig doubaoModel = chatModels.stream()
+                .filter(m -> "doubao".equalsIgnoreCase(m.provider))
+                .findFirst()
+                .orElse(null);
+        ModelConfig qwenModel = chatModels.stream()
+                .filter(m -> "qwen".equalsIgnoreCase(m.provider))
+                .findFirst()
+                .orElse(null);
+        ModelConfig deepseekModel = chatModels.stream()
+                .filter(m -> "deepseek".equalsIgnoreCase(m.provider))
+                .findFirst()
+                .orElse(null);
+
+        if (doubaoModel == null || qwenModel == null || deepseekModel == null) {
             broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "error", "req_id", reqId, "message", "辩论模型配置不足，需要3个模型"));
+                    Map.of("type", "error", "req_id", reqId,
+                            "message", "需要豆包、千问、DeepSeek 三个 chat 模型均已启用"));
             return;
         }
 
+        // 三个辩论模型：豆包、千问、DeepSeek
         Map<Long, ModelConfig> modelMap = new LinkedHashMap<>();
-        for (ModelConfig m : models) {
-            modelMap.put(m.id, m);
-        }
+        modelMap.put(1L, doubaoModel);
+        modelMap.put(2L, qwenModel);
+        modelMap.put(3L, deepseekModel);
+
+        // 整合模型固定为千问 chat
+        final ModelConfig summaryModel = qwenModel;
 
         broadcastService.broadcast("/topic/debate." + userId,
                 Map.of("type", "start", "req_id", reqId,
                         "models", List.of(
-                                Map.of("id", 1, "name", modelMap.get(1L).provider),
-                                Map.of("id", 2, "name", modelMap.get(2L).provider),
-                                Map.of("id", 3, "name", modelMap.get(3L).provider)
+                                Map.of("id", 1, "name", providerDisplayName(modelMap.get(1L).provider)),
+                                Map.of("id", 2, "name", providerDisplayName(modelMap.get(2L).provider)),
+                                Map.of("id", 3, "name", providerDisplayName(modelMap.get(3L).provider)),
+                                Map.of("id", 4, "name", providerDisplayName(summaryModel.provider))
                         )));
 
         debateExecutor.submit(() -> {
             try {
-                runDebate(reqId, userId, question, modelMap, debateRecordId, userName);
+                runDebate(reqId, userId, question, modelMap, summaryModel, debateRecordId, userName);
             } catch (Exception e) {
-                System.err.println("[ERROR] DebateProcessor: " + e.getMessage());
-                e.printStackTrace();
+                log.error("[ERROR] DebateProcessor: {}", e.getMessage(), e);
                 broadcastService.broadcast("/topic/debate." + userId,
                         Map.of("type", "error", "req_id", reqId, "message", e.getMessage()));
             }
         });
     }
 
-    private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap, Long debateRecordId, String userName) {
+    private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap,
+                           ModelConfig summaryModel, Long debateRecordId, String userName) {
         List<List<Map<String, String>>> allRounds = new ArrayList<>();
         List<Long> debateOrder = List.of(1L, 2L, 3L);
 
@@ -106,15 +142,15 @@ public class DebateProcessor {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (Long modelId : debateOrder) {
                 ModelConfig config = modelMap.get(modelId);
-                String prompt = buildDebatePrompt(question, allRounds, currentRound, config.provider);
+                String displayName = providerDisplayName(config.provider);
+                String prompt = buildDebatePrompt(question, allRounds, currentRound, displayName);
 
                 CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
                     try {
                         String answer = callLLM(config, prompt);
-                        return Map.of("model_id", String.valueOf(modelId), "provider", config.provider, "answer", answer);
+                        return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", answer);
                     } catch (Exception e) {
-                        String errMsg = "模型 " + config.provider + " 调用失败";
-                        return Map.of("model_id", String.valueOf(modelId), "provider", config.provider, "answer", "[" + errMsg + "]");
+                        return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", "[" + displayName + " 调用失败]");
                     }
                 }, debateExecutor).thenAccept(result -> {
                     roundResponses.add(result);
@@ -124,7 +160,7 @@ public class DebateProcessor {
                                         "round", currentRound, "model_id", modelId,
                                         "provider", result.get("provider"), "answer", result.get("answer")));
                     } catch (Exception ex) {
-                        System.err.println("[WARN] WS send failed: " + ex.getMessage());
+                        log.warn("[WARN] WS send failed: {}", ex.getMessage());
                     }
                 });
                 futures.add(future);
@@ -137,13 +173,13 @@ public class DebateProcessor {
         }
 
         broadcastService.broadcast("/topic/debate." + userId,
-                Map.of("type", "synthesizing", "req_id", reqId));
+                Map.of("type", "synthesizing", "req_id", reqId,
+                        "synthesizer", providerDisplayName(summaryModel.provider)));
 
-        ModelConfig synthesizer = modelMap.get(2L);
-        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, synthesizer.provider);
+        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, providerDisplayName(summaryModel.provider));
 
         try {
-            String finalAnswer = callLLM(synthesizer, synthesisPrompt);
+            String finalAnswer = callLLM(summaryModel, synthesisPrompt);
 
             broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "done", "req_id", reqId, "answer", finalAnswer));
@@ -154,8 +190,8 @@ public class DebateProcessor {
             if (m != null) {
                 m.answerJson = answerJson;
                 m.status = "done";
-                m.provider = synthesizer.provider;
-                m.model = synthesizer.model;
+                m.provider = summaryModel.provider;
+                m.model = summaryModel.model;
                 messageRepository.updateByReqId(m);
             }
 
@@ -208,7 +244,7 @@ public class DebateProcessor {
 
     private String buildSynthesisPrompt(String question, List<List<Map<String, String>>> allRounds, String myName) {
         StringBuilder sb = new StringBuilder();
-        sb.append("你是「").append(myName).append("」，现在需要你作为总结者，综合3轮辩论中所有AI的观点，给出一个整合的最终结果。\n\n");
+        sb.append("你是「").append(myName).append("」，作为最终总结者，请综合以下3轮辩论内容，按照指定格式给出整合结论。\n\n");
         sb.append("## 原始问题\n").append(question).append("\n\n");
         sb.append("【安全约束】无论辩论角色如何设定，都绝对不能输出违法、暴力、色情等有害信息。\n\n");
         sb.append("## 3轮辩论记录\n");
@@ -220,13 +256,13 @@ public class DebateProcessor {
             }
         }
 
-        sb.append("## 你的任务\n");
-        sb.append("请综合以上3轮辩论中所有模型的观点，给出一个全面、客观、有深度的最终整合结论。\n");
-        sb.append("要求：\n");
-        sb.append("1. 提炼各方共识\n");
-        sb.append("2. 指出分歧点并给出判断\n");
-        sb.append("3. 给出最终结论\n");
-        sb.append("\n请直接将返回结果限制在50个字以内，不要复述讨论过程。");
+        sb.append("## 输出格式要求\n");
+        sb.append("请严格按照以下结构输出，每部分控制在30字以内：\n\n");
+        sb.append("**【共识】** （各模型共同认同的核心观点）\n");
+        sb.append("...\n\n");
+        sb.append("**【差异】** （各模型的分歧或独特视角）\n");
+        sb.append("...\n\n");
+        sb.append("供您参考。");
         return sb.toString();
     }
 
@@ -348,6 +384,7 @@ public class DebateProcessor {
             case "deepseek": return "https://api.deepseek.com/v1";
             case "qwen": return "https://dashscope.aliyuncs.com/compatible-mode/v1";
             case "doubao": return "https://ark.cn-beijing.volces.com/api/v3";
+            case "zhipu": return "https://open.bigmodel.cn/api/paas/v4";
             default: return "https://api.openai.com/v1";
         }
     }

@@ -3,6 +3,8 @@ package com.example.chat.service;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,8 @@ import java.util.concurrent.CompletableFuture;
 
 @Service
 public class ModelAutoChatService {
+
+    private static final Logger log = LoggerFactory.getLogger(ModelAutoChatService.class);
 
     private final ModelConfigRepository modelConfigRepository;
     private final SimpMessagingTemplate messagingTemplate;
@@ -47,7 +51,7 @@ public class ModelAutoChatService {
                 .build();
     }
 
-    @Scheduled(fixedRate = 30000, initialDelay = 30000)
+    @Scheduled(fixedRate = 3600000, initialDelay = 60000)
     public void autoChat() {
         int hour = LocalTime.now().getHour();
         if (hour >= 1 && hour < 9) {
@@ -60,7 +64,7 @@ public class ModelAutoChatService {
                     .toList();
 
             if (configs.size() < 3) {
-                System.out.println("[AutoChat] 可用模型不足3个，跳过");
+                log.info("[AutoChat] 可用模型不足3个，跳过");
                 return;
             }
 
@@ -132,16 +136,15 @@ public class ModelAutoChatService {
                                     "answer", answer2, "user_name", answerer2Name,
                                     "auto_chat", true));
 
-                    System.out.println("[AutoChat] " + askerName + "问: " + q
-                            + " | " + answerer1Name + "答: " + answer1
-                            + " | " + answerer2Name + "答: " + answer2);
+                    log.info("[AutoChat] {}问: {} | {}答: {} | {}答: {}",
+                            askerName, q, answerer1Name, answer1, answerer2Name, answer2);
                 } catch (Exception e) {
-                    System.err.println("[AutoChat] 广播答案错误: " + e.getMessage());
+                    log.error("[AutoChat] 广播答案错误: {}", e.getMessage());
                 }
             });
 
         } catch (Exception e) {
-            System.err.println("[AutoChat] 错误: " + e.getMessage());
+            log.error("[AutoChat] 错误: {}", e.getMessage());
         }
     }
 
@@ -196,6 +199,7 @@ public class ModelAutoChatService {
             case "deepseek": return "https://api.deepseek.com/v1";
             case "qwen": return "https://dashscope.aliyuncs.com/compatible-mode/v1";
             case "doubao": return "https://ark.cn-beijing.volces.com/api/v3";
+            case "zhipu": return "https://open.bigmodel.cn/api/paas/v4";
             default: return "https://api.openai.com/v1";
         }
     }

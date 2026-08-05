@@ -24,7 +24,6 @@ const PAGE_LABELS = {
   castlesiege: 'AI城池攻防战',
   history: '问答列表',
   graph: '知识脉络图',
-  about: '制作人简介',
   profile: '个人信息',
   'admin-models': '模型管理',
   sql: 'SQL执行台',
@@ -32,6 +31,8 @@ const PAGE_LABELS = {
   media: '图片与视频',
   global: '全局'
 }
+
+const HIDDEN_PAGES = new Set(['monitor', 'treehole', 'global', 'sql'])
 
 const DAY_OPTIONS = [
   { value: 1, label: '1天' },
@@ -49,6 +50,9 @@ function getLabel(page) {
 }
 
 export default function Monitor() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('monitor_authed') === '1')
+  const [pwd, setPwd] = useState('')
+  const [loginErr, setLoginErr] = useState('')
   const [history, setHistory] = useState({})
   const [current, setCurrent] = useState({})
   const [dailyVisits, setDailyVisits] = useState({})
@@ -62,16 +66,18 @@ export default function Monitor() {
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 400 })
 
   useEffect(() => {
+    if (!authed) return
     fetchData()
     const timer = setInterval(fetchData, 60000)
     return () => clearInterval(timer)
-  }, [days])
+  }, [days, authed])
 
   useEffect(() => {
     historyRef.current = history
   }, [history])
 
   useEffect(() => {
+    if (!authed) return
     const monitorId = 'monitor-' + Math.floor(Math.random() * 100000)
     const sock = new SockJS('/ws/chat?userId=' + monitorId)
     const client = new Client({
@@ -105,7 +111,7 @@ export default function Monitor() {
     })
     client.activate()
     return () => { try { client.deactivate() } catch {} }
-  }, [])
+  }, [authed])
 
   useEffect(() => {
     const resize = () => {
@@ -133,17 +139,21 @@ export default function Monitor() {
   const allPages = useMemo(() => {
     const pages = new Set()
     Object.entries(history).forEach(([page, points]) => {
+      if (HIDDEN_PAGES.has(page)) return
       if ((points || []).length > 0 || (current[page] || 0) > 0) {
         pages.add(page)
       }
     })
     Object.entries(current).forEach(([page, count]) => {
+      if (HIDDEN_PAGES.has(page)) return
       if ((count || 0) > 0) {
         pages.add(page)
       }
     })
     if (!pages.size) {
-      Object.keys(current).forEach(page => pages.add(page))
+      Object.keys(current).forEach(page => {
+        if (!HIDDEN_PAGES.has(page)) pages.add(page)
+      })
     }
     return [...pages].sort()
   }, [history, current])
@@ -339,6 +349,49 @@ export default function Monitor() {
   }
 
   const totalCurrent = Object.values(current).reduce((a, b) => a + b, 0)
+
+  if (!authed) {
+    return (
+      <div className="sql-login-page">
+        <div className="sql-login-bg">
+          <div className="sql-login-orb sql-login-orb1" />
+          <div className="sql-login-orb sql-login-orb2" />
+        </div>
+        <div className="sql-login-box">
+          <div className="sql-login-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
+          </div>
+          <h2>在线人数监控</h2>
+          <p className="sql-login-sub">输入访问密码以继续</p>
+          <form onSubmit={async (e) => {
+            e.preventDefault()
+            try {
+              await axios.post('/api/v1/monitor/login', { password: pwd })
+              setAuthed(true)
+              sessionStorage.setItem('monitor_authed', '1')
+              setLoginErr('')
+            } catch {
+              setLoginErr('密码错误，请重新输入')
+            }
+          }}>
+            <div className="sql-login-field">
+              <input type="password" value={pwd} onChange={e => setPwd(e.target.value)}
+                     placeholder="请输入访问密码" autoFocus className="sql-login-input" />
+              {loginErr && <div className="sql-login-error">{loginErr}</div>}
+            </div>
+            <button type="submit" className="sql-login-btn">
+              <span>验证并进入</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="monitor-page">

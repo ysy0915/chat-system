@@ -16,7 +16,7 @@ import java.util.*;
 public class SqlExecutorController {
     private static final Logger auditLog = LoggerFactory.getLogger("SQL_AUDIT");
 
-    @Value("${sql-executor.password:19641025}")
+    @Value("${sql-executor.password:LiYuHong@0929}")
     private String adminPassword;
     private static final Map<String, Long> sessions = new java.util.concurrent.ConcurrentHashMap<>();
 

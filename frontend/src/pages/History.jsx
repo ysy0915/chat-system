@@ -50,7 +50,10 @@ export default function History(){
                   <div className="history-q">Q: {it.question}</div>
                   <div className="history-meta">提问者</div>
                 </div>
-                <div className="history-a">A: {answerText}</div>
+                <div className="history-a">
+                  A: {answerText}
+                  <span className="ai-generated-tag">AI生成</span>
+                </div>
               </div>
           )
         })}

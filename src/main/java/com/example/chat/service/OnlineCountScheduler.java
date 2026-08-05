@@ -3,6 +3,8 @@ package com.example.chat.service;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.example.chat.entity.OnlineCountRecord;
 import com.example.chat.repository.OnlineCountRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +14,8 @@ import java.util.Set;
 
 @Service
 public class OnlineCountScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(OnlineCountScheduler.class);
 
     private final WebSocketSessionTracker sessionTracker;
     private final OnlineCountRepository onlineCountRepository;
@@ -38,7 +42,7 @@ public class OnlineCountScheduler {
             try {
                 onlineCountRepository.insert(record);
             } catch (Exception e) {
-                System.err.println("[WARN] Failed to record online count for page=" + entry.getKey() + ": " + e.getMessage());
+                log.warn("[WARN] Failed to record online count for page={}: {}", entry.getKey(), e.getMessage());
             }
         }
     }

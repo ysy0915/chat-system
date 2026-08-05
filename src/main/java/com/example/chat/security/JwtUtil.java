@@ -5,6 +5,8 @@ import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -14,13 +16,14 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
     private final SecretKey key;
     private final long expirationMs;
 
     public JwtUtil(@Value("${jwt.secret:defaultsecretkeydefaultsecretkey}") String secret,
                    @Value("${jwt.expiration:3600000}") long expirationMs) {
         if ("defaultsecretkeydefaultsecretkey".equals(secret)) {
-            System.err.println("[JWT] ⚠️ 警告: 使用默认JWT密钥！请在配置中设置 jwt.secret 为随机强密钥");
+            log.warn("[JWT] ⚠️ 警告: 使用默认JWT密钥！请在配置中设置 jwt.secret 为随机强密钥");
         }
         this.key = Keys.hmacShaKeyFor(secret.getBytes());
         this.expirationMs = expirationMs;

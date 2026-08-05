@@ -3,6 +3,8 @@ package com.example.chat.controller;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,6 +20,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/media")
 public class MediaGenController {
+
+    private static final Logger log = LoggerFactory.getLogger(MediaGenController.class);
 
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
@@ -74,8 +78,7 @@ public class MediaGenController {
                     "model", config.model
             ));
         } catch (Exception e) {
-            System.err.println("[ERROR] MediaGen: " + e.getMessage());
-            e.printStackTrace();
+            log.error("[ERROR] MediaGen: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body(Map.of("error", "生成失败: " + e.getMessage()));
         }
     }
@@ -121,7 +124,7 @@ public class MediaGenController {
             throw new RuntimeException("未返回 task_id");
         }
 
-        System.out.println("[MediaGen] 视频任务已提交, task_id=" + taskId);
+        log.info("[MediaGen] 视频任务已提交, task_id={}", taskId);
 
         String pollUrl = baseUrl.replaceAll("/+$", "") + "/api/v1/tasks/" + taskId;
         for (int i = 0; i < VIDEO_MAX_POLL_COUNT; i++) {
@@ -136,7 +139,7 @@ public class MediaGenController {
 
             HttpResponse<String> pollResponse = httpClient.send(pollRequest, HttpResponse.BodyHandlers.ofString());
             if (pollResponse.statusCode() != 200) {
-                System.err.println("[MediaGen] 轮询失败, status=" + pollResponse.statusCode());
+                log.warn("[MediaGen] 轮询失败, status={}", pollResponse.statusCode());
                 continue;
             }
 
@@ -145,7 +148,7 @@ public class MediaGenController {
             if (pollOutput == null) continue;
 
             String status = (String) pollOutput.get("task_status");
-            System.out.println("[MediaGen] 轮询 task_status=" + status + " (第" + (i + 1) + "次)");
+            log.info("[MediaGen] 轮询 task_status={} (第{}次)", status, (i + 1));
 
             if ("SUCCEEDED".equals(status)) {
                 String videoUrl = (String) pollOutput.get("video_url");

@@ -46,6 +46,7 @@ class TreeHoleServiceTest {
         ModelConfig configForId2 = null;
         @Override public List<ModelConfig> findAll() { return List.of(); }
         @Override public List<ModelConfig> findAllEnabled() { return List.of(); }
+        @Override public List<ModelConfig> findAllEnabledByType(String modelType) { return List.of(); }
         @Override public ModelConfig findById(Long id) { return (id == 2L) ? configForId2 : null; }
         @Override public List<ModelConfig> findByIds(List<Long> ids) { return List.of(); }
         @Override public int insert(ModelConfig m) { return 1; }

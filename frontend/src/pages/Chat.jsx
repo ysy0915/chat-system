@@ -3,20 +3,12 @@ import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
+import { formatAnswer } from '../utils/format'
+import { generateId } from '../utils/id'
+import { useAuthUser } from '../hooks/useAuthUser'
+import { useAutoScroll } from '../hooks/useAutoScroll'
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-
-const formatAnswer = (text) => {
-  if (!text) return []
-  let result = text
-      .replace(/\n{2,}/g, '\n')
-      .replace(/([。！？；.!?;])(?=\S)/g, '$1\n')
-  return result.split('\n').map(s => s.trim()).filter(Boolean)
-}
-
-const generateId = () => {
-  return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 10)
-}
 
 export default function ChatPage(){
   const [question, setQuestion] = useState('')
@@ -25,7 +17,6 @@ export default function ChatPage(){
   const [wsStatus, setWsStatus] = useState('connecting')
   const stompRef = useRef(null)
   const messagesEnd = useRef(null)
-  const [authUser, setAuthUser] = useState(null)
   const [userId, setUserId] = useState(() => {
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -42,12 +33,8 @@ export default function ChatPage(){
   const [showOnlineList, setShowOnlineList] = useState(false)
   const [aiAnswer, setAiAnswer] = useState(false)
 
-  useEffect(() => {
-    const userStr = localStorage.getItem('auth_user')
-    if (userStr) {
-      try { setAuthUser(JSON.parse(userStr)) } catch {}
-    }
-  }, [])
+  const authUser = useAuthUser()
+  const scrollRef = useAutoScroll([messages, typing])
 
   const getUserAvatar = () => {
     if (authUser?.name) {
@@ -61,26 +48,20 @@ export default function ChatPage(){
   }, [])
 
   useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, typing])
-
-  useEffect(() => {
     axios.get('/api/v1/messages/online-count', { params: { page: 'chat' } })
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
     const sock = new SockJS('/ws/chat?userId=' + userId);
-    sock.onopen = () => console.log('[WS] SockJS opened')
-    sock.onclose = () => { console.log('[WS] SockJS closed'); setWsStatus('disconnected') }
-    sock.onerror = (e) => console.error('[WS] SockJS error', e)
+    sock.onopen = () => {}
+    sock.onclose = () => { setWsStatus('disconnected') }
+    sock.onerror = () => {}
 
     const client = new Client({
       webSocketFactory: () => sock,
-      debug: (str) => console.log('[STOMP]', str),
+      debug: () => {},
       onConnect: () => {
-        console.log('[STOMP] connected, subscribing to /topic/user.' + userId)
         setWsStatus('connected')
         client.subscribe(`/topic/user.${userId}`, (msg) => {
-          console.log('[STOMP] received:', msg.body)
           try {
             const payload = JSON.parse(msg.body)
             if (payload.type === 'done' || payload.answer) {
@@ -150,7 +131,6 @@ export default function ChatPage(){
         setTyping(false)
       },
       onWebSocketClose: () => {
-        console.log('[STOMP] websocket closed')
         setWsStatus('disconnected')
       }
     })
@@ -271,7 +251,10 @@ export default function ChatPage(){
                     <div className="msg-avatar msg-auto-a-avatar">✦</div>
                     <div className="msg-auto-wrap">
                       <div className="msg-auto-name">{m.userName} 回答</div>
-                      <div className="msg auto-a">{m.content}</div>
+                      <div className="msg auto-a">
+                        {m.content}
+                        <span className="ai-generated-tag">AI生成</span>
+                      </div>
                     </div>
                   </div>
               ) : m.role === 'user' && (m.fromOther || m.fromHistory) ? (
@@ -307,7 +290,9 @@ export default function ChatPage(){
                   <div key={idx} className="msg-row msg-other-ai-row">
                     <div className="msg user">{formatAnswer(m.content).map((sentence, i) => (
                         <span key={i} style={{display:'block'}}>{sentence}</span>
-                    ))}</div>
+                    ))}
+                      <span className="ai-generated-tag">AI生成</span>
+                    </div>
                     <div className="msg-avatar other-ai-avatar">
                       <img src="/chat/logo.png" alt="AI" className="avatar-img" />
                     </div>
@@ -321,6 +306,7 @@ export default function ChatPage(){
                       {formatAnswer(m.content).map((sentence, i) => (
                           <span key={i} style={{display:'block'}}>{sentence}</span>
                       ))}
+                      <span className="ai-generated-tag">AI生成</span>
                     </div>
                   </div>
               ) : (
@@ -337,7 +323,7 @@ export default function ChatPage(){
                 </div>
               </div>
           )}
-          <div ref={messagesEnd} />
+          <div ref={scrollRef} />
         </div>
 
         <div className="chat-input-area">

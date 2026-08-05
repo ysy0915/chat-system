@@ -3,7 +3,10 @@ package com.example.chat.controller;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.example.chat.entity.OnlineCountRecord;
 import com.example.chat.repository.OnlineCountRepository;
+import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.service.OnlineCountRedisService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,16 +17,30 @@ import java.util.*;
 @RequestMapping("/api/v1/monitor")
 public class MonitorController {
 
+    private static final Logger log = LoggerFactory.getLogger(MonitorController.class);
+
     private final OnlineCountRepository onlineCountRepository;
     private final WebSocketSessionTracker sessionTracker;
     private final OnlineCountRedisService onlineCountRedisService;
+    private final AdminAuthUtil adminAuthUtil;
 
     public MonitorController(OnlineCountRepository onlineCountRepository,
                              WebSocketSessionTracker sessionTracker,
-                             OnlineCountRedisService onlineCountRedisService) {
+                             OnlineCountRedisService onlineCountRedisService,
+                             AdminAuthUtil adminAuthUtil) {
         this.onlineCountRepository = onlineCountRepository;
         this.sessionTracker = sessionTracker;
         this.onlineCountRedisService = onlineCountRedisService;
+        this.adminAuthUtil = adminAuthUtil;
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
+        String pwd = body.get("password");
+        if (pwd != null && adminAuthUtil.checkMonitorPassword(pwd)) {
+            return ResponseEntity.ok(Map.of("ok", true));
+        }
+        return ResponseEntity.status(401).body(Map.of("error", "密码错误"));
     }
 
     @GetMapping("/online-history")
@@ -77,7 +94,7 @@ public class MonitorController {
             try {
                 onlineCountRepository.insert(record);
             } catch (Exception e) {
-                System.err.println("[WARN] record failed: " + e.getMessage());
+                log.warn("[WARN] record failed: {}", e.getMessage());
             }
         }
         return ResponseEntity.ok(Map.of("recorded", true));

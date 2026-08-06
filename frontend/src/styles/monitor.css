@@ -9,17 +9,19 @@
     flex-direction: column;
     align-items: center;
     box-sizing: border-box;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
+/* Monitor 不在 KeepAliveRoute 中，需要让 body 和 app-layout 都能滚动 */
 body:has(.monitor-page) {
-    overflow: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: auto;
 }
 
 body:has(.monitor-page) .app-layout {
     height: auto;
     min-height: 100vh;
+    overflow: visible;
 }
 
 .monitor-title {
@@ -104,6 +106,39 @@ body:has(.monitor-page) .app-layout {
     box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
 }
 
+.monitor-date-picker-wrap {
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.monitor-date-picker {
+    min-width: 140px;
+    width: 100%;
+    height: 44px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    background: rgba(15, 23, 42, 0.85);
+    color: #f59e0b;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    color-scheme: dark;
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+}
+
+.monitor-date-picker:focus {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
 .monitor-loading {
     color: #64748b;
     font-size: 14px;
@@ -119,9 +154,33 @@ body:has(.monitor-page) .app-layout {
     padding: 16px;
     display: flex;
     justify-content: center;
-    overflow: hidden;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .monitor-chart-container canvas {
     display: block;
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+    .monitor-page {
+        padding: 16px 10px 40px;
+    }
+    .monitor-chart-container {
+        padding: 10px;
+    }
+    .monitor-stat-card {
+        min-width: 80px;
+        padding: 10px 14px;
+    }
+    .monitor-stat-value {
+        font-size: 22px;
+    }
+    .monitor-controls {
+        gap: 6px;
+    }
+    .monitor-date-picker {
+        min-width: 120px;
+    }
 }

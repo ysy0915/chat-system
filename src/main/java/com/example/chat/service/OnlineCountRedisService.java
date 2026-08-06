@@ -130,28 +130,48 @@ public class OnlineCountRedisService {
         return result;
     }
 
+    /** 获取各页面按日期的访问量 {page: {dateStr: count}} */
+    public Map<String, Map<String, Integer>> getPageDailyVisitCounts(LocalDateTime since) {
+        Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
+        if (since == null) return result;
+
+        Set<String> pages = redisTemplate.opsForSet().members(PAGE_SET_KEY);
+        if (pages == null || pages.isEmpty()) return result;
+
+        LocalDate startDate = since.toLocalDate();
+        LocalDate endDate = LocalDate.now();
+
+        for (String rawPage : pages) {
+            String page = normalizePage(rawPage);
+            Map<String, Integer> pageData = new LinkedHashMap<>();
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                String dateStr = date.format(DATE_FORMATTER);
+                String visitKey = VISIT_PREFIX + page + ":" + dateStr;
+                String val = redisTemplate.opsForValue().get(visitKey);
+                pageData.put(dateStr, val != null ? Integer.parseInt(val) : 0);
+            }
+            result.put(page, pageData);
+        }
+        return result;
+    }
+
     public int getHourlyPeakTotal() {
-        long maxScore = System.currentTimeMillis();
-        long minScore = maxScore - 60 * 60 * 1000L;
+        // 今日累计在线人数 = 今天各页面访问次数的总和
+        java.time.LocalDate today = java.time.LocalDate.now();
+        String todayStr = today.format(DATE_FORMATTER);
         Set<String> pages = redisTemplate.opsForSet().members(PAGE_SET_KEY);
         if (pages == null || pages.isEmpty()) return 0;
 
         int total = 0;
         for (String rawPage : pages) {
             String page = normalizePage(rawPage);
-            Set<String> members = redisTemplate.opsForZSet().rangeByScore(HISTORY_PREFIX + page, minScore, maxScore);
-            if (members == null || members.isEmpty()) continue;
-
-            int peak = 0;
-            for (String member : members) {
-                int separator = member.indexOf(':');
-                if (separator <= 0 || separator >= member.length() - 1) continue;
+            String visitKey = VISIT_PREFIX + page + ":" + todayStr;
+            String val = redisTemplate.opsForValue().get(visitKey);
+            if (val != null) {
                 try {
-                    int count = Integer.parseInt(member.substring(separator + 1));
-                    if (count > peak) peak = count;
+                    total += Integer.parseInt(val);
                 } catch (NumberFormatException ignored) {}
             }
-            total += peak;
         }
         return total;
     }

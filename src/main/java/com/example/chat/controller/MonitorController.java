@@ -65,6 +65,7 @@ public class MonitorController {
 
         Map<String, Integer> currentCounts = sessionTracker.getAllCounts();
         Map<String, Integer> dailyVisits = onlineCountRedisService.getDailyVisitCounts(since);
+        Map<String, Map<String, Integer>> pageDailyVisits = onlineCountRedisService.getPageDailyVisitCounts(since);
 
         int hourlyTotal = onlineCountRedisService.getHourlyPeakTotal();
 
@@ -72,6 +73,7 @@ public class MonitorController {
                 "history", grouped,
                 "current", currentCounts,
                 "dailyVisits", dailyVisits,
+                "pageDailyVisits", pageDailyVisits,
                 "hourlyTotal", hourlyTotal
         ));
     }

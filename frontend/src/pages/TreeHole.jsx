@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import '../styles/treehole.css'
 import { formatAnswer } from '../utils/format'
@@ -36,11 +36,11 @@ const getAuthHeaders = () => {
 export default function TreeHole() {
     const authUser = useAuthUser()
     const [messages, setMessages] = useState([])   // { role: 'user'|'ai', text, mood, time }
-    const [input, setInput] = useState('')
     const [mood, setMood] = useState('')
     const [typing, setTyping] = useState(false)
     const [error, setError] = useState('')
     const [selectedFile, setSelectedFile] = useState(null)
+    const [hasInput, setHasInput] = useState(false)
     const messagesEndRef = useRef(null)
     const textareaRef = useRef(null)
     const fileInputRef = useRef(null)
@@ -78,13 +78,14 @@ export default function TreeHole() {
         if (!ta) return
         ta.style.height = 'auto'
         ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'
-    }, [input])
+    }, [hasInput])
 
     const handleSend = useCallback(async () => {
-        const text = input.trim()
+        const text = (textareaRef.current?.value || '').trim()
         if (!text && !selectedFile || typing) return
         setError('')
-        setInput('')
+        if (textareaRef.current) textareaRef.current.value = ''
+        setHasInput(false)
 
         const fileToSend = selectedFile
         setSelectedFile(null)
@@ -133,7 +134,7 @@ export default function TreeHole() {
         } finally {
             setTyping(false)
         }
-    }, [input, mood, typing, selectedFile])
+    }, [hasInput, mood, typing, selectedFile])
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -143,27 +144,18 @@ export default function TreeHole() {
     }
 
     const openAuth = () => {
-        window.dispatchEvent(new CustomEvent('open-auth-modal', { detail: 'login' }))
+        window.dispatchEvent(new CustomEvent('open-auth-modal', { detail: { mode: 'login', redirect: '/treehole' } }))
     }
 
-    // ── 未登录提示 ──
-    if (!authUser) {
-        return (
-            <div className="treehole-page">
-                <TreeHoleHeader />
-                <div className="treehole-login-prompt">
-                    <div className="treehole-login-card">
-                        <div className="treehole-empty-icon">🌳</div>
-                        <h2>专属情绪空间</h2>
-                        <p>登录后，这里只属于你<br />把心里话都说给树洞听</p>
-                        <button className="treehole-login-btn" onClick={openAuth}>
-                            登录后使用
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )
-    }
+    // ── 未登录：自动弹出登录框 ──
+    const location = useLocation()
+    useEffect(() => {
+        if (!authUser && location.pathname === '/treehole') {
+            openAuth()
+        }
+    }, [authUser, location.pathname])
+
+    if (!authUser) return null
 
     return (
         <div className="treehole-page">
@@ -262,8 +254,8 @@ export default function TreeHole() {
                         className="treehole-textarea"
                         rows={1}
                         placeholder="把心里话说给树洞听…"
-                        value={input}
-                        onChange={e => setInput(e.target.value)}
+                        defaultValue=""
+                        onChange={() => setHasInput(!!textareaRef.current?.value?.trim())}
                         onKeyDown={handleKeyDown}
                         disabled={typing}
                     />
@@ -281,7 +273,7 @@ export default function TreeHole() {
                     <button
                         className="treehole-send-btn"
                         onClick={handleSend}
-                        disabled={(!input.trim() && !selectedFile) || typing}
+                        disabled={(!hasInput && !selectedFile) || typing}
                         title="发送"
                     >
                         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

@@ -1,4 +1,3 @@
-// /Users/apple/IdeaProjects/chat-system-project/frontend/src/pages/Monitor.jsx
 import React, { useEffect, useState, useRef, useMemo } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
@@ -10,7 +9,13 @@ const PAGE_COLORS = {
   chat: '#38bdf8',
   personal: '#a78bfa',
   debate: '#f472b6',
-  global: '#34d399'
+  games: '#34d399',
+  history: '#fbbf24',
+  graph: '#f87171',
+  profile: '#a3e635',
+  'admin-models': '#c084fc',
+  media: '#fb923c',
+  treehole: '#2dd4bf'
 }
 
 const PAGE_LABELS = {
@@ -29,17 +34,11 @@ const PAGE_LABELS = {
   sql: 'SQL执行台',
   monitor: '在线人数监控',
   media: '图片与视频',
+  treehole: '情绪树洞',
   global: '全局'
 }
 
-const HIDDEN_PAGES = new Set(['monitor', 'treehole', 'global', 'sql'])
-
-const DAY_OPTIONS = [
-  { value: 1, label: '1天' },
-  { value: 3, label: '3天' },
-  { value: 5, label: '5天' },
-  { value: 7, label: '7天' }
-]
+const HIDDEN_PAGES = new Set(['monitor', 'treehole', 'global', 'sql', 'profile', 'about'])
 
 function getColor(page) {
   return PAGE_COLORS[page] || '#' + ((parseInt(page, 36) * 2654435761 >>> 0) % 0xFFFFFF).toString(16).padStart(6, '0')
@@ -49,6 +48,13 @@ function getLabel(page) {
   return PAGE_LABELS[page] || page
 }
 
+function toDateStr(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export default function Monitor() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem('monitor_authed') === '1')
   const [pwd, setPwd] = useState('')
@@ -56,25 +62,22 @@ export default function Monitor() {
   const [history, setHistory] = useState({})
   const [current, setCurrent] = useState({})
   const [dailyVisits, setDailyVisits] = useState({})
-  const [days, setDays] = useState(1)
+  const [pageDailyVisits, setPageDailyVisits] = useState({})
+  const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()))
   const [loading, setLoading] = useState(true)
   const [hourlyTotal, setHourlyTotal] = useState(0)
   const canvasRef = useRef(null)
-  const stompRef = useRef(null)
   const containerRef = useRef(null)
-  const historyRef = useRef({})
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 400 })
 
   useEffect(() => {
     if (!authed) return
+    // 登录后重置为今天
+    setSelectedDate(toDateStr(new Date()))
     fetchData()
     const timer = setInterval(fetchData, 60000)
     return () => clearInterval(timer)
-  }, [days, authed])
-
-  useEffect(() => {
-    historyRef.current = history
-  }, [history])
+  }, [authed])
 
   useEffect(() => {
     if (!authed) return
@@ -84,27 +87,10 @@ export default function Monitor() {
       webSocketFactory: () => sock,
       debug: () => {},
       onConnect: () => {
-        stompRef.current = client
         client.subscribe('/topic/online-count/all', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            const pageCounts = payload.pages || {}
-            setCurrent(pageCounts)
-            const nowStr = new Date().toISOString().slice(0, 19)
-            setHistory(prev => {
-              const next = { ...prev }
-              Object.entries(pageCounts).forEach(([pageKey, count]) => {
-                const pageData = [...(next[pageKey] || [])]
-                const lastEntry = pageData[pageData.length - 1]
-                if (!lastEntry || lastEntry.time !== nowStr) {
-                  pageData.push({ time: nowStr, count })
-                } else {
-                  pageData[pageData.length - 1] = { time: nowStr, count }
-                }
-                next[pageKey] = pageData
-              })
-              return next
-            })
+            setCurrent(payload.pages || {})
           } catch {}
         })
       }
@@ -114,53 +100,99 @@ export default function Monitor() {
   }, [authed])
 
   useEffect(() => {
+    if (!authed) return
     const resize = () => {
       if (containerRef.current) {
-        const w = containerRef.current.clientWidth
-        setCanvasSize({ w: Math.max(w, 300), h: Math.max(Math.min(w * 0.5, 450), 250) })
+        const w = containerRef.current.clientWidth - 32
+        setCanvasSize({ w: Math.max(w, 280), h: Math.max(Math.min(w * 0.55, 480), 300) })
       }
     }
-    resize()
+    requestAnimationFrame(resize)
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
-  }, [])
+  }, [authed])
 
   async function fetchData() {
     try {
-      const res = await axios.get('/api/v1/monitor/online-history', { params: { days } })
+      const res = await axios.get('/api/v1/monitor/online-history', { params: { days: 8 } })
       setHistory(res.data.history || {})
       setCurrent(res.data.current || {})
       setDailyVisits(res.data.dailyVisits || {})
       setHourlyTotal(res.data.hourlyTotal || 0)
+      // 尝试获取分页面日访问量
+      if (res.data.pageDailyVisits) {
+        setPageDailyVisits(res.data.pageDailyVisits)
+      }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
 
-  const allPages = useMemo(() => {
+  // 选中日期及前7天
+  const dayList = useMemo(() => {
+    const selTs = new Date(selectedDate + 'T00:00:00').getTime()
+    const dayMs = 24 * 60 * 60 * 1000
+    const list = []
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(selTs - i * dayMs)
+      list.push(toDateStr(d))
+    }
+    return list
+  }, [selectedDate])
+
+  // 选中日期的访问量
+  const selectedVisits = dailyVisits[selectedDate] || 0
+
+  // 环比前日
+  const prevDate = useMemo(() => {
+    const d = new Date(selectedDate + 'T00:00:00')
+    d.setDate(d.getDate() - 1)
+    return toDateStr(d)
+  }, [selectedDate])
+  const prevVisits = dailyVisits[prevDate] || 0
+  const diff = selectedVisits - prevVisits
+  const diffPct = prevVisits > 0 ? ((diff / prevVisits) * 100).toFixed(1) : null
+
+  // 提取有数据的页面（8天内至少有一天访问量>3才显示）
+  const activePages = useMemo(() => {
     const pages = new Set()
-    Object.entries(history).forEach(([page, points]) => {
+    Object.keys(pageDailyVisits).forEach(page => {
       if (HIDDEN_PAGES.has(page)) return
-      if ((points || []).length > 0 || (current[page] || 0) > 0) {
+      const data = pageDailyVisits[page]
+      if (data && dayList.some(d => (data[d] || 0) > 3)) {
         pages.add(page)
       }
     })
-    Object.entries(current).forEach(([page, count]) => {
-      if (HIDDEN_PAGES.has(page)) return
-      if ((count || 0) > 0) {
-        pages.add(page)
-      }
-    })
-    if (!pages.size) {
-      Object.keys(current).forEach(page => {
-        if (!HIDDEN_PAGES.has(page)) pages.add(page)
+    // 兜底：如果 pageDailyVisits 为空，从 history 统计
+    if (pages.size === 0) {
+      const dayMs = 24 * 60 * 60 * 1000
+      Object.keys(history).forEach(page => {
+        if (HIDDEN_PAGES.has(page)) return
+        const points = history[page] || []
+        let hasOver3 = false
+        dayList.forEach(dateStr => {
+          const dayStart = new Date(dateStr + 'T00:00:00').getTime()
+          const dayEnd = dayStart + dayMs
+          let total = 0
+          points.forEach(p => {
+            const t = new Date(p.time).getTime()
+            if (t >= dayStart && t < dayEnd) total += p.count || 0
+          })
+          if (total > 3) hasOver3 = true
+        })
+        if (hasOver3) pages.add(page)
       })
     }
     return [...pages].sort()
-  }, [history, current])
+  }, [pageDailyVisits, history, dayList])
+
+  // 存储各页面曲线的坐标点，用于点击检测
+  const curvePointsRef = useRef({})
+  const [hoveredPage, setHoveredPage] = useState(null)
+  const [tooltip, setTooltip] = useState(null) // {x, y, page, dateStr, count}
 
   useEffect(() => {
     drawChart()
-  }, [history, current, canvasSize, allPages])
+  }, [canvasSize, selectedDate, dailyVisits, pageDailyVisits, activePages, hoveredPage, tooltip])
 
   function drawChart() {
     const canvas = canvasRef.current
@@ -174,42 +206,43 @@ export default function Monitor() {
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, W, H)
 
-    const pad = { top: 30, right: 20, bottom: 55, left: 55 }
+    const pad = { top: 20, right: 130, bottom: 50, left: 55 }
     const chartW = W - pad.left - pad.right
     const chartH = H - pad.top - pad.bottom
-
-    const now = Date.now()
     const dayMs = 24 * 60 * 60 * 1000
-    const windowStartDate = new Date(now - days * dayMs)
-    windowStartDate.setHours(0, 0, 0, 0)
-    const windowStart = windowStartDate.getTime()
 
-    function toLocalDateStr(ts) {
-      const d = new Date(ts)
-      const y = d.getFullYear()
-      const m = String(d.getMonth() + 1).padStart(2, '0')
-      const day = String(d.getDate()).padStart(2, '0')
-      return `${y}-${m}-${day}`
+    // 收集各页面每天的访问量
+    // 优先用 pageDailyVisits，否则从 history 统计
+    function getPageVisits(page, dateStr) {
+      if (pageDailyVisits[page] && pageDailyVisits[page][dateStr] !== undefined) {
+        return pageDailyVisits[page][dateStr] || 0
+      }
+      // 从 history 统计：该日期当天该 page 的所有记录点 count 之和
+      const points = history[page] || []
+      const dayStart = new Date(dateStr + 'T00:00:00').getTime()
+      const dayEnd = dayStart + dayMs
+      let total = 0
+      points.forEach(p => {
+        const t = new Date(p.time).getTime()
+        if (t >= dayStart && t < dayEnd) total += p.count || 0
+      })
+      return total
     }
 
-    const mergedPoints = []
-    for (let offset = 0; offset < days; offset++) {
-      const dayDate = new Date(windowStart + offset * dayMs)
-      const dateStr = toLocalDateStr(dayDate.getTime())
-      const visitCount = dailyVisits[dateStr] || 0
-      mergedPoints.push({ time: dayDate.getTime() + dayMs / 2, count: visitCount })
-    }
+    // 计算最大值
+    let maxVal = 1
+    activePages.forEach(page => {
+      dayList.forEach(dateStr => {
+        const v = getPageVisits(page, dateStr)
+        if (v > maxVal) maxVal = v
+      })
+    })
 
-    const allCounts = mergedPoints.map(p => p.count)
-    allCounts.push(0)
-    const maxCount = Math.max(...allCounts, 1)
-    const minTime = windowStart
-    const maxTime = now
-    const timeRange = maxTime - minTime || 1
-
+    // 背景
     ctx.fillStyle = '#0f172a'
     ctx.fillRect(0, 0, W, H)
 
+    // 坐标轴
     ctx.strokeStyle = 'rgba(56,189,248,0.25)'
     ctx.lineWidth = 1
     ctx.beginPath()
@@ -218,134 +251,225 @@ export default function Monitor() {
     ctx.lineTo(pad.left + chartW, pad.top + chartH)
     ctx.stroke()
 
+    // Y轴刻度
     ctx.fillStyle = '#64748b'
     ctx.font = '11px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('时间', pad.left + chartW / 2, H - 8)
-
-    ctx.save()
-    ctx.translate(12, pad.top + chartH / 2)
-    ctx.rotate(-Math.PI / 2)
-    ctx.fillText('日访问量（次）', 0, 0)
-    ctx.restore()
-
-    ctx.strokeStyle = 'rgba(56,189,248,0.06)'
-    ctx.lineWidth = 0.5
+    ctx.textAlign = 'right'
     for (let i = 0; i <= 5; i++) {
       const y = pad.top + chartH - (i / 5) * chartH
+      ctx.fillText(Math.round(maxVal * i / 5), pad.left - 8, y + 4)
+      ctx.strokeStyle = 'rgba(56,189,248,0.06)'
+      ctx.lineWidth = 0.5
       ctx.beginPath()
       ctx.moveTo(pad.left, y)
       ctx.lineTo(pad.left + chartW, y)
       ctx.stroke()
-      ctx.fillStyle = '#64748b'
-      ctx.font = '11px sans-serif'
-      ctx.textAlign = 'right'
-      ctx.fillText(Math.round(maxCount * i / 5), pad.left - 8, y + 4)
     }
 
-    const dayLabels = []
-    for (let offset = 0; offset <= days; offset++) {
-      const labelDate = new Date(windowStart + offset * dayMs)
-      labelDate.setHours(0, 0, 0, 0)
-      const labelTime = labelDate.getTime()
-      if (labelTime > maxTime) break
-      dayLabels.push(labelTime)
-    }
-    if (!dayLabels.length) {
-      dayLabels.push(new Date(windowStart).setHours(0, 0, 0, 0))
-    }
-
-    for (const t of dayLabels) {
-      const x = pad.left + ((t - minTime) / timeRange) * chartW
-      const d = new Date(t)
-      const month = (d.getMonth() + 1).toString().padStart(2, '0')
-      const date = d.getDate().toString().padStart(2, '0')
-      const label = `${month}/${date}`
-      ctx.fillStyle = '#64748b'
-      ctx.font = '11px sans-serif'
+    // X轴日期
+    const slotW = chartW / dayList.length
+    dayList.forEach((dateStr, i) => {
+      const x = pad.left + i * slotW + slotW / 2
+      const isSelected = dateStr === selectedDate
+      ctx.fillStyle = isSelected ? '#f59e0b' : '#64748b'
+      ctx.font = isSelected ? 'bold 11px sans-serif' : '11px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(label, x, pad.top + chartH + 18)
+      ctx.fillText(dateStr.slice(5), x, pad.top + chartH + 18)
 
-      ctx.strokeStyle = 'rgba(56,189,248,0.1)'
+      // 选中日期竖线
+      if (isSelected) {
+        ctx.strokeStyle = 'rgba(245,158,11,0.3)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([4, 4])
+        ctx.beginPath()
+        ctx.moveTo(x, pad.top)
+        ctx.lineTo(x, pad.top + chartH)
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+    })
+
+    // 轴标题
+    ctx.fillStyle = '#64748b'
+    ctx.font = '11px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('日期', pad.left + chartW / 2, H - 8)
+    ctx.save()
+    ctx.translate(12, pad.top + chartH / 2)
+    ctx.rotate(-Math.PI / 2)
+    ctx.fillText('访问量', 0, 0)
+    ctx.restore()
+
+    // 画各页面的曲线
+    curvePointsRef.current = {}
+    activePages.forEach(page => {
+      const color = getColor(page)
+      const points = dayList.map((dateStr, i) => ({
+        x: pad.left + i * slotW + slotW / 2,
+        y: pad.top + chartH - (getPageVisits(page, dateStr) / maxVal) * chartH * 0.9,
+        count: getPageVisits(page, dateStr),
+        dateStr
+      }))
+      curvePointsRef.current[page] = points
+
+      const isHovered = hoveredPage === page
+
+      // 平滑曲线
+      ctx.strokeStyle = color
+      ctx.lineWidth = isHovered ? 3.5 : 2
+      ctx.globalAlpha = isHovered ? 1 : 0.85
       ctx.beginPath()
-      ctx.moveTo(x, pad.top)
-      ctx.lineTo(x, pad.top + chartH)
+      points.forEach((pt, i) => {
+        if (i === 0) ctx.moveTo(pt.x, pt.y)
+        else {
+          const prev = points[i - 1]
+          const cx = (prev.x + pt.x) / 2
+          ctx.quadraticCurveTo(prev.x, prev.y, cx, (prev.y + pt.y) / 2)
+        }
+      })
+      const last = points[points.length - 1]
+      ctx.lineTo(last.x, last.y)
       ctx.stroke()
+
+      // 画点
+      ctx.globalAlpha = 1
+      points.forEach(pt => {
+        if (pt.count > 0) {
+          ctx.beginPath()
+          ctx.arc(pt.x, pt.y, isHovered ? 5 : 3, 0, Math.PI * 2)
+          ctx.fillStyle = color
+          ctx.fill()
+        }
+      })
+    })
+
+    // 总访问量曲线（每天所有页面访问量之和）
+    const totalPoints = dayList.map((dateStr, i) => {
+      let total = 0
+      activePages.forEach(page => {
+        total += getPageVisits(page, dateStr)
+      })
+      // 也加上未在 activePages 中的页面
+      Object.keys(pageDailyVisits).forEach(page => {
+        if (HIDDEN_PAGES.has(page) || activePages.includes(page)) return
+        total += (pageDailyVisits[page]?.[dateStr] || 0)
+      })
+      return { x: pad.left + i * slotW + slotW / 2, count: total, dateStr }
+    })
+
+    const maxTotal = Math.max(...totalPoints.map(p => p.count), maxVal)
+    // 如果总访问量比单页面最大值大很多，需要重新计算 Y 坐标
+    if (maxTotal > maxVal) {
+      totalPoints.forEach(pt => {
+        pt.y = pad.top + chartH - (pt.count / maxTotal) * chartH * 0.9
+      })
+    } else {
+      totalPoints.forEach(pt => {
+        pt.y = pad.top + chartH - (pt.count / maxVal) * chartH * 0.9
+      })
     }
 
-    const lineColor = '#38bdf8'
-    ctx.strokeStyle = lineColor
+    // 画总访问量曲线（白色粗线）
+    ctx.strokeStyle = '#f1f5f9'
     ctx.lineWidth = 2.5
     ctx.globalAlpha = 0.9
-    const coordinates = mergedPoints.map(p => ({
-      x: pad.left + ((p.time - minTime) / timeRange) * chartW,
-      y: pad.top + chartH - (p.count / maxCount) * chartH
-    }))
-
-    const drawSmoothLine = (closeToBottom = false) => {
-      if (!coordinates.length) return
-      ctx.beginPath()
-      ctx.moveTo(coordinates[0].x, coordinates[0].y)
-      for (let i = 0; i < coordinates.length - 1; i++) {
-        const currentPoint = coordinates[i]
-        const nextPoint = coordinates[i + 1]
-        const controlX = (currentPoint.x + nextPoint.x) / 2
-        ctx.quadraticCurveTo(currentPoint.x, currentPoint.y, controlX, (currentPoint.y + nextPoint.y) / 2)
+    ctx.setLineDash([6, 3])
+    ctx.beginPath()
+    totalPoints.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.y)
+      else {
+        const prev = totalPoints[i - 1]
+        const cx = (prev.x + pt.x) / 2
+        ctx.quadraticCurveTo(prev.x, prev.y, cx, (prev.y + pt.y) / 2)
       }
-      const lastPoint = coordinates[coordinates.length - 1]
-      ctx.lineTo(lastPoint.x, lastPoint.y)
-      if (closeToBottom) {
-        ctx.lineTo(lastPoint.x, pad.top + chartH)
-        ctx.lineTo(coordinates[0].x, pad.top + chartH)
-        ctx.closePath()
-      }
-    }
-
-    drawSmoothLine(false)
+    })
+    const lastTotal = totalPoints[totalPoints.length - 1]
+    ctx.lineTo(lastTotal.x, lastTotal.y)
     ctx.stroke()
-
-    ctx.globalAlpha = 0.08
-    drawSmoothLine(true)
-    ctx.fillStyle = lineColor
-    ctx.fill()
+    ctx.setLineDash([])
     ctx.globalAlpha = 1
 
-    const markerStep = Math.max(1, Math.ceil(coordinates.length / 36))
-    for (let index = 0; index < coordinates.length; index += markerStep) {
-      const { x, y } = coordinates[index]
+    // 总访问量数值标注
+    totalPoints.forEach(pt => {
+      if (pt.count > 0) {
+        ctx.fillStyle = '#f1f5f9'
+        ctx.font = 'bold 10px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(String(pt.count), pt.x, pt.y - 6)
+      }
+    })
+
+    // 图例（右侧竖向排列，每行带访问量）
+    const legendX = W - pad.right + 8
+    const legendStartY = pad.top + 8
+    const legendLineH = 18
+    activePages.forEach((page, idx) => {
+      const color = getColor(page)
+      const label = getLabel(page)
+      const curCount = getPageVisits(page, selectedDate)
+      const text = `${label} (${curCount})`
+      const y = legendStartY + idx * legendLineH
+      const isHovered = hoveredPage === page
+
+      ctx.font = isHovered ? 'bold 12px sans-serif' : '11px sans-serif'
+      ctx.fillStyle = isHovered ? color : color
+      ctx.globalAlpha = isHovered ? 1 : 0.85
       ctx.beginPath()
-      ctx.arc(x, y, 3, 0, Math.PI * 2)
-      ctx.fillStyle = lineColor
+      ctx.arc(legendX + 4, y + 1, isHovered ? 5 : 4, 0, Math.PI * 2)
       ctx.fill()
+      ctx.fillStyle = isHovered ? '#fff' : '#cbd5e1'
+      ctx.textAlign = 'left'
+      ctx.fillText(text, legendX + 12, y + 5)
+      ctx.globalAlpha = 1
+    })
+
+    // 图例：总访问量
+    {
+      const totalToday = totalPoints.find(p => p.dateStr === selectedDate)?.count || 0
+      const y = legendStartY + activePages.length * legendLineH
+      ctx.font = 'bold 12px sans-serif'
+      ctx.strokeStyle = '#f1f5f9'
+      ctx.lineWidth = 2
+      ctx.globalAlpha = 0.9
+      ctx.setLineDash([4, 2])
+      ctx.beginPath()
+      ctx.moveTo(legendX - 2, y + 1)
+      ctx.lineTo(legendX + 10, y + 1)
+      ctx.stroke()
+      ctx.setLineDash([])
+      ctx.globalAlpha = 1
+      ctx.fillStyle = '#f1f5f9'
+      ctx.textAlign = 'left'
+      ctx.fillText(`总访问量 (${totalToday})`, legendX + 14, y + 5)
     }
 
-    const endPoint = coordinates[coordinates.length - 1]
-    ctx.beginPath()
-    ctx.arc(endPoint.x, endPoint.y, 6, 0, Math.PI * 2)
-    ctx.fillStyle = lineColor
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)'
-    ctx.lineWidth = 2
-    ctx.stroke()
+    // 画 tooltip
+    if (tooltip) {
+      const tw = 160
+      const th = 56
+      let tx = tooltip.x + 12
+      let ty = tooltip.y - th - 8
+      if (tx + tw > W) tx = tooltip.x - tw - 12
+      if (ty < 0) ty = tooltip.y + 12
 
-    const totalVisits = Object.values(dailyVisits).reduce((a, b) => a + b, 0)
-    const legendW = 130
-    const legendH = 34
-    ctx.fillStyle = 'rgba(15,23,42,0.85)'
-    ctx.strokeStyle = 'rgba(56,189,248,0.15)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.roundRect(pad.left + 10, pad.top + 5, legendW, legendH, 6)
-    ctx.fill()
-    ctx.stroke()
-    ctx.fillStyle = lineColor
-    ctx.beginPath()
-    ctx.arc(pad.left + 24, pad.top + 22, 5, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#cbd5e1'
-    ctx.font = '12px sans-serif'
-    ctx.textAlign = 'left'
-    ctx.fillText(`日访问量 (${totalVisits})`, pad.left + 36, pad.top + 26)
+      ctx.fillStyle = 'rgba(15,23,42,0.95)'
+      ctx.strokeStyle = getColor(tooltip.page)
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.roundRect(tx, ty, tw, th, 8)
+      ctx.fill()
+      ctx.stroke()
+
+      ctx.fillStyle = getColor(tooltip.page)
+      ctx.font = 'bold 13px sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText(getLabel(tooltip.page), tx + 10, ty + 18)
+
+      ctx.fillStyle = '#cbd5e1'
+      ctx.font = '12px sans-serif'
+      ctx.fillText(`日期: ${tooltip.dateStr}`, tx + 10, ty + 36)
+      ctx.fillText(`访问量: ${tooltip.count}`, tx + 10, ty + 52)
+    }
   }
 
   const totalCurrent = Object.values(current).reduce((a, b) => a + b, 0)
@@ -397,49 +521,129 @@ export default function Monitor() {
     <div className="monitor-page">
       <Link to="/home" className="btn-back-home">← 返回首页</Link>
       <h2 className="monitor-title">📊 在线人数监控</h2>
-      <p className="monitor-subtitle">按天查看各页面在线人数变化趋势 · 每60秒自动记录</p>
+      <p className="monitor-subtitle">查看各页面访问量趋势 · 每60秒自动更新</p>
 
       <div className="monitor-stats">
         <div className="monitor-stat-card">
-          <div className="monitor-stat-label">当前1小时总在线</div>
+          <div className="monitor-stat-label">今日累计在线人数</div>
           <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{hourlyTotal}</div>
         </div>
         <div className="monitor-stat-card">
-          <div className="monitor-stat-label">当前总在线</div>
+          <div className="monitor-stat-label">实时在线人数</div>
           <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{totalCurrent}</div>
         </div>
-        {allPages.map(page => (
-          <div key={page} className="monitor-stat-card">
-            <div className="monitor-stat-label">{getLabel(page)}</div>
-            <div className="monitor-stat-value" style={{ color: getColor(page) }}>
-              {current[page] !== undefined ? current[page] : '-'}
-            </div>
+        <div className="monitor-stat-card">
+          <div className="monitor-stat-label">环比前日 ({prevDate.slice(5)})</div>
+          <div className="monitor-stat-value" style={{ color: diff > 0 ? '#22c55e' : diff < 0 ? '#ef4444' : '#94a3b8' }}>
+            {diff > 0 ? '+' : ''}{diff}
+            {diffPct !== null && (
+              <span style={{ fontSize: 13, marginLeft: 4 }}>
+                ({diff > 0 ? '+' : ''}{diffPct}%)
+              </span>
+            )}
           </div>
-        ))}
+        </div>
       </div>
 
       <div className="monitor-controls">
-        <label className="monitor-controls-label" htmlFor="monitor-range-select">时间范围：</label>
-        <select
-          id="monitor-range-select"
-          className="monitor-range-select"
-          value={days}
-          onChange={(event) => {
-            setDays(Number(event.target.value))
-            setLoading(true)
-          }}
-        >
-          {DAY_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+        <label className="monitor-controls-label">选择日期：</label>
+        <label className="monitor-date-picker-wrap" htmlFor="monitor-date-picker">
+          <input
+            id="monitor-date-picker"
+            type="date"
+            className="monitor-date-picker"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
+        </label>
+        <span style={{ color: '#64748b', fontSize: 12, marginLeft: 8 }}>
+          显示该日期及前7天各页面访问曲线
+        </span>
       </div>
 
       {loading && <div className="monitor-loading">加载中…</div>}
 
       <div className="monitor-chart-container" ref={containerRef}>
         <canvas ref={canvasRef}
-                style={{ width: canvasSize.w, height: canvasSize.h }} />
+                style={{ width: canvasSize.w, height: canvasSize.h, cursor: 'pointer', touchAction: 'manipulation' }}
+                onMouseMove={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const x = e.clientX - rect.left
+                  const y = e.clientY - rect.top
+                  // 找最近的曲线点
+                  let closest = null
+                  let minDist = 20
+                  Object.entries(curvePointsRef.current).forEach(([page, points]) => {
+                    points.forEach(pt => {
+                      const dist = Math.hypot(pt.x - x, pt.y - y)
+                      if (dist < minDist) {
+                        minDist = dist
+                        closest = { page, x: pt.x, y: pt.y, dateStr: pt.dateStr, count: pt.count }
+                      }
+                    })
+                  })
+                  if (closest) {
+                    setHoveredPage(closest.page)
+                    setTooltip(closest)
+                  } else {
+                    setHoveredPage(null)
+                    setTooltip(null)
+                  }
+                }}
+                onMouseLeave={() => {
+                  setHoveredPage(null)
+                  setTooltip(null)
+                }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const x = e.clientX - rect.left
+                  const y = e.clientY - rect.top
+                  let closest = null
+                  let minDist = 30
+                  Object.entries(curvePointsRef.current).forEach(([page, points]) => {
+                    points.forEach(pt => {
+                      const dist = Math.hypot(pt.x - x, pt.y - y)
+                      if (dist < minDist) {
+                        minDist = dist
+                        closest = { page, x: pt.x, y: pt.y, dateStr: pt.dateStr, count: pt.count }
+                      }
+                    })
+                  })
+                  if (closest) {
+                    setHoveredPage(closest.page)
+                    setTooltip(closest)
+                  }
+                }}
+                onTouchStart={(e) => {
+                  if (e.touches.length === 0) return
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const x = e.touches[0].clientX - rect.left
+                  const y = e.touches[0].clientY - rect.top
+                  let closest = null
+                  let minDist = 40
+                  Object.entries(curvePointsRef.current).forEach(([page, points]) => {
+                    points.forEach(pt => {
+                      const dist = Math.hypot(pt.x - x, pt.y - y)
+                      if (dist < minDist) {
+                        minDist = dist
+                        closest = { page, x: pt.x, y: pt.y, dateStr: pt.dateStr, count: pt.count }
+                      }
+                    })
+                  })
+                  if (closest) {
+                    setHoveredPage(closest.page)
+                    setTooltip(closest)
+                    e.preventDefault()
+                  }
+                }}
+                onTouchEnd={() => {
+                  // 触摸结束后保留 tooltip 一段时间
+                  setTimeout(() => {
+                    setHoveredPage(null)
+                    setTooltip(null)
+                  }, 3000)
+                }}
+                 />
       </div>
     </div>
   )

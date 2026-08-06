@@ -47,7 +47,6 @@ export default function PersonalChat() {
   const { recording: isRecording, toggle: toggleVoice } = useVoiceInput(setQuestion)
 
   const MODEL_LIST = [
-    { label: '智谱 GLM', keyword: '切换智谱', provider: 'zhipu' },
     { label: '豆包', keyword: '切换豆包', provider: 'doubao' },
     { label: 'DeepSeek', keyword: '切换deepseek', provider: 'deepseek' },
     { label: '千问', keyword: '切换千问', provider: 'qwen' },
@@ -168,6 +167,10 @@ export default function PersonalChat() {
 
   const sendQuestion = async (e) => {
     e?.preventDefault?.()
+    if (!authUser) {
+      window.dispatchEvent(new CustomEvent('open-auth-modal', { detail: { mode: 'login', redirect: '/personal' } }))
+      return
+    }
     if (!question.trim() && !selectedFile) return
     if (circuitOpen) {
       setMessages(prev => [...prev, { role: 'system', content: '⚡ 服务熔断中，请稍后再试' }])

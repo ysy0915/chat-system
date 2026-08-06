@@ -74,6 +74,22 @@ body::after {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    /* 禁止整个页面被选中或拖拽 */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    /* 禁止双击缩放 */
+    touch-action: manipulation;
+}
+
+/* 输入框和文本区域允许选中 */
+input, textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    user-select: text;
+    /* 输入框聚焦时不放大 */
+    font-size: 16px;
 }
 
 /* ─── AI 生成标识（全局通用） ─── */

@@ -238,6 +238,9 @@ function AnnouncementModal({ onClose }) {
     )
 }
 
+// 需要登录才能访问的页面
+const AUTH_REQUIRED_PAGES = new Set(['/personal', '/treehole', '/profile'])
+
 function NavBar({ authUser, onLogout, onOpenAuth }) {
     const location = useLocation()
     const isActive = (path) => location.pathname === path ? 'active' : ''
@@ -286,7 +289,13 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                 </Link>
                 <div className="navbar-links">
                     {navLinks.map(l => (
-                        <Link key={l.to} to={l.to} className={isActive(l.to)}>{l.label}</Link>
+                        <Link key={l.to} to={l.to} className={isActive(l.to)}
+                              onClick={(e) => {
+                                  if (AUTH_REQUIRED_PAGES.has(l.to) && !authUser) {
+                                      e.preventDefault()
+                                      onOpenAuth('login', l.to)
+                                  }
+                              }}>{l.label}</Link>
                     ))}
                 </div>
                 <div className="navbar-auth">
@@ -372,7 +381,15 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         >✕</button>
                         <div className="mobile-drawer-links">
                             {mobileNavLinks.map(l => (
-                                <Link key={l.to} to={l.to} className={isActive(l.to)} onClick={closeMobile}>{l.label}</Link>
+                                <Link key={l.to} to={l.to} className={isActive(l.to)}
+                                      onClick={(e) => {
+                                          if (AUTH_REQUIRED_PAGES.has(l.to) && !authUser) {
+                                              e.preventDefault()
+                                              onOpenAuth('login', l.to)
+                                          } else {
+                                              closeMobile()
+                                          }
+                                      }}>{l.label}</Link>
                             ))}
                         </div>
                         <div className="mobile-drawer-auth">
@@ -396,46 +413,50 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
 }
 
 const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
-    const [loginForm, setLoginForm] = useState({ username: '', password: '' })
-    const [regForm, setRegForm] = useState({ username: '', nickname: '', password: '' })
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
-    const navigate = useNavigate()
 
-    const handleLogin = async (e) => {
+    // 非受控输入：用 ref 直接读取 DOM 值，避免每次输入触发 React 重渲染
+    const loginUsernameRef = useRef(null)
+    const loginPasswordRef = useRef(null)
+    const regUsernameRef = useRef(null)
+    const regNicknameRef = useRef(null)
+    const regPasswordRef = useRef(null)
+
+    async function handleLogin(e) {
         e.preventDefault()
-        setError('')
-        setLoading(true)
+        const username = loginUsernameRef.current?.value?.trim() || ''
+        const password = loginPasswordRef.current?.value || ''
+        if (!username || !password) { setError('请输入用户名和密码'); return }
+        setLoading(true); setError('')
         try {
-            const res = await axios.post('/api/v1/auth/login', loginForm)
+            const res = await axios.post('/api/v1/auth/login', { username, password })
             localStorage.setItem('auth_token', res.data.access_token)
             localStorage.setItem('auth_user', JSON.stringify(res.data.user))
             window.dispatchEvent(new CustomEvent('auth-changed', { detail: res.data.user }))
             onClose()
-            navigate('/profile')
         } catch (err) {
-            setError(err.response?.data?.error || '登录失败，请重试')
-        } finally {
-            setLoading(false)
-        }
+            setError(err.response?.data?.error || '登录失败')
+        } finally { setLoading(false) }
     }
 
-    const handleRegister = async (e) => {
+    async function handleRegister(e) {
         e.preventDefault()
-        setError('')
-        setLoading(true)
+        const username = regUsernameRef.current?.value?.trim() || ''
+        const password = regPasswordRef.current?.value || ''
+        const nickname = regNicknameRef.current?.value?.trim() || ''
+        if (!username || !password) { setError('请输入用户名和密码'); return }
+        setLoading(true); setError('')
         try {
-            const res = await axios.post('/api/v1/auth/register', regForm)
+            await axios.post('/api/v1/auth/register', { username, password, nickname })
+            const res = await axios.post('/api/v1/auth/login', { username, password })
             localStorage.setItem('auth_token', res.data.access_token)
             localStorage.setItem('auth_user', JSON.stringify(res.data.user))
             window.dispatchEvent(new CustomEvent('auth-changed', { detail: res.data.user }))
             onClose()
-            navigate('/profile')
         } catch (err) {
-            setError(err.response?.data?.error || '注册失败，请重试')
-        } finally {
-            setLoading(false)
-        }
+            setError(err.response?.data?.error || '注册失败')
+        } finally { setLoading(false) }
     }
 
     return (
@@ -453,14 +474,14 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
                     <form onSubmit={handleLogin}>
                         <div className="auth-field">
                             <label>用户名</label>
-                            <input type="text" value={loginForm.username}
-                                   onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
+                            <input ref={loginUsernameRef} type="text"
+                                   defaultValue=""
                                    placeholder="请输入用户名" required />
                         </div>
                         <div className="auth-field">
                             <label>密码</label>
-                            <input type="password" value={loginForm.password}
-                                   onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
+                            <input ref={loginPasswordRef} type="password"
+                                   defaultValue=""
                                    placeholder="请输入密码" required />
                         </div>
                         <button type="submit" className="auth-submit" disabled={loading}>
@@ -471,20 +492,20 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
                     <form onSubmit={handleRegister}>
                         <div className="auth-field">
                             <label>用户名</label>
-                            <input type="text" value={regForm.username}
-                                   onChange={e => setRegForm({ ...regForm, username: e.target.value })}
+                            <input ref={regUsernameRef} type="text"
+                                   defaultValue=""
                                    placeholder="请输入用户名" required />
                         </div>
                         <div className="auth-field">
                             <label>昵称</label>
-                            <input type="text" value={regForm.nickname}
-                                   onChange={e => setRegForm({ ...regForm, nickname: e.target.value })}
+                            <input ref={regNicknameRef} type="text"
+                                   defaultValue=""
                                    placeholder="选填，不填则默认使用用户名" />
                         </div>
                         <div className="auth-field">
                             <label>密码</label>
-                            <input type="password" value={regForm.password}
-                                   onChange={e => setRegForm({ ...regForm, password: e.target.value })}
+                            <input ref={regPasswordRef} type="password"
+                                   defaultValue=""
                                    placeholder="请输入密码" required />
                         </div>
                         <button type="submit" className="auth-submit" disabled={loading}>
@@ -522,15 +543,20 @@ const ROUTES = [
     { path: '/personal', element: <PersonalChat/> },
     { path: '/debate', element: <Debate/> },
     { path: '/games', element: <Games/> },
-    { path: '/games/pingpong', element: <PingPong/> },
-    { path: '/games/snakeking', element: <SnakeKing/> },
-    { path: '/games/castlesiege', element: <CastleSiege/> },
     { path: '/history', element: <History/> },
     { path: '/graph', element: <KnowledgeGraph/> },
     { path: '/profile', element: <Profile/> },
     { path: '/admin/models', element: <AdminModels/> },
     { path: '/sql', element: <SqlExecutor/> },
     { path: '/treehole', element: <TreeHole/> },
+]
+
+// 不常驻的页面（含全局 keydown 监听器，常驻会吞掉其他页面的键盘输入）
+const EPHEMERAL_ROUTES = [
+    { path: '/games/pingpong', element: <PingPong/> },
+    { path: '/games/snakeking', element: <SnakeKing/> },
+    { path: '/games/castlesiege', element: <CastleSiege/> },
+    { path: '/monitor', element: <Monitor/> },
 ]
 
 function KeepAliveShell({ pathname }) {
@@ -547,7 +573,9 @@ function AppShell(){
     const [authUser, setAuthUser] = useState(null)
     const [authModal, setAuthModal] = useState(null)
     const [disclaimerOpen, setDisclaimerOpen] = useState(false)
+    const pendingRedirectRef = React.useRef(null)
     const location = useLocation()
+    const navigate = useNavigate()
 
     useEffect(() => {
         const token = localStorage.getItem('auth_token')
@@ -555,9 +583,27 @@ function AppShell(){
         if (token && userStr) {
             try { setAuthUser(JSON.parse(userStr)) } catch {}
         }
-        const handler = (e) => setAuthUser(e.detail)
+        const handler = (e) => {
+            setAuthUser(e.detail)
+            // 登录成功后自动跳转到待跳转页面
+            if (e.detail && pendingRedirectRef.current) {
+                const target = pendingRedirectRef.current
+                pendingRedirectRef.current = null
+                setTimeout(() => navigate(target), 100)
+            }
+        }
         window.addEventListener('auth-changed', handler)
-        const openAuthHandler = (e) => setAuthModal(e.detail)
+        const openAuthHandler = (e) => {
+            const detail = e.detail
+            if (typeof detail === 'string') {
+                setAuthModal(detail)
+            } else if (detail && typeof detail === 'object') {
+                if (detail.redirect) pendingRedirectRef.current = detail.redirect
+                setAuthModal(detail.mode || 'login')
+            } else {
+                setAuthModal('login')
+            }
+        }
         window.addEventListener('open-auth-modal', openAuthHandler)
         return () => {
             window.removeEventListener('auth-changed', handler)
@@ -576,23 +622,31 @@ function AppShell(){
         localStorage.removeItem('auth_token')
         localStorage.removeItem('auth_user')
         setAuthUser(null)
+        window.dispatchEvent(new CustomEvent('auth-changed', { detail: null }))
+        navigate('/home')
     }
 
-    const openAuth = React.useCallback((mode) => setAuthModal(mode), [])
-    const closeAuth = React.useCallback(() => setAuthModal(null), [])
+    const openAuth = React.useCallback((mode, redirectPath) => {
+        if (redirectPath) pendingRedirectRef.current = redirectPath
+        setAuthModal(mode)
+    }, [])
+    const closeAuth = React.useCallback(() => {
+        setAuthModal(null)
+        pendingRedirectRef.current = null
+    }, [])
 
-    // 后台页面：不常驻 DOM，仅当路径匹配时挂载
-    const isMonitorRoute = location.pathname === '/monitor'
+    // 后台/游戏页面：仅访问时挂载，离开即卸载
+    const ephemeralRoute = EPHEMERAL_ROUTES.find(r => r.path === location.pathname)
 
     return (
         <div className="app-layout">
             <OnlinePresenceTracker authUser={authUser} />
             <NavBar authUser={authUser} onLogout={handleLogout} onOpenAuth={openAuth} />
             <KeepAliveShellMemo pathname={location.pathname} />
-            {/* 后台页面：仅访问时挂载，离开即卸载 */}
-            {isMonitorRoute && <Monitor/>}
+            {/* 非常驻页面：仅访问时挂载，离开即卸载（避免全局 keydown 吞掉输入） */}
+            {ephemeralRoute && ephemeralRoute.element}
             {/* 兜底：未知路径显示 Landing */}
-            {!ROUTES.some(r => r.path === location.pathname) && !isMonitorRoute && (
+            {!ROUTES.some(r => r.path === location.pathname) && !ephemeralRoute && (
                 <Landing/>
             )}
             {authModal && (

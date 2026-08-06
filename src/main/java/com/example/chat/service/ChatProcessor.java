@@ -30,6 +30,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -103,6 +104,7 @@ public class ChatProcessor {
 
         try {
             List<ModelConfig> allConfigs = modelConfigRepository.findAllEnabled().stream()
+                    .filter(c -> c.modelType == null || "chat".equalsIgnoreCase(c.modelType))
                     .sorted(Comparator.comparingInt(config -> config.priority != null ? config.priority : 100))
                     .toList();
 
@@ -167,16 +169,27 @@ public class ChatProcessor {
                         .filter(c -> c.id != null && c.id.equals(boundModelId))
                         .toList();
                 if (configs.isEmpty()) {
+                    // 绑定的模型不存在或非 chat 类型，回退到 doubao，再回退到全部
                     configs = allConfigs.stream()
                             .filter(c -> "doubao".equalsIgnoreCase(c.provider))
                             .toList();
                     configs = configs.isEmpty() ? allConfigs : configs;
+                    log.warn("[WARN] 用户 {} 绑定的模型ID={} 不在可用chat模型中，回退到 {}", userId, boundModelId,
+                            configs.isEmpty() ? "无可用模型" : configs.get(0).provider);
                 }
             } else {
                 List<ModelConfig> doubaoConfigs = allConfigs.stream()
                         .filter(c -> "doubao".equalsIgnoreCase(c.provider))
                         .toList();
                 configs = doubaoConfigs.isEmpty() ? allConfigs : doubaoConfigs;
+            }
+
+            if (configs.isEmpty()) {
+                log.error("[ERROR] 用户 {} 没有可用的 chat 模型, allConfigs={}", userId,
+                        allConfigs.stream().map(c -> c.provider + "/" + c.model).toList());
+                broadcastService.broadcast("/topic/user." + userId,
+                        Map.of("type", "error", "req_id", reqId, "message", "没有可用的对话模型"));
+                return;
             }
 
             final List<Map<String, Object>> historyMessages;
@@ -188,6 +201,9 @@ public class ChatProcessor {
 
             List<CompletableFuture<LLMResult>> futures = new ArrayList<>();
             AtomicBoolean completed = new AtomicBoolean(false);
+            AtomicInteger finishedCount = new AtomicInteger(0);
+            int totalModels = configs.size();
+
             for (ModelConfig config : configs) {
                 CompletableFuture<LLMResult> future = CompletableFuture.supplyAsync(() -> {
                     try {
@@ -209,27 +225,44 @@ public class ChatProcessor {
                         throw new RuntimeException(ex);
                     }
                 }, modelExecutor);
-                futures.add(future);
 
-                future.thenAccept(result -> {
-                    if (completed.compareAndSet(false, true)) {
-                        if (isPrivate) {
-                            savePersonalModelId(userId, result.config.id);
+                future.handle((result, ex) -> {
+                    int finished = finishedCount.incrementAndGet();
+
+                    if (ex != null) {
+                        log.error("[ERROR] 模型 {} 调用失败: {}", config.model,
+                                ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage());
+                    } else {
+                        log.info("[INFO] 模型 {} 返回成功, answer长度={}", config.model,
+                                result.answer != null ? result.answer.length() : 0);
+
+                        if (completed.compareAndSet(false, true)) {
+                            log.info("[INFO] 抢到首发, 开始 completeWithAnswer, reqId={}", reqId);
+                            try {
+                                if (isPrivate) {
+                                    savePersonalModelId(userId, result.config.id);
+                                }
+                                completeWithAnswer(reqId, userId, question, result.answer, result.config.provider, result.config.model);
+                                log.info("[INFO] completeWithAnswer 完成, reqId={}", reqId);
+                            } catch (Exception e) {
+                                log.error("[ERROR] completeWithAnswer 失败: {}", e.getMessage(), e);
+                            }
+                        } else {
+                            log.info("[INFO] 模型 {} 不是首发, 跳过", config.model);
                         }
-                        completeWithAnswer(reqId, userId, question, result.answer, result.config.provider, result.config.model);
                     }
-                }).exceptionally(ex -> {
+
+                    // 最后一个完成的检查是否全部失败
+                    if (finished == totalModels && !completed.get()) {
+                        log.warn("[WARN] 所有 {} 个模型都失败了, 广播错误: reqId={} userId={}", totalModels, reqId, userId);
+                        broadcastService.broadcast("/topic/user." + userId,
+                                Map.of("type", "error", "req_id", reqId, "message", "所有模型调用均失败"));
+                    }
+
                     return null;
                 });
+                futures.add(future);
             }
-
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((unused, ex) -> {
-                if (!completed.get()) {
-                    String message = ex != null ? ex.getMessage() : "所有模型调用均失败";
-                    broadcastService.broadcast("/topic/user." + userId,
-                            Map.of("type", "error", "req_id", reqId, "message", message));
-                }
-            });
 
         } catch (Exception ex) {
             log.error("[ERROR] ChatProcessor: {}", ex.getMessage(), ex);
@@ -536,19 +569,37 @@ public class ChatProcessor {
 
         log.info("[INFO] callLLMWithHistory -> POST {} model={}", url, model);
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        log.info("[INFO] callLLMWithHistory <- status={}", response.statusCode());
+        log.info("[INFO] callLLMWithHistory <- status={} bodyLen={}", response.statusCode(),
+                response.body() != null ? response.body().length() : 0);
         if (response.statusCode() != 200) {
             log.error("[ERROR] LLM API 返回错误: status={}, body={}", response.statusCode(), response.body());
             throw new RuntimeException("LLM API returned status " + response.statusCode() + ": " + response.body());
         }
 
-        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("LLM API returned no choices");
+        try {
+            Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
+            if (choices == null || choices.isEmpty()) {
+                log.error("[ERROR] LLM API 返回无 choices, body={}", response.body());
+                throw new RuntimeException("LLM API returned no choices");
+            }
+            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+            if (message == null) {
+                log.error("[ERROR] LLM API 返回无 message, body={}", response.body());
+                throw new RuntimeException("LLM API returned no message");
+            }
+            Object content = message.get("content");
+            if (content == null) {
+                log.error("[ERROR] LLM API 返回无 content, body={}", response.body());
+                throw new RuntimeException("LLM API returned no content");
+            }
+            return content.toString();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[ERROR] LLM 响应解析失败: {}, body={}", e.getMessage(), response.body(), e);
+            throw new RuntimeException("LLM 响应解析失败: " + e.getMessage(), e);
         }
-        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-        return message != null ? message.get("content").toString() : "No response";
     }
 
     private String callLLMWithImage(String baseUrl, String apiKey, String model, String question, String imageBase64, String mimeType) throws Exception {

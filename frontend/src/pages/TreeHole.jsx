@@ -155,7 +155,21 @@ export default function TreeHole() {
         }
     }, [authUser, location.pathname])
 
-    if (!authUser) return null
+    if (!authUser) {
+        return (
+            <div className="treehole-page">
+                <TreeHoleHeader />
+                <div className="treehole-login-prompt">
+                    <div className="treehole-login-card">
+                        <div className="treehole-empty-icon">🔒</div>
+                        <h2>情绪树洞</h2>
+                        <p>登录后即可倾诉你的情绪</p>
+                        <button className="treehole-login-btn" onClick={openAuth}>去登录</button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="treehole-page">

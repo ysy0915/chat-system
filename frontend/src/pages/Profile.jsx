@@ -66,7 +66,7 @@ export default function Profile() {
       }
       setMessage('保存成功，即将跳转到首页...')
       setTimeout(() => {
-        window.location.href = '/chat/home'
+        navigate('/home')
       }, 1000)
     } catch (err) {
       console.error('Save profile error:', err)

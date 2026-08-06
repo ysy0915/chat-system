@@ -88,8 +88,12 @@ export default function PersonalChat() {
             let answer = m.answerJson
             try {
               const parsed = JSON.parse(answer)
-              if (parsed.answer) answer = parsed.answer
+              if (parsed.answer != null) answer = parsed.answer
             } catch {}
+            // 防御：确保 answer 是字符串，避免 formatAnswer 抛错
+            if (typeof answer !== 'string') {
+              answer = answer == null ? '' : String(answer)
+            }
             msgs.push({ role: 'ai', content: answer })
           })
           setMessages(msgs)
@@ -119,8 +123,11 @@ export default function PersonalChat() {
               let answer = payload.answer
               try {
                 const parsed = JSON.parse(answer)
-                if (parsed.answer) answer = parsed.answer
+                if (parsed.answer != null) answer = parsed.answer
               } catch {}
+              if (typeof answer !== 'string') {
+                answer = answer == null ? '' : String(answer)
+              }
               setMessages(prev => [...prev, { role: 'ai', content: answer }])
             } else if (payload.type === 'error') {
               setTyping(false)

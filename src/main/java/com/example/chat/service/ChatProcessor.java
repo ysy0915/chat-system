@@ -164,14 +164,20 @@ public class ChatProcessor {
 
             List<ModelConfig> configs;
             Long boundModelId = getPersonalModelId(userId);
-            if (boundModelId != null) {
+            if (isPrivate && boundModelId == null) {
+                // 个人对话空间：未绑定模型时，优先使用 DeepSeek
+                List<ModelConfig> deepseekConfigs = allConfigs.stream()
+                        .filter(c -> "deepseek".equalsIgnoreCase(c.provider))
+                        .toList();
+                configs = deepseekConfigs.isEmpty() ? allConfigs : deepseekConfigs;
+            } else if (boundModelId != null) {
                 configs = allConfigs.stream()
                         .filter(c -> c.id != null && c.id.equals(boundModelId))
                         .toList();
                 if (configs.isEmpty()) {
-                    // 绑定的模型不存在或非 chat 类型，回退到 doubao，再回退到全部
+                    // 绑定的模型不存在或非 chat 类型，回退到 deepseek，再回退到全部
                     configs = allConfigs.stream()
-                            .filter(c -> "doubao".equalsIgnoreCase(c.provider))
+                            .filter(c -> "deepseek".equalsIgnoreCase(c.provider))
                             .toList();
                     configs = configs.isEmpty() ? allConfigs : configs;
                     log.warn("[WARN] 用户 {} 绑定的模型ID={} 不在可用chat模型中，回退到 {}", userId, boundModelId,

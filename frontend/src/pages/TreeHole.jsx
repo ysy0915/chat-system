@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import '../styles/treehole.css'
 import { formatAnswer } from '../utils/format'
+import { extractAnswer } from '../utils/format'
 import { useAuthUser } from '../hooks/useAuthUser'
 
 const MOODS = [
@@ -57,8 +58,7 @@ export default function TreeHole() {
                         msgs.push({ role: 'user', text: m.question, mood: m.mood, time: m.createdAt })
                     }
                     if (m.answerJson && m.status === 'done') {
-                        let aiText = m.answerJson
-                        try { const p = JSON.parse(aiText); if (p.answer) aiText = p.answer } catch {}
+                        const aiText = extractAnswer(m.answerJson)
                         msgs.push({ role: 'ai', text: aiText, time: m.createdAt })
                     }
                 })
@@ -115,12 +115,8 @@ export default function TreeHole() {
                 data = res.data
             }
 
-            // 解析 answerJson（可能是 JSON 字符串或纯文本）
-            let answerText = data.answerJson || '树洞暂时没有回应...'
-            try {
-                const parsed = JSON.parse(answerText)
-                if (parsed.answer) answerText = parsed.answer
-            } catch {}
+            // 提取纯文本回答（模型可能返回 JSON 字符串）
+            const answerText = extractAnswer(data.answerJson) || '树洞暂时没有回应...'
 
             setMessages(prev => [...prev, {
                 role: 'ai',

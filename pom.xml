@@ -120,6 +120,12 @@
             <artifactId>green20220302</artifactId>
             <version>2.2.8</version>
         </dependency>
+        <!-- Alibaba Cloud OSS (对象存储) -->
+        <dependency>
+            <groupId>com.aliyun.oss</groupId>
+            <artifactId>aliyun-sdk-oss</artifactId>
+            <version>3.17.4</version>
+        </dependency>
     </dependencies>
 
     <build>

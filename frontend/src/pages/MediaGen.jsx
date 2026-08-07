@@ -8,15 +8,133 @@ export default function MediaGen() {
   const [messages, setMessages] = useState([])
   const [generating, setGenerating] = useState(false)
   const [genType, setGenType] = useState('image')
+
   const messagesEnd = useRef(null)
+
+  // 按类型加载历史
+  const loadHistory = (type) => {
+    const token = localStorage.getItem('auth_token')
+    if (!token) return
+    axios.get('/api/v1/media/history', {
+      params: { type: type, limit: 50 },
+      headers: { Authorization: `Bearer ${token}` }
+    }).then(res => {
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        // 按时间正序排列（最旧的在前），每条记录展开为 user提问 + ai回复
+        const sorted = [...res.data].reverse()
+        const history = []
+        const runningRecords = []
+        sorted.forEach((r, idx) => {
+          // 用户提问
+          history.push({ role: 'user', content: r.prompt, type: r.type })
+          if (r.status === 'running') {
+            // running 状态，显示生成中
+            history.push({
+              role: 'ai',
+              content: r.prompt,
+              type: r.type,
+              url: null,
+              recordId: r.id,
+              generating: true,
+              error: false
+            })
+            runningRecords.push({ recordId: r.id, msgIndex: history.length - 1 })
+          } else if (r.status === 'error') {
+            history.push({
+              role: 'ai',
+              content: '生成失败',
+              type: r.type,
+              url: null,
+              error: true
+            })
+          } else {
+            history.push({
+              role: 'ai',
+              content: r.prompt,
+              type: r.type,
+              url: r.url,
+              error: false
+            })
+          }
+        })
+        setMessages(history)
+        // 轮询所有 running 状态的记录
+        runningRecords.forEach(({ recordId, msgIndex }) => {
+          pollRecordStatus(recordId, msgIndex, token)
+        })
+      } else {
+        setMessages([])
+      }
+    }).catch(() => {})
+  }
+
+  // 轮询单条记录状态
+  const pollRecordStatus = (recordId, msgIndex, token) => {
+    const poll = () => {
+      axios.get(`/api/v1/media/status/${recordId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => {
+        const data = res.data
+        if (data.status === 'done') {
+          setMessages(prev => {
+            const updated = [...prev]
+            if (updated[msgIndex] && updated[msgIndex].recordId === recordId) {
+              updated[msgIndex] = {
+                role: 'ai',
+                content: data.prompt,
+                type: data.type,
+                url: data.url,
+                error: false
+              }
+            }
+            return updated
+          })
+        } else if (data.status === 'error') {
+          setMessages(prev => {
+            const updated = [...prev]
+            if (updated[msgIndex] && updated[msgIndex].recordId === recordId) {
+              updated[msgIndex] = {
+                role: 'ai',
+                content: data.error || '生成失败',
+                type: data.type,
+                url: null,
+                error: true
+              }
+            }
+            return updated
+          })
+        } else {
+          // 还在 running，5秒后继续轮询
+          setTimeout(poll, 5000)
+        }
+      }).catch(() => {
+        setTimeout(poll, 10000)
+      })
+    }
+    setTimeout(poll, 3000)
+  }
+
+  const switchType = (type) => {
+    setGenType(type)
+    loadHistory(type)
+  }
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token')
     const userStr = localStorage.getItem('auth_user')
     if (token && userStr) {
-      try { setAuthUser(JSON.parse(userStr)) } catch {}
+      try {
+        const user = JSON.parse(userStr)
+        setAuthUser(user)
+        loadHistory('image')
+      } catch {}
     }
-    const handler = (e) => setAuthUser(e.detail)
+    const handler = (e) => {
+      setAuthUser(e.detail)
+      if (e.detail) {
+        loadHistory('image')
+      }
+    }
     window.addEventListener('auth-changed', handler)
     return () => window.removeEventListener('auth-changed', handler)
   }, [])
@@ -39,14 +157,19 @@ export default function MediaGen() {
 
     try {
       const timeout = genType === 'video' ? 300000 : 120000
+      const token = localStorage.getItem('auth_token')
       const res = await axios.post('/api/v1/media/generate', {
         prompt: text,
         type: genType
-      }, { timeout })
+      }, {
+        timeout,
+        headers: { Authorization: `Bearer ${token}` }
+      })
       setGenerating(false)
+      const typeLabel = genType === 'video' ? '视频' : '图片'
       setMessages(prev => [...prev, {
         role: 'ai',
-        content: genType === 'video' ? '视频' : '图片',
+        content: typeLabel,
         type: genType,
         url: res.data.url || null
       }])
@@ -116,6 +239,13 @@ export default function MediaGen() {
                 </span>
                 <span>{m.content}</span>
               </div>
+            ) : m.generating ? (
+              <div className="media-result">
+                <div className="media-video-placeholder">
+                  <div className="media-gen-spinner"></div>
+                  <span>{m.type === 'video' ? '视频生成中，请稍候...' : 'AI 正在创作中，请稍候...'}</span>
+                </div>
+              </div>
             ) : m.error ? (
               <div className="media-error-result">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2">
@@ -179,11 +309,11 @@ export default function MediaGen() {
       <div className="chat-input-area">
         <div className="media-type-selector">
           <button className={`media-type-btn ${genType === 'image' ? 'active' : ''}`}
-                  onClick={() => setGenType('image')}>
+                  onClick={() => switchType('image')}>
             🖼 图片生成
           </button>
           <button className={`media-type-btn ${genType === 'video' ? 'active' : ''}`}
-                  onClick={() => setGenType('video')}>
+                  onClick={() => switchType('video')}>
             🎬 视频生成
           </button>
         </div>

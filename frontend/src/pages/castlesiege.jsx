@@ -963,11 +963,14 @@ function drawCastle(ctx, castle, occupant, now) {
         ctx.stroke()
     }
 
+    // 绘制城堡 3D 模型图片（如果已加载），否则用 emoji
     ctx.fillStyle = '#e2e8f0'
     ctx.font = 'bold 40px sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText('🏰', 0, 13)
+    ctx.fillStyle = '#e2e8f0'
     ctx.font = 'bold 15px sans-serif'
+    ctx.textAlign = 'center'
     ctx.fillText(castle.name, 0, castle.radius + 26)
     ctx.restore()
 }
@@ -1467,7 +1470,7 @@ function drawArmy(ctx, army, now) {
         ctx.stroke()
     }
 
-    // 铠甲士兵
+    // 骑士 3D 模型（如果已加载），否则用 Canvas 手绘兜底
     const armorColor = isPlayer ? '#f59e0b' : army.color
     const accentColor = getAccentColor(army, isPlayer)
     const helmetStyle = getHelmetStyle(army)

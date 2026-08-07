@@ -10,6 +10,7 @@ import AdminModels from './pages/AdminModels'
 import KnowledgeGraph from './pages/KnowledgeGraph'
 import SqlExecutor from './pages/SqlExecutor'
 import MediaGen from './pages/MediaGen'
+import Model3D from './pages/Model3D'
 import Profile from './pages/Profile'
 import PersonalChat from './pages/PersonalChat'
 import Debate from './pages/Debate'
@@ -36,6 +37,7 @@ function getPresencePage(pathname) {
     if (pathname === '/sql') return 'sql'
     if (pathname === '/monitor') return 'monitor'
     if (pathname === '/media') return 'media'
+    if (pathname === '/3d') return '3d'
     if (pathname === '/treehole') return 'treehole'
     return 'landing'
 }
@@ -123,7 +125,7 @@ function OnlinePresenceTracker({ authUser }) {
             }
             activePresenceRef.current = null
             stompRef.current = null
-            client.deactivate().catch(() => {})
+            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {}
         }
     }, [authUser, publishPresence, syncPresence])
 
@@ -142,7 +144,7 @@ function OnlinePresenceTracker({ authUser }) {
             if (disconnectedRef.current && stompRef.current && !stompRef.current.connected) {
                 disconnectedRef.current = false
                 setShowIdleBanner(false)
-                stompRef.current.activate().catch(() => {})
+                try { Promise.resolve(stompRef.current.activate()).catch(() => {}) } catch (e) {}
             }
         }
         const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
@@ -165,7 +167,7 @@ function OnlinePresenceTracker({ authUser }) {
                 }
                 disconnectedRef.current = true
                 setShowIdleBanner(true)
-                client.deactivate().catch(() => {})
+                try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {}
             }
         }, 30000) // 每 30 秒检查一次
         return () => clearInterval(idleTimerRef.current)
@@ -260,6 +262,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/', label: 'AI伙伴群聊' },
         { to: '/graph', label: '知识脉络图' },
         { to: '/media', label: '图片与视频' },
+        { to: '/3d', label: '3D模型生成' },
         { to: '/history', label: '问答列表' },
         { to: '/profile', label: '个人信息' },
         { to: '/games', label: 'AI多人游戏' },
@@ -275,6 +278,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/', label: 'AI伙伴群聊' },
         { to: '/graph', label: '知识脉络图' },
         { to: '/media', label: '图片与视频' },
+        { to: '/3d', label: '3D模型生成' },
         { to: '/history', label: '问答列表' },
         { to: '/profile', label: '个人信息' },
         { to: '/admin/models', label: '模型管理' },
@@ -540,6 +544,7 @@ const ROUTES = [
     { path: '/home', element: <Landing/> },
     { path: '/', element: <ChatPage/> },
     { path: '/media', element: <MediaGen/> },
+    { path: '/3d', element: <Model3D/> },
     { path: '/personal', element: <PersonalChat/> },
     { path: '/debate', element: <Debate/> },
     { path: '/games', element: <Games/> },

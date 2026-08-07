@@ -122,6 +122,11 @@ export default function Landing() {
               <h3>文生视频/图</h3>
               <p>一句提示词，秒级生成电影级大片或短视频，低成本实现从"脑洞"到"现实"。</p>
             </Link>
+            <Link to="/3d" className="feature-card">
+              <div className="feature-icon">📦</div>
+              <h3>3D 模型生成</h3>
+              <p>输入文字描述，AI 自动生成 3D 模型，支持下载查看，让创意从平面走向立体。</p>
+            </Link>
             <Link to="/graph" className="feature-card">
               <div className="feature-icon">🌐</div>
               <h3>知识脉络图</h3>

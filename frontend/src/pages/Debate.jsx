@@ -3,7 +3,7 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
-import { formatText } from '../utils/format'
+import { formatText, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAutoScroll } from '../hooks/useAutoScroll'
 
@@ -69,7 +69,7 @@ export default function Debate() {
                 next[roundIdx] = [...next[roundIdx], {
                   modelId: p.model_id,
                   provider: p.provider,
-                  answer: p.answer
+                  answer: extractAnswer(p.answer)
                 }]
                 return next
               })
@@ -78,7 +78,7 @@ export default function Debate() {
               setSynthesizing(true)
               setSynthesizer(p.synthesizer || '千问')
             } else if (p.type === 'done') {
-              setFinalAnswer(p.answer)
+              setFinalAnswer(extractAnswer(p.answer))
               setDebating(false)
               setSynthesizing(false)
               setThinking([])

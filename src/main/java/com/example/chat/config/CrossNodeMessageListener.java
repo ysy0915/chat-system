@@ -8,7 +8,6 @@ import org.springframework.amqp.core.MessageListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.Base64;
 import java.util.Map;
 
 @Component
@@ -31,15 +30,12 @@ public class CrossNodeMessageListener implements MessageListener {
     @Override
     public void onMessage(Message message) {
         try {
-            String raw = new String(message.getBody()).trim();
-            String json;
-            if (raw.startsWith("\"") && raw.endsWith("\"")) {
-                json = objectMapper.readValue(raw, String.class);
-            } else {
-                json = raw;
+            String json = new String(message.getBody()).trim();
+            // RabbitTemplate 发送的可能是 String 或 byte[]，统一处理
+            if (json.startsWith("\"") && json.endsWith("\"")) {
+                json = objectMapper.readValue(json, String.class);
             }
-            byte[] decoded = Base64.getDecoder().decode(json);
-            Map<String, Object> payload = objectMapper.readValue(decoded, Map.class);
+            Map<String, Object> payload = objectMapper.readValue(json, Map.class);
             String sourceNode = (String) payload.get("_nodeId");
             if (nodeId.equals(sourceNode)) {
                 return;

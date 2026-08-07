@@ -37,8 +37,9 @@ public class BroadcastService {
                     "destination", destination,
                     "data", data
             );
-            rabbitTemplate.convertAndSend(CrossNodeConfig.EXCHANGE, destination, 
-                    objectMapper.writeValueAsBytes(payload));
+            // 直接发送 JSON 字符串，与 CrossNodeMessageListener 的解析方式匹配
+            String json = objectMapper.writeValueAsString(payload);
+            rabbitTemplate.convertAndSend(CrossNodeConfig.EXCHANGE, destination, json);
         } catch (Exception e) {
             log.warn("[CrossNode] RabbitMQ 发布失败: {}", e.getMessage());
         }

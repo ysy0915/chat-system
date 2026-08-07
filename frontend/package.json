@@ -8,12 +8,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@stomp/stompjs": "^7.0.0",
     "axios": "^1.4.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-router-dom": "^6.12.1",
-    "sockjs-client": "^1.6.1",
-    "@stomp/stompjs": "^7.0.0"
+    "sockjs-client": "^1.6.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.0",

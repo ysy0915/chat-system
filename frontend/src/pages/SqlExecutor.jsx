@@ -123,9 +123,15 @@ export default function SqlExecutor() {
   const quickSqls = [
     { label: '所有表', sql: 'SHOW TABLES' },
     { label: '用户列表', sql: 'SELECT * FROM users ORDER BY id DESC' },
-    { label: '消息统计', sql: 'SELECT * FROM messages ORDER BY id DESC' },
+    { label: '消息记录', sql: 'SELECT * FROM messages ORDER BY id DESC' },
     { label: '模型配置', sql: 'SELECT * FROM model_configs ORDER BY id DESC' },
     { label: '辩论记录', sql: 'SELECT * FROM debate_records ORDER BY id DESC' },
+    { label: '媒体生成记录', sql: 'SELECT * FROM media_gen_records ORDER BY id DESC' },
+    { label: '情绪树洞', sql: 'SELECT * FROM tree_hole_messages ORDER BY id DESC' },
+    { label: '在线统计', sql: 'SELECT * FROM online_count_records ORDER BY id DESC' },
+    { label: '附件', sql: 'SELECT * FROM attachments ORDER BY id DESC' },
+    { label: '审计日志', sql: 'SELECT * FROM audit_logs ORDER BY id DESC' },
+    { label: '用户注册', sql: 'SELECT * FROM user_registrations ORDER BY id DESC' },
   ]
 
   if (!token) {

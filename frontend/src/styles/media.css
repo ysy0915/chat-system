@@ -48,6 +48,11 @@
     color: #a78bfa;
     border: 1px solid rgba(139, 92, 246, 0.15);
 }
+.media-type-badge.\3d {
+    background: rgba(16, 185, 129, 0.1);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.15);
+}
 .media-result {
     display: flex;
     flex-direction: column;
@@ -206,5 +211,76 @@
 .media-gate-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 36px rgba(59, 130, 246, 0.35);
+}
+
+/* 3D 模型卡片 */
+.media-3d-card {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 360px;
+}
+.media-3d-preview {
+    padding: 32px 20px;
+    text-align: center;
+    background: radial-gradient(circle at center, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+}
+.media-3d-preview-img {
+    max-width: 100%;
+    max-height: 240px;
+    border-radius: 8px;
+    display: block;
+    margin: 0 auto;
+}
+.media-3d-icon {
+    font-size: 56px;
+    margin-bottom: 8px;
+    animation: media3dFloat 3s ease-in-out infinite;
+}
+@keyframes media3dFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+.media-3d-label {
+    display: block;
+    color: #34d399;
+    font-size: 14px;
+    font-weight: 600;
+}
+.media-3d-info {
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.media-3d-prompt {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+}
+.media-3d-view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+.media-3d-view-btn:hover {
+    background: rgba(16, 185, 129, 0.25);
+    transform: translateY(-1px);
+}
+.media-3d-locked-tip {
+    text-align: center;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.2);
+    border-radius: 8px;
+    color: #fbbf24;
+    font-size: 13px;
 }
 

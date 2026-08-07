@@ -3,7 +3,7 @@ import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
-import { formatAnswer } from '../utils/format'
+import { formatAnswer, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useAutoScroll } from '../hooks/useAutoScroll'
@@ -85,15 +85,7 @@ export default function PersonalChat() {
           const msgs = []
           history.forEach(m => {
             msgs.push({ role: 'user', content: m.question })
-            let answer = m.answerJson
-            try {
-              const parsed = JSON.parse(answer)
-              if (parsed.answer != null) answer = parsed.answer
-            } catch {}
-            // 防御：确保 answer 是字符串，避免 formatAnswer 抛错
-            if (typeof answer !== 'string') {
-              answer = answer == null ? '' : String(answer)
-            }
+            const answer = extractAnswer(m.answerJson)
             msgs.push({ role: 'ai', content: answer })
           })
           setMessages(msgs)
@@ -109,9 +101,12 @@ export default function PersonalChat() {
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
     const sock = new SockJS('/ws/chat?userId=' + userId)
+    let reconnectTimer = null
+    let manualClose = false
     const client = new Client({
       webSocketFactory: () => sock,
       debug: () => {},
+      reconnectDelay: 0,
       onConnect: () => {
         connectedRef.current = true
         client.subscribe(`/topic/user.${userId}`, (msg) => {
@@ -120,14 +115,7 @@ export default function PersonalChat() {
             if (payload.type === 'done' || payload.answer) {
               setTyping(false)
               failCountRef.current = 0
-              let answer = payload.answer
-              try {
-                const parsed = JSON.parse(answer)
-                if (parsed.answer != null) answer = parsed.answer
-              } catch {}
-              if (typeof answer !== 'string') {
-                answer = answer == null ? '' : String(answer)
-              }
+              const answer = extractAnswer(payload.answer || '')
               setMessages(prev => [...prev, { role: 'ai', content: answer }])
             } else if (payload.type === 'error') {
               setTyping(false)
@@ -145,15 +133,27 @@ export default function PersonalChat() {
         })
       },
       onStompError: () => { setTyping(false) },
-      onWebSocketClose: () => { connectedRef.current = false }
+      onWebSocketClose: () => {
+        connectedRef.current = false
+        // 自动重连：非主动关闭时 3 秒后重连
+        if (!manualClose) {
+          reconnectTimer = setTimeout(() => {
+            if (!manualClose && clientRef.current === client) {
+              try { Promise.resolve(client.activate()).catch(() => {}) } catch (e) {}
+            }
+          }, 3000)
+        }
+      }
     })
     clientRef.current = client
     client.activate()
     return () => {
+      manualClose = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
       connectedRef.current = false
       const c = clientRef.current
       if (c) {
-        c.deactivate().catch(() => {})
+        try { Promise.resolve(c.deactivate()).catch(() => {}) } catch (e) {}
         clientRef.current = null
       }
     }

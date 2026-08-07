@@ -3,7 +3,7 @@ import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
-import { formatAnswer } from '../utils/format'
+import { formatAnswer, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useAutoScroll } from '../hooks/useAutoScroll'
@@ -52,6 +52,8 @@ export default function ChatPage(){
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
     const sock = new SockJS('/ws/chat?userId=' + userId);
+    let reconnectTimer = null
+    let manualClose = false
     sock.onopen = () => {}
     sock.onclose = () => { setWsStatus('disconnected') }
     sock.onerror = () => {}
@@ -59,6 +61,7 @@ export default function ChatPage(){
     const client = new Client({
       webSocketFactory: () => sock,
       debug: () => {},
+      reconnectDelay: 0,
       onConnect: () => {
         setWsStatus('connected')
         client.subscribe(`/topic/user.${userId}`, (msg) => {
@@ -66,7 +69,8 @@ export default function ChatPage(){
             const payload = JSON.parse(msg.body)
             if (payload.type === 'done' || payload.answer) {
               setTyping(false)
-              setMessages(prev => [...prev, { role: 'ai', content: payload.answer || JSON.stringify(payload) }])
+              const ans = extractAnswer(payload.answer || '')
+              setMessages(prev => [...prev, { role: 'ai', content: ans || '暂无回复' }])
             }
           } catch (e) { console.error(e) }
         })
@@ -87,7 +91,7 @@ export default function ChatPage(){
               setMessages(prev => {
                 return [...prev, {
                   role: 'auto-a',
-                  content: payload.answer,
+                  content: extractAnswer(payload.answer || ''),
                   reqId: payload.req_id,
                   userName: payload.user_name
                 }]
@@ -106,7 +110,7 @@ export default function ChatPage(){
             } else if (payload.type === 'answer' && payload.answer && payload.user_id !== userId) {
               setMessages(prev => {
                 if (prev.some(m => m.reqId === payload.req_id && m.role === 'ai')) return prev
-                return [...prev, { role: 'ai', content: payload.answer, forOther: true, reqId: payload.req_id }]
+                return [...prev, { role: 'ai', content: extractAnswer(payload.answer || ''), forOther: true, reqId: payload.req_id }]
               })
             }
           } catch (e) { console.error(e) }
@@ -132,11 +136,21 @@ export default function ChatPage(){
       },
       onWebSocketClose: () => {
         setWsStatus('disconnected')
+        // 自动重连：非主动关闭时 3 秒后重连
+        if (!manualClose) {
+          reconnectTimer = setTimeout(() => {
+            if (!manualClose && stompRef.current === client) {
+              try { Promise.resolve(client.activate()).catch(() => {}) } catch (e) {}
+            }
+          }, 3000)
+        }
       }
     })
     stompRef.current = client
     client.activate()
     return () => {
+      manualClose = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
       try {
         client.deactivate()
       } catch (e) { console.warn('deactivate failed:', e) }
@@ -252,7 +266,9 @@ export default function ChatPage(){
                     <div className="msg-auto-wrap">
                       <div className="msg-auto-name">{m.userName} 回答</div>
                       <div className="msg auto-a">
-                        {m.content}
+                        {formatAnswer(m.content).map((sentence, i) => (
+                            <span key={i} style={{display:'block'}}>{sentence}</span>
+                        ))}
                         <span className="ai-generated-tag">AI生成</span>
                       </div>
                     </div>

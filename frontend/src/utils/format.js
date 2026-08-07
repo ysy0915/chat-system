@@ -1,3 +1,56 @@
+// 从 AI 返回的内容中提取纯文本回答
+// 有些模型（特别是 DeepSeek）会把回答包装成 JSON 字符串，如：
+//   {"answer": "..."}  {"response": "..."}  {"content": "..."}  {"text": "..."}  {"result": "..."}
+// 也可能带 markdown 代码块 ```json ... ```
+// 此函数尝试解析 JSON 并提取常见字段，解析失败则返回原文
+export function extractAnswer(raw) {
+    if (raw == null) return ''
+    if (typeof raw !== 'string') {
+        // 已经是对象/数组，尝试取常见字段
+        return extractFromObject(raw) || String(raw)
+    }
+    let text = raw.trim()
+    if (!text) return ''
+
+    // 去除 markdown 代码块包裹
+    const codeBlockMatch = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
+    if (codeBlockMatch) {
+        text = codeBlockMatch[1].trim()
+    }
+
+    // 尝试 JSON 解析
+    if (text.startsWith('{') || text.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(text)
+            const extracted = extractFromObject(parsed)
+            if (extracted) return extracted
+        } catch {
+            // 不是合法 JSON，返回原文
+        }
+    }
+    return text
+}
+
+// 从对象中提取回答文本，支持多种常见字段名
+function extractFromObject(obj) {
+    if (obj == null) return ''
+    if (typeof obj === 'string') return obj
+    if (typeof obj !== 'object') return String(obj)
+    // 常见字段名优先级
+    const keys = ['answer', 'response', 'content', 'text', 'result', 'reply', 'message', 'output']
+    for (const k of keys) {
+        if (obj[k] != null) {
+            if (typeof obj[k] === 'string') return obj[k]
+            if (typeof obj[k] === 'object') return extractFromObject(obj[k])
+        }
+    }
+    // 数组取第一个元素
+    if (Array.isArray(obj) && obj.length > 0) {
+        return extractFromObject(obj[0])
+    }
+    return ''
+}
+
 // 格式化 AI 回答：按句号/换行分割
 // 注意：不使用后行断言 (?<=。) —— iOS < 16.4 的 Safari/微信浏览器不支持会抛 SyntaxError
 export function formatAnswer(text) {

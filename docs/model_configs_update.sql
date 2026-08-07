@@ -9,7 +9,7 @@
 -- 1.1 添加 model_type 字段（已存在则跳过，MySQL 8.0.29+ 支持 IF NOT EXISTS）
 ALTER TABLE model_configs
     ADD COLUMN IF NOT EXISTS model_type VARCHAR(20) NOT NULL DEFAULT 'chat'
-    COMMENT '模型执行类型: chat(对话) / image(图形生成) / video(视频生成) / text_parse(文本解析) / image_parse(图片解析)';
+    COMMENT '模型执行类型: chat(对话) / image(图形生成) / video(视频生成) / 3d(3D模型生成) / text_parse(文本解析) / image_parse(图片解析)';
 
 -- 1.2 添加 updated_at 字段（用于记录更新时间，已存在则跳过）
 ALTER TABLE model_configs
@@ -149,7 +149,28 @@ ON DUPLICATE KEY UPDATE
     priority       = VALUES(priority),
     enabled        = VALUES(enabled);
 
--- 2.7 id=8 qwen-vl-max (图片解析)
+-- 2.7 id=7 hy-3d-3.1 (3D模型生成)
+INSERT INTO model_configs (id, provider, model, model_type, api_key_encrypted, meta, priority, enabled, created_at)
+VALUES (
+    7,
+    'tencent',
+    'hy-3d-3.1',
+    '3d',
+    'sk-OFpAPWo0PnP0DlwP5bF9BTyaciWT55822dQRFjyE5jFWvCoz',
+    '{"baseUrl":"https://tokenhub.tencentmaas.com"}',
+    100,
+    1,
+    NOW()
+)
+ON DUPLICATE KEY UPDATE
+    provider       = VALUES(provider),
+    model          = VALUES(model),
+    model_type     = VALUES(model_type),
+    meta           = VALUES(meta),
+    priority       = VALUES(priority),
+    enabled        = VALUES(enabled);
+
+-- 2.8 id=8 qwen-vl-max (图片解析)
 INSERT INTO model_configs (id, provider, model, model_type, api_key_encrypted, meta, priority, enabled, created_at)
 VALUES (
     8,

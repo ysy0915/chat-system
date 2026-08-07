@@ -1,0 +1,220 @@
+package com.example.chat.rag.controller;
+
+import com.example.chat.rag.entity.KnowledgeBase;
+import com.example.chat.rag.entity.KnowledgeDocument;
+import com.example.chat.rag.repository.RAGRepository;
+import com.example.chat.rag.service.DocumentParser;
+import com.example.chat.rag.service.TextChunker;
+import com.example.chat.rag.service.VectorStoreService;
+import com.example.chat.security.JwtUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 知识库管理 Controller
+ *
+ * API 列表：
+ *   POST   /api/v1/rag/kb                创建知识库
+ *   GET    /api/v1/rag/kb                列出所有知识库
+ *   DELETE /api/v1/rag/kb/{id}           删除知识库（同时删除向量）
+ *
+ *   POST   /api/v1/rag/kb/{id}/documents 上传文档到知识库（自动解析+分片+向量化）
+ *   GET    /api/v1/rag/kb/{id}/documents 列出知识库的文档
+ *   DELETE /api/v1/rag/documents/{id}    删除单个文档（同时删除向量）
+ *
+ *   POST   /api/v1/rag/search            测试检索（不调 LLM，只看召回结果）
+ */
+@RestController
+@RequestMapping("/api/v1/rag")
+@ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
+public class KnowledgeController {
+
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeController.class);
+
+    @Autowired
+    private RAGRepository ragRepository;
+
+    @Autowired(required = false)
+    private VectorStoreService vectorStoreService;
+
+    @Autowired
+    private DocumentParser documentParser;
+
+    @Autowired
+    private TextChunker textChunker;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Value("${app.rag.upload.max-size:10485760}")  // 默认 10MB
+    private long maxUploadSize;
+
+    /** 校验 token 并要求 admin 角色 */
+    private void requireAdmin(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("未登录");
+        }
+        String token = authHeader.substring(7);
+        if (!jwtUtil.validateToken(token)) {
+            throw new RuntimeException("Token 无效");
+        }
+        String role = jwtUtil.getRole(token);
+        if (!"admin".equals(role)) {
+            throw new RuntimeException("需要管理员权限");
+        }
+    }
+
+    // ============ 知识库 CRUD ============
+
+    @PostMapping("/kb")
+    public ResponseEntity<?> createKnowledgeBase(@RequestBody Map<String, String> body,
+                                                  @RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+
+        KnowledgeBase kb = new KnowledgeBase();
+        kb.name = body.get("name");
+        kb.description = body.getOrDefault("description", "");
+        if (kb.name == null || kb.name.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "name 不能为空"));
+        }
+
+        ragRepository.insertKnowledgeBase(kb);
+        log.info("[RAG] 创建知识库 id={} name={}", kb.id, kb.name);
+        return ResponseEntity.ok(kb);
+    }
+
+    @GetMapping("/kb")
+    public ResponseEntity<?> listKnowledgeBases(@RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+        return ResponseEntity.ok(ragRepository.findAllKnowledgeBases());
+    }
+
+    @DeleteMapping("/kb/{id}")
+    public ResponseEntity<?> deleteKnowledgeBase(@PathVariable Long id,
+                                                  @RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+
+        // 删除 Milvus 中的 Collection
+        if (vectorStoreService != null) {
+            vectorStoreService.dropCollection(id);
+        }
+        ragRepository.deleteKnowledgeBase(id);
+        log.info("[RAG] 删除知识库 id={}", id);
+        return ResponseEntity.ok(Map.of("message", "已删除"));
+    }
+
+    // ============ 文档管理 ============
+
+    @PostMapping("/kb/{kbId}/documents")
+    public ResponseEntity<?> uploadDocument(@PathVariable Long kbId,
+                                             @RequestParam("file") MultipartFile file,
+                                             @RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+
+        if (file.getSize() > maxUploadSize) {
+            return ResponseEntity.badRequest().body(Map.of("error", "文件超过 " + maxUploadSize + " 字节限制"));
+        }
+
+        try {
+            byte[] bytes = file.getBytes();
+            String fileName = file.getOriginalFilename();
+
+            // 1. 创建文档记录（状态 pending）
+            KnowledgeDocument doc = new KnowledgeDocument();
+            doc.knowledgeBaseId = kbId;
+            doc.fileName = fileName;
+            doc.source = fileName;
+            doc.fileSize = bytes.length;
+            doc.chunkCount = 0;
+            doc.status = "processing";
+            ragRepository.insertDocument(doc);
+
+            // 2. 解析文档为纯文本
+            String text = documentParser.parse(fileName, bytes);
+
+            // 3. 分片
+            List<VectorStoreService.ChunkText> chunks = textChunker.chunk(text);
+            log.info("[RAG] 文档 {} 解析+分片完成 共 {} 片", fileName, chunks.size());
+
+            // 4. 向量化入库（异步化可优化，当前同步处理）
+            if (vectorStoreService != null) {
+                vectorStoreService.insertChunks(kbId, doc.id, chunks, fileName);
+            }
+
+            // 5. 更新文档状态
+            ragRepository.updateDocumentStatus(doc.id, "done", null, chunks.size());
+
+            // 6. 更新知识库统计
+            updateKbStats(kbId);
+
+            return ResponseEntity.ok(Map.of(
+                    "documentId", doc.id,
+                    "fileName", fileName,
+                    "chunkCount", chunks.size(),
+                    "status", "done"
+            ));
+        } catch (Exception e) {
+            log.error("[RAG] 文档上传失败 kb={} error={}", kbId, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/kb/{kbId}/documents")
+    public ResponseEntity<?> listDocuments(@PathVariable Long kbId,
+                                           @RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+        return ResponseEntity.ok(ragRepository.findDocumentsByKbId(kbId));
+    }
+
+    @DeleteMapping("/documents/{id}")
+    public ResponseEntity<?> deleteDocument(@PathVariable Long id,
+                                            @RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+        // 注意：Milvus 按 doc_id 删除向量需要额外实现 deleteEntities
+        // 当前简化为只删除 MySQL 记录，向量残留可定期重建 Collection 清理
+        ragRepository.deleteDocument(id);
+        log.info("[RAG] 删除文档 id={}", id);
+        return ResponseEntity.ok(Map.of("message", "已删除"));
+    }
+
+    // ============ 检索测试 ============
+
+    @PostMapping("/search")
+    public ResponseEntity<?> search(@RequestBody Map<String, Object> body,
+                                    @RequestHeader("Authorization") String auth) {
+        requireAdmin(auth);
+
+        Long kbId = ((Number) body.get("knowledgeBaseId")).longValue();
+        String query = (String) body.get("query");
+        int topK = body.containsKey("topK") ? ((Number) body.get("topK")).intValue() : 5;
+
+        if (vectorStoreService == null) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "向量库未启用"));
+        }
+
+        List<VectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, topK);
+        return ResponseEntity.ok(results.stream().map(r -> Map.of(
+                "text", r.text,
+                "source", r.source,
+                "docId", r.docId,
+                "score", r.score
+        )).toList());
+    }
+
+    // ============ 内部方法 ============
+
+    private void updateKbStats(Long kbId) {
+        int docCount = ragRepository.countDocumentsByKbId(kbId);
+        long chunks = ragRepository.sumChunksByKbId(kbId);
+        ragRepository.updateKnowledgeBaseStats(kbId, docCount, chunks);
+    }
+}

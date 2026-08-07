@@ -302,6 +302,7 @@ public class MessageController {
 
     @GetMapping("/online-count")
     public ResponseEntity<?> getOnlineCount(@RequestParam(value = "page", defaultValue = "global") String page) {
+        // 返回虚拟在线数（0-300 随机分配，保证各页面之和 = 总数）
         return ResponseEntity.ok(Map.of("count", sessionTracker.getCount(page)));
     }
 

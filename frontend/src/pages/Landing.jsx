@@ -8,39 +8,17 @@ import { Client } from '@stomp/stompjs'
 export default function Landing() {
   const animRef = useRef(null)
   const lastTimeRef = useRef(null)
-  const [baseCount, setBaseCount] = useState(() => {
-    const saved = localStorage.getItem('landing_base_count')
-    const savedTime = localStorage.getItem('landing_base_time')
-    const now = Date.now()
-    if (saved && savedTime && (now - parseInt(savedTime, 10)) < 60000) {
-      return parseInt(saved, 10)
-    }
-    const val = Math.floor(Math.random() * 201)
-    localStorage.setItem('landing_base_count', String(val))
-    localStorage.setItem('landing_base_time', String(now))
-    return val
-  })
-  const [realUsers, setRealUsers] = useState(0)
+  const [onlineCount, setOnlineCount] = useState(0)
   const [totalUsage, setTotalUsage] = useState(0)
   const stompRef = useRef(null)
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      const val = Math.floor(Math.random() * 201)
-      setBaseCount(val)
-      localStorage.setItem('landing_base_count', String(val))
-      localStorage.setItem('landing_base_time', String(Date.now()))
-    }, 60000)
-    return () => clearInterval(timer)
-  }, [])
+    // 从后端获取虚拟在线数（0-300 随机）
+    axios.get('/api/v1/messages/online-count', { params: { page: 'landing' } })
+      .then(res => setOnlineCount(res.data?.count || 0))
+      .catch(() => {})
 
-  useEffect(() => {
-    axios.get('/api/v1/monitor/total-usage').then(res => {
-      setTotalUsage(res.data?.totalUsage || 0)
-    }).catch(() => {})
-    axios.get('/api/v1/messages/online-count', { params: { page: 'landing' } }).then(res => {
-      setRealUsers(res.data?.count || 0)
-    }).catch(() => {})
+    // 订阅 WebSocket，接收定时刷新的在线数
     let landingId = localStorage.getItem('landing_visitor_id')
     if (!landingId) {
       landingId = 'landing-' + Math.floor(Math.random() * 100000)
@@ -54,7 +32,7 @@ export default function Landing() {
         client.subscribe('/topic/online-count/landing', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            setRealUsers(payload.count || 0)
+            setOnlineCount(payload.count || 0)
           } catch {}
         })
       }
@@ -66,7 +44,11 @@ export default function Landing() {
     }
   }, [])
 
-  const onlineCount = baseCount + realUsers
+  useEffect(() => {
+    axios.get('/api/v1/monitor/total-usage').then(res => {
+      setTotalUsage(res.data?.totalUsage || 0)
+    }).catch(() => {})
+  }, [])
 
   return (
     <div className="landing">

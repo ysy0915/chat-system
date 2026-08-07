@@ -84,3 +84,29 @@ management:
   endpoint:
     health:
       show-details: never
+
+# RAG 知识库配置（默认关闭，需要时设置 app.rag.enabled=true 开启）
+app:
+  rag:
+    enabled: false
+    milvus:
+      enabled: true
+      host: 127.0.0.1
+      port: 19530
+      collection-prefix: kb_
+      hnsw-m: 16
+      hnsw-ef-construction: 200
+      search-ef: 64
+    embedding:
+      provider: dashscope
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: text-embedding-v3
+      dimension: 1024
+    search:
+      top-k: 5
+      score-threshold: 0.3
+    context:
+      max-chars: 3000
+    upload:
+      max-size: 10485760

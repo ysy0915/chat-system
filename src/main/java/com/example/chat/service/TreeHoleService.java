@@ -48,6 +48,14 @@ public class TreeHoleService {
     private final SimpMessagingTemplate messagingTemplate;
     private final LLMInvoker llmInvoker;
 
+    /** RAG 服务（可选注入，app.rag.enabled=false 时为 null） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.rag.service.RAGService ragService;
+
+    /** 树洞关联的知识库 ID（0 表示不启用 RAG） */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.treehole.kb-id:0}")
+    private long treeholeKbId;
+
     public TreeHoleService(TreeHoleRepository treeHoleRepository,
                            ModelConfigRepository modelConfigRepository,
                            RateLimitService rateLimitService,
@@ -299,12 +307,22 @@ public class TreeHoleService {
         // 异步调用流式 API
         new Thread(() -> {
             try {
-                String answer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
-                        defaultBaseUrl, effectiveApiKey,
-                        token -> {
-                            messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
-                                    Map.of("type", "stream_token", "req_id", reqId, "token", token));
-                        });
+                String answer;
+                if (ragService != null && treeholeKbId > 0) {
+                    answer = ragService.invokeWithRAGStream(config, treeholeKbId, question, messages,
+                            0.85, "treehole", defaultBaseUrl, effectiveApiKey,
+                            token -> {
+                                messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
+                                        Map.of("type", "stream_token", "req_id", reqId, "token", token));
+                            });
+                } else {
+                    answer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
+                            defaultBaseUrl, effectiveApiKey,
+                            token -> {
+                                messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
+                                        Map.of("type", "stream_token", "req_id", reqId, "token", token));
+                            });
+                }
 
                 m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
                 m.status = "done";
@@ -367,9 +385,15 @@ public class TreeHoleService {
         // 解析模型配置（从数据库读取）
         ModelConfig config = resolveModelConfig();
 
-        // 调用 AI（通过 LLMInvoker 统一入口）
+        // 调用 AI（通过 LLMInvoker 统一入口；RAG 开启时走知识库增强）
         try {
-            String answer = llmInvoker.invoke(config, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
+            String answer;
+            if (ragService != null && treeholeKbId > 0) {
+                answer = ragService.invokeWithRAG(config, treeholeKbId, question, messages,
+                        0.85, "treehole", defaultBaseUrl, defaultApiKey);
+            } else {
+                answer = llmInvoker.invoke(config, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
+            }
             m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
             m.status = "done";
         } catch (Exception e) {

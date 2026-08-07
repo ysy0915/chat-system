@@ -1,0 +1,520 @@
+设计模式抽象与重构实战：以 AI 聊天系统 LLM 调用层为例
+
+
+一、重构背景：当"复制粘贴"成为系统主旋律
+
+在 AI 聊天系统中，一个典型的痛点是：多个业务模块都需要调用大模型，而调用逻辑高度相似却又散落各处。
+
+本项目（Spring Boot + React AI 聊天系统）包含四个核心业务模块：
+
+  - ChatProcessor       AI 伙伴群聊      多角色 AI 自由对话
+  - DebateProcessor     观点辩论场        正反方 AI 辩论 + 共识汇总
+  - TreeHoleService     情绪树洞          情感倾听与图片/文件解析
+  - ModelAutoChatService 模型自动对话     模型能力横向评测
+
+重构前，这四个类中各自实现了一套"构建 HTTP 请求 -> 调用 LLM -> 解析响应 -> 处理流式"的代码。具体表现：
+
+  - ChatProcessor 内部有 callLLM()、callLLMStream()、resolveBaseUrl() 三个方法
+  - DebateProcessor 内部有 callLLM()、callDoubaoResponses()、resolveBaseUrl()
+  - TreeHoleService 内部有 callLLM()、callLLMStream()、resolveBaseUrl()
+  - ModelAutoChatService 内部同样有一份几乎相同的 callLLM()
+
+统计下来，这套逻辑被复制了 4 份，累计约 740 行重复代码。每当需要新增一个模型供应商、调整一次响应解析逻辑、或增加一项调用统计，开发者都要在 4 个文件中同步修改——这是一颗随时会引爆的"维护炸弹"。
+
+
+重构前的典型代码样貌
+
+以 TreeHoleService 重构前的 callLLM 为例（约 60 行）：
+
+    private String callLLM(ModelConfig config, List<Map<String, Object>> messages) throws Exception {
+        // 1. 解析 baseUrl（从 metaJson 中读，兼容 baseUrl / base_url）
+        String baseUrl = resolveBaseUrl(config);
+        // 2. 选择 API Key
+        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
+                ? config.apiKeyEncrypted : defaultApiKey;
+        // 3. 构建请求体
+        String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
+        LinkedHashMap<String, Object> body = new LinkedHashMap<>();
+        body.put("model", config.model);
+        body.put("messages", messages);
+        body.put("temperature", 0.85);
+        // 4. 发送 HTTP 请求
+        HttpRequest request = HttpRequest.newBuilder()...build();
+        HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+        // 5. 解析响应
+        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+        List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
+        return choices.get(0).get("message").get("content").toString();
+    }
+
+而 ChatProcessor.callLLM、DebateProcessor.callLLM 与之结构完全一致，只在 temperature、url 后缀等细节上略有差异。这种"形似神也似"的代码，是典型的"坏味道"（Bad Smell）——重复代码（Duplicated Code）。
+
+
+================================================================================
+
+二、问题诊断：为什么会走到这一步？
+
+回顾代码演进史，能清晰地看到三个导致重复的根因：
+
+
+1. 业务先于架构，缺少前瞻设计
+
+最初只有 ChatProcessor 一个模块，开发者直接把 LLM 调用写在了业务类内部——这是合理的选择。但随着 DebateProcessor、TreeHoleService 接连出现，每个新模块的开发者都倾向于"从已工作的代码里 copy 一份"，因为这样最快、最安全。短期最优解，长期最坏解。
+
+
+2. 模型供应商差异被硬编码进业务逻辑
+
+不同供应商（千问、DeepSeek、豆包）的接口存在细微差异：
+  - 千问/DeepSeek 走 OpenAI 兼容的 /chat/completions
+  - 豆包曾走非标准的 /responses 接口，返回结构不同（output[].content[].text vs choices[].message.content）
+  - 流式响应的 SSE 解析逻辑各家略有不同
+
+这些差异被"就地处理"在了每个业务类中，导致每加一个供应商，就要改 N 个文件。
+
+
+3. 横切关注点（统计、日志）无处安放
+
+当需要给所有 LLM 调用增加"调用次数统计""延迟监控""失败告警"时，因为没有统一的调用入口，只能在 4 个类里各加一遍——而且很容易漏。
+
+
+================================================================================
+
+三、设计模式选型：三层架构化解复杂性
+
+面对"多种算法可互换 + 统一调用入口 + 横切逻辑集中处理"的需求，我们选择了策略 + 工厂 + 外观三层模式组合：
+
+    +-------------------------------------------------------------+
+    |  业务层：ChatProcessor / DebateProcessor / TreeHoleService  |
+    |                          | 只依赖 LLMInvoker                |
+    |                          v                                   |
+    |           +----------------------+                          |
+    |           |   LLMInvoker（外观层）|  <- 统一入口             |
+    |           |   - 策略选择          |  - baseUrl 解析          |
+    |           |   - API Key 处理      |  - 统计记录              |
+    |           +----------+-----------+                          |
+    |                          | 委托                              |
+    |                          v                                   |
+    |           +----------------------+                          |
+    |           | LLMStrategyFactory   |                          |
+    |           | （工厂）              |                          |
+    |           +----------+-----------+                          |
+    |                          | 路由                              |
+    |             +------------+------------+                     |
+    |             v                         v                     |
+    |   +------------------+     +------------------+            |
+    |   | OpenAICompat     |     | DoubaoStrategy    |            |
+    |   | Strategy         |     |                   |            |
+    |   | (/chat/completions)|   | (/responses)      |            |
+    |   +------------------+     +------------------+            |
+    |           策略层：LLMStrategy 接口的多种实现                 |
+    +-------------------------------------------------------------+
+
+
+为什么选这三个模式？
+
+  策略模式（Strategy）  不同供应商的调用算法可互换    封装千问/DeepSeek/豆包的差异
+  工厂模式（Factory）   调用方不应知道具体策略类      按 provider 自动路由策略
+  外观模式（Facade）    屏蔽复杂子系统的横切逻辑      统一 baseUrl 解析 + 统计 + 日志
+
+三者关系可以理解为：外观是"前台"，工厂是"调度员"，策略是"执行者"。业务方只和前台打交道，前台通过调度员找到执行者，并在交接前后顺手完成统计、日志等公共事务。
+
+
+================================================================================
+
+四、分层实现详解
+
+
+第 1 层：策略模式——定义"算法族"
+
+首先抽象出所有 LLM 调用的共性，定义策略接口：
+
+    // strategy/LLMStrategy.java
+    public interface LLMStrategy {
+
+        /** 非流式调用 */
+        String invoke(String baseUrl, String apiKey, String model,
+                      List<Map<String, Object>> messages, double temperature) throws Exception;
+
+        /** 流式调用（token 逐个回调） */
+        String invokeStream(String baseUrl, String apiKey, String model,
+                            List<Map<String, Object>> messages, double temperature,
+                            Consumer<String> callback) throws Exception;
+
+        /** 该策略是否支持真流式（豆包返回 false，走伪流式降级） */
+        default boolean supportsStream() {
+            return true;
+        }
+    }
+
+接口设计有两个关键点：
+
+  1. 参数全是"原料"（baseUrl/apiKey/model），不传 ModelConfig 实体。这样策略层与持久层解耦，可独立单元测试。
+  2. supportsStream() 用 default 方法，让大多数策略无需实现，只有特殊策略（豆包）覆写。这是"接口默认行为"的优雅用法。
+
+
+策略实现一：OpenAICompatStrategy
+
+覆盖千问、DeepSeek、豆包（豆包也支持 /chat/completions），是系统的主力策略：
+
+    @Component
+    public class OpenAICompatStrategy implements LLMStrategy {
+
+        private final ObjectMapper objectMapper = new ObjectMapper();
+        private final HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(120)).build();
+
+        @Override
+        public String invoke(...) throws Exception {
+            String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
+            // 构建标准 OpenAI 兼容请求体...
+            // 解析 choices[0].message.content
+        }
+
+        @Override
+        public String invokeStream(..., Consumer<String> callback) throws Exception {
+            // 关键：stream: true + BodyHandlers.ofLines() 逐行读取 SSE
+            requestBody.put("stream", true);
+            HttpResponse<Stream<String>> response =
+                    httpClient.send(request, HttpResponse.BodyHandlers.ofLines());
+
+            StringBuilder fullAnswer = new StringBuilder();
+            response.body().forEach(line -> {
+                if (line.startsWith("data: ")) {
+                    String data = line.substring(6).trim();
+                    if ("[DONE]".equals(data)) return;
+                    // 解析 delta.content，回调每个 token
+                    Map<String, Object> chunk = objectMapper.readValue(data, Map.class);
+                    Map<String, Object> delta = (Map) chunk.get("choices").get(0).get("delta");
+                    String token = delta.get("content").toString();
+                    fullAnswer.append(token);
+                    callback.accept(token);  // <- 实时推送给业务层
+                }
+            });
+            return fullAnswer.toString();
+        }
+    }
+
+流式实现的核心技巧：用 BodyHandlers.ofLines() 把 SSE 响应转成 Stream<String>，再通过 Consumer<String> callback 把每个 token 回调给业务层（业务层再通过 WebSocket 推给前端）。这样策略层只关心"如何从 HTTP 响应里挤出 token"，不关心 token 最终去哪。
+
+
+策略实现二：DoubaoStrategy
+
+豆包的 /responses 接口是历史遗留的特殊路径，返回结构也不同（output[].content[].text）。单独成策略，并通过 supportsStream() = false 声明不支持真流式：
+
+    @Component
+    public class DoubaoStrategy implements LLMStrategy {
+
+        @Override
+        public String invoke(...) throws Exception {
+            String url = baseUrl.replaceAll("/+$", "") + "/responses";
+            // 豆包只接收最后一条 user 消息作为 input
+            String prompt = extractLastUserMessage(messages);
+            requestBody.put("input", prompt);
+            // 解析 output[].content[type=output_text].text
+        }
+
+        /** 豆包不支持真流式：调用非流式后一次性回调全部内容 */
+        @Override
+        public String invokeStream(..., Consumer<String> callback) throws Exception {
+            String answer = invoke(baseUrl, apiKey, model, messages, temperature);
+            if (callback != null && !answer.isEmpty()) {
+                callback.accept(answer);  // 伪流式：一次性推送
+            }
+            return answer;
+        }
+
+        @Override
+        public boolean supportsStream() {
+            return false;
+        }
+    }
+
+这里体现了策略模式的精髓："不支持流式"不再是用 if/else 散落在业务代码里的特殊情况，而是策略自身的一种声明。业务层完全感知不到差异——它只管调 invokeStream，至于背后是真流式还是伪流式，由策略自己决定。
+
+
+--------------------------------------------------------------------------------
+
+
+第 2 层：工厂模式——路由"找谁干活"
+
+策略有了，但调用方不该知道"豆包用 DoubaoStrategy，千问用 OpenAICompatStrategy"。工厂负责这个路由：
+
+    @Component
+    public class LLMStrategyFactory {
+
+        private final OpenAICompatStrategy openAICompatStrategy;
+        private final DoubaoStrategy doubaoStrategy;
+
+        public LLMStrategyFactory(OpenAICompatStrategy openAICompatStrategy,
+                                   DoubaoStrategy doubaoStrategy) {
+            this.openAICompatStrategy = openAICompatStrategy;
+            this.doubaoStrategy = doubaoStrategy;
+        }
+
+        public LLMStrategy getStrategy(String provider) {
+            if (provider == null) return openAICompatStrategy;
+            switch (provider.toLowerCase()) {
+                case "doubao_responses":
+                    return doubaoStrategy;       // 仅特殊场景走 /responses
+                case "doubao":
+                case "deepseek":
+                case "qwen":
+                default:
+                    return openAICompatStrategy; // 都走 /chat/completions
+            }
+        }
+    }
+
+工厂用 Spring 的构造器注入持有所有策略 Bean，通过 switch 路由。关键设计：默认走 OpenAICompatStrategy，因为大多数供应商都在向 OpenAI 兼容靠拢。这意味着新增供应商时，如果它兼容 OpenAI 接口，连工厂都不用改——默认分支已经覆盖。
+
+  工厂这里没有用反射或 Map 注册表，因为策略只有 2 个，switch 更直观、可读性更好。设计模式不是越"高级"越好，而是越"合适"越好。
+
+
+--------------------------------------------------------------------------------
+
+
+第 3 层：外观模式——收敛"横切关注点"
+
+策略和工厂解决了"调用算法的差异"，但还有一堆"每次调用都要做的事"没安顿：
+
+  1. baseUrl 解析：从 ModelConfig.metaJson 里读，还要兼容 baseUrl（驼峰）和 base_url（下划线）两种 key，读不到再按 provider 匹配默认地址。
+  2. API Key 选择：优先用数据库配置的 key，没有则用 application.yml 里的默认 key。
+  3. 调用统计：记录每次调用的 provider/model/scene/成功与否/延迟/回答长度，写入 Redis。
+  4. 日志输出：统一格式的 info/error 日志。
+
+这些逻辑在每个业务类里都重复过。外观层（LLMInvoker）把它们一次性收敛：
+
+    @Service
+    public class LLMInvoker {
+
+        private final LLMStrategyFactory strategyFactory;
+        private final BaseUrlResolver baseUrlResolver;
+        private final LLMCallRecorder callRecorder;
+
+        /** 非流式调用（业务层唯一需要调的方法） */
+        public String invoke(ModelConfig config, List<Map<String, Object>> messages,
+                             double temperature, String scene,
+                             String defaultBaseUrl, String defaultApiKey) throws Exception {
+            long startTime = System.currentTimeMillis();
+
+            // (1) 工厂选策略
+            LLMStrategy strategy = strategyFactory.getStrategy(config.provider);
+            // (2) 解析 baseUrl
+            String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
+            // (3) 选 API Key
+            String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
+                    ? config.apiKeyEncrypted : defaultApiKey;
+
+            try {
+                String answer = strategy.invoke(baseUrl, apiKey, config.model, messages, temperature);
+                long latency = System.currentTimeMillis() - startTime;
+                // (4) 记录成功统计
+                callRecorder.record(config.provider, config.model, scene, true, latency, answer.length());
+                log.info("[LLMInvoker] {} provider={} model={} latency={}ms", scene, config.provider, config.model, latency);
+                return answer;
+            } catch (Exception e) {
+                long latency = System.currentTimeMillis() - startTime;
+                // (4) 记录失败统计
+                callRecorder.record(config.provider, config.model, scene, false, latency, 0);
+                log.error("[LLMInvoker] {} 调用失败 latency={}ms error={}", scene, latency, e.getMessage());
+                throw e;
+            }
+        }
+
+        /** 流式调用（同理，多一个 callback 参数） */
+        public String invokeStream(ModelConfig config, List<Map<String, Object>> messages,
+                                   double temperature, String scene,
+                                   String defaultBaseUrl, String defaultApiKey,
+                                   Consumer<String> callback) throws Exception { ... }
+
+        /** 简化版：单条 prompt 直接调用 */
+        public String invoke(ModelConfig config, String prompt, double temperature, String scene,
+                             String defaultBaseUrl, String defaultApiKey) throws Exception {
+            return invoke(config, List.of(Map.of("role", "user", "content", prompt)),
+                          temperature, scene, defaultBaseUrl, defaultApiKey);
+        }
+    }
+
+注意外观层的三个设计决策：
+
+  1. 传入 ModelConfig 而非拆散的字段：业务层手上本来就是 ModelConfig，传整个对象更自然，也方便后续扩展（比如以后要用 config.timeout）。
+  2. scene 参数标识调用场景：统计时能区分"这次调用来自 chat 还是 treehole"，便于做分场景监控。
+  3. defaultBaseUrl/defaultApiKey 由业务层传入：每个业务模块的默认配置可能不同（树洞用千问，群聊用 deepseek），外观不硬编码，由调用方决定降级值。
+
+
+横切逻辑的进一步抽离：BaseUrlResolver
+
+baseUrl 解析逻辑本身比较复杂（要解析 JSON、兼容两种 key、按 provider 匹配默认值），单独抽成工具类：
+
+    @Component
+    public class BaseUrlResolver {
+
+        public String resolve(ModelConfig config, String defaultBaseUrl) {
+            // 1. 优先从 metaJson 读
+            if (config.metaJson != null && !config.metaJson.isBlank()) {
+                Map<?, ?> meta = objectMapper.readValue(config.metaJson, Map.class);
+                Object url = meta.get("baseUrl");
+                if (url == null) url = meta.get("base_url");  // 兼容下划线
+                if (url != null) return url.toString();
+            }
+            // 2. 按 provider 匹配默认地址
+            switch (config.provider.toLowerCase()) {
+                case "deepseek": return "https://api.deepseek.com/v1";
+                case "doubao":   return "https://ark.cn-beijing.volces.com/api/v3";
+                case "qwen":
+                default:         return defaultBaseUrl;
+            }
+        }
+    }
+
+抽离的好处：MediaGenController（媒体生成）后来也需要解析 baseUrl，直接复用 BaseUrlResolver，零重复。
+
+
+统计记录器：LLMCallRecorder
+
+调用统计用 Redis Hash 存储，按日期 + provider 聚合：
+
+    // Key: llm:stats:2026-08-07  Field: qwen  Value: {"total":128,"success":126,"fail":2,...}
+    public void record(String provider, String model, String scene,
+                       boolean success, long latencyMs, int answerLen) {
+        String key = "llm:stats:" + LocalDate.now().format(DATE_FMT);
+        // 读取现有统计 -> 累加 -> 写回，30 天过期
+    }
+
+记录的字段包括 total/success/fail/totalLatency/totalAnswerLen，监控页面直接读取这些聚合数据展示，无需扫描全量日志。
+
+
+================================================================================
+
+五、业务层改造效果对比
+
+
+改造前 vs 改造后
+
+以 TreeHoleService 为例：
+
+  维度                  改造前              改造后
+  ----------------------------------------------------------------
+  代码行数              518 行              400 行（-23%）
+  callLLM 方法          60 行自实现         0 行（调用 llmInvoker.invoke）
+  callLLMStream 方法    80 行自实现         0 行（调用 llmInvoker.invokeStream）
+  resolveBaseUrl 方法   30 行自实现         0 行（由 LLMInvoker 内部处理）
+  HttpClient 字段       1 个                0 个
+  调用统计              无                  自动记录
+
+改造后的调用代码极其简洁：
+
+    // 非流式：一行搞定
+    String answer = llmInvoker.invoke(config, messages, 0.85, "treehole",
+                                      defaultBaseUrl, defaultApiKey);
+
+    // 流式：传入 callback 即可
+    String answer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
+            defaultBaseUrl, effectiveApiKey,
+            token -> messagingTemplate.convertAndSend("/topic/treehole." + userId,
+                    Map.of("type", "stream_token", "token", token)));
+
+
+四个业务模块的改造收益汇总
+
+  模块                改造前行数    改造后行数    减少
+  ----------------------------------------------------
+  ChatProcessor       1038         560          -46%
+  DebateProcessor     426          280          -34%
+  TreeHoleService     518          400          -23%
+  合计                1982         1240         -37%
+
+新增的模式层代码共 473 行（策略 2 个 + 工厂 + 外观 + 工具 + 记录器），用 473 行干净的模式代码，替换了 740 行重复的散乱代码，净减少 267 行，且复用性、可测试性、可扩展性全面提升。
+
+
+删除的"死代码"清单
+
+每个业务类都删除了以下重复成员：
+
+  - private HttpClient httpClient = ...（4 份）
+  - private String callLLM(...)（4 份）
+  - private String callLLMStream(...)（3 份）
+  - private String callDoubaoResponses(...)（1 份，DebateProcessor 专属）
+  - private String resolveBaseUrl(...)（4 份）
+  - 未使用的 SimpMessagingTemplate、ObjectMapper 等 import
+
+
+================================================================================
+
+六、重构过程中的关键决策与踩坑
+
+
+决策 1：豆包到底走哪个策略？
+
+重构初期，工厂把 doubao 路由到 DoubaoStrategy（走 /responses 接口）。但实际测试发现：豆包同样支持 /chat/completions，且响应更稳定。/responses 接口返回的 output[].content[].text 结构解析容易出错（曾出现"前端显示整段 JSON"的 bug）。
+
+最终决策：doubao 默认走 OpenAICompatStrategy，只有显式声明 doubao_responses 才走 DoubaoStrategy。这体现了策略模式的灵活性——路由规则集中在一处，随时可调整，不影响业务层。
+
+
+决策 2：流式回调用 Consumer<String> 还是自定义接口？
+
+最初考虑定义 StreamCallback 接口（onToken/onComplete/onError），但实际业务只需要"收到 token 就推送"，用 JDK 自带的 Consumer<String> 足够，避免过度设计。错误处理交给异常机制（invokeStream 抛异常，业务层 try-catch）。
+
+
+踩坑：测试文件构造器签名漂移
+
+重构后 TreeHoleService 构造器从 4 参数变成 6 参数（新增 SimpMessagingTemplate、LLMInvoker），但手写的单元测试（TreeHoleServiceTest、TreeHoleControllerTest）还在用旧签名，导致编译失败。
+
+教训：构造器注入 + 手写 Stub 的项目，重构时要同步检查测试文件。这也是为什么很多团队推荐用 @Autowired 字段注入或 Lombok @RequiredArgsConstructor——但构造器注入的可测试性优势依然值得这点代价。
+
+
+踩坑：enable_search 参数破坏流式
+
+千问的 enable_search: true（联网搜索）会让响应变成"先搜索再回答"的两段式，破坏 SSE 流式解析。最终决策：流式调用时统一不传 enable_search，由策略层保证流式稳定性。
+
+
+================================================================================
+
+七、收益总结与后续演进
+
+
+量化收益
+
+  指标              数值
+  ----------------------------------------
+  重复代码消除      ~740 行
+  业务层净减代码    267 行
+  新增模式代码      473 行（可复用）
+  LLM 调用入口      4 个 -> 1 个
+  新增供应商成本    改 4 个文件 -> 加 1 个策略类
+
+
+质化收益
+
+  1. 单一职责：每个类只做一件事——策略管调用算法，工厂管路由，外观管横切，业务层管业务。
+  2. 开闭原则：新增供应商只需加策略类 + 工厂加一行 case，业务层零改动。
+  3. 可测试性：策略层可脱离 Spring 容器单元测试；业务层可注入 Mock 的 LLMInvoker。
+  4. 可观测性：所有调用自动记录统计，监控页面实时展示 provider 维度的成功率、延迟、调用量。
+
+
+后续演进方向
+
+  1. 策略注册表化：当策略超过 5 个时，工厂可改为 Map<String, LLMStrategy> + Spring 自动注入所有实现，彻底消除 switch。
+  2. 异步化：invoke 可返回 CompletableFuture<String>，配合虚拟线程（Virtual Thread）提升吞吐。
+  3. 熔断降级：在 LLMInvoker 外观层集成 Resilience4j，某供应商连续失败时自动切换备用模型。
+  4. Token 计费：LLMCallRecorder 目前只记录回答长度，可扩展记录 prompt/completion token 数，接入各供应商的计费规则。
+
+
+================================================================================
+
+八、结语：设计模式不是银弹，是"债务管理工具"
+
+这次重构最深的体会是：设计模式解决的不是"技术问题"，而是"组织复杂性问题"。
+
+LLM 调用本身不难——发个 HTTP 请求、解析个 JSON，任何人都能写。难的是：当这套逻辑被 4 个模块共用、还要应对供应商差异、还要加监控统计时，如何让代码不被复杂度压垮。
+
+策略模式让"差异"有了安身之处；工厂模式让"选择"对调用方透明；外观模式让"横切逻辑"不再四处流散。三者合力，把一团乱麻梳理成了清晰的流水线。
+
+但也要警惕过度设计：如果系统只有一个 LLM 调用点，直接写在业务类里就好，没必要上模式。模式的代价是"多一层抽象"，只有当重复达到一定规模、变化成为常态时，这层抽象才物超所值。
+
+  重构的终极目标不是"用上了多少模式"，而是"下一次需求变更时，你能多快、多安全地交付"。
+
+
+--------------------------------------------------------------------------------
+
+本文基于 chat-system-project 实际重构过程撰写，涉及代码均可在仓库 src/main/java/com/example/chat/{strategy,factory,util,service} 目录下查阅。

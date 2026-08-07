@@ -7,6 +7,8 @@ import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.service.OnlineCountRedisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +25,9 @@ public class MonitorController {
     private final WebSocketSessionTracker sessionTracker;
     private final OnlineCountRedisService onlineCountRedisService;
     private final AdminAuthUtil adminAuthUtil;
+
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
 
     public MonitorController(OnlineCountRepository onlineCountRepository,
                              WebSocketSessionTracker sessionTracker,
@@ -50,27 +55,15 @@ public class MonitorController {
         LocalDateTime since = minutes != null && minutes > 0
                 ? LocalDateTime.now().minusMinutes(minutes)
                 : LocalDateTime.now().minusDays(safeDays);
-        Map<String, List<Map<String, Object>>> grouped = onlineCountRedisService.getHistorySince(since);
-        if (grouped.isEmpty()) {
-            List<OnlineCountRecord> records = onlineCountRepository.findRecent(since.toString().substring(0, 19).replace('T', ' '));
-            grouped = new LinkedHashMap<>();
-            for (OnlineCountRecord r : records) {
-                grouped.computeIfAbsent(r.page, k -> new ArrayList<>())
-                        .add(Map.of(
-                                "time", r.recordedAt != null ? r.recordedAt.toString() : "",
-                                "count", r.count
-                        ));
-            }
-        }
 
         Map<String, Integer> currentCounts = sessionTracker.getAllCounts();
         Map<String, Integer> dailyVisits = onlineCountRedisService.getDailyVisitCounts(since);
         Map<String, Map<String, Integer>> pageDailyVisits = onlineCountRedisService.getPageDailyVisitCounts(since);
-
         int hourlyTotal = onlineCountRedisService.getHourlyPeakTotal();
 
+        // 不再返回 history（逐分钟数据点），数据量太大导致加载缓慢
+        // 前端用 pageDailyVisits 就够了
         return ResponseEntity.ok(Map.of(
-                "history", grouped,
                 "current", currentCounts,
                 "dailyVisits", dailyVisits,
                 "pageDailyVisits", pageDailyVisits,
@@ -100,6 +93,41 @@ public class MonitorController {
             }
         }
         return ResponseEntity.ok(Map.of("recorded", true));
+    }
+
+    @GetMapping("/llm-stats")
+    public ResponseEntity<?> getLlmStats(@RequestParam(value = "date", required = false) String date) {
+        if (date == null || date.isBlank()) {
+            date = java.time.LocalDate.now().toString();
+        }
+        String key = "llm:stats:" + date;
+        Map<Object, Object> raw = redisTemplate.opsForHash().entries(key);
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        for (Map.Entry<Object, Object> entry : raw.entrySet()) {
+            String provider = entry.getKey().toString();
+            String json = entry.getValue().toString();
+            // 简单解析
+            Map<String, Object> stats = new java.util.HashMap<>();
+            json = json.replaceAll("[{}\"]", "");
+            for (String part : json.split(",")) {
+                String[] kv = part.split(":");
+                if (kv.length == 2) {
+                    try {
+                        stats.put(kv[0].trim(), Long.parseLong(kv[1].trim()));
+                    } catch (NumberFormatException e) {
+                        stats.put(kv[0].trim(), kv[1].trim());
+                    }
+                }
+            }
+            // 计算平均耗时
+            long total = (long) stats.getOrDefault("total", 0L);
+            long totalLatency = (long) stats.getOrDefault("totalLatency", 0L);
+            if (total > 0) {
+                stats.put("avgLatency", totalLatency / total);
+            }
+            result.put(provider, stats);
+        }
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/total-usage")

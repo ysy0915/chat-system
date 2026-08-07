@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import axios from 'axios'
+import SockJS from 'sockjs-client'
+import { Client } from '@stomp/stompjs'
 import '../styles/treehole.css'
 import { formatAnswer } from '../utils/format'
 import { extractAnswer } from '../utils/format'
@@ -72,6 +74,86 @@ export default function TreeHole() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages, typing])
 
+    // WebSocket 流式订阅
+    const stompRef = useRef(null)
+    useEffect(() => {
+        if (!authUser) return
+        const userId = authUser.id
+        const sock = new SockJS('/ws/chat?userId=' + userId)
+        let manualClose = false
+        let reconnectTimer = null
+        const client = new Client({
+            webSocketFactory: () => sock,
+            debug: (str) => console.log('[TreeHole WS]', str),
+            reconnectDelay: 0,
+            onConnect: () => {
+                console.log('[TreeHole WS] 已连接, 订阅 /topic/treehole.' + userId)
+                client.subscribe(`/topic/treehole.${userId}`, (msg) => {
+                    try {
+                        const payload = JSON.parse(msg.body)
+                        if (payload.type === 'stream_start') {
+                            setTyping(false)
+                            setMessages(prev => [...prev, { role: 'ai', text: '', streaming: true, time: new Date().toISOString() }])
+                        } else if (payload.type === 'stream_token') {
+                            setMessages(prev => {
+                                const updated = [...prev]
+                                for (let i = updated.length - 1; i >= 0; i--) {
+                                    if (updated[i].role === 'ai' && updated[i].streaming) {
+                                        updated[i] = { ...updated[i], text: (updated[i].text || '') + payload.token }
+                                        break
+                                    }
+                                }
+                                return updated
+                            })
+                        } else if (payload.type === 'done') {
+                            setMessages(prev => {
+                                const last = prev[prev.length - 1]
+                                if (last && last.role === 'ai' && last.streaming) {
+                                    const answer = extractAnswer(payload.answer || '')
+                                    const updated = [...prev]
+                                    updated[updated.length - 1] = { role: 'ai', text: answer || last.text, streaming: false, time: new Date().toISOString() }
+                                    return updated
+                                }
+                                return [...prev, { role: 'ai', text: extractAnswer(payload.answer || ''), time: new Date().toISOString() }]
+                            })
+                        } else if (payload.type === 'error') {
+                            setTyping(false)
+                            setMessages(prev => {
+                                const last = prev[prev.length - 1]
+                                if (last && last.role === 'ai' && last.streaming) {
+                                    const updated = [...prev]
+                                    updated[updated.length - 1] = { role: 'ai', text: payload.message || '生成失败', streaming: false, time: new Date().toISOString() }
+                                    return updated
+                                }
+                                return [...prev, { role: 'ai', text: payload.message || '生成失败', time: new Date().toISOString() }]
+                            })
+                        }
+                    } catch (e) { console.error(e) }
+                })
+            },
+            onWebSocketClose: () => {
+                console.warn('[TreeHole WS] 连接关闭')
+                if (!manualClose) {
+                    reconnectTimer = setTimeout(() => {
+                        if (!manualClose && stompRef.current === client) {
+                            try { Promise.resolve(client.activate()).catch(() => {}) } catch (e) {}
+                        }
+                    }, 3000)
+                }
+            },
+            onStompError: (frame) => {
+                console.error('[TreeHole WS] STOMP错误', frame)
+            }
+        })
+        stompRef.current = client
+        client.activate()
+        return () => {
+            manualClose = true
+            if (reconnectTimer) clearTimeout(reconnectTimer)
+            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {}
+        }
+    }, [authUser])
+
     // 自适应输入框高度
     useEffect(() => {
         const ta = textareaRef.current
@@ -96,8 +178,8 @@ export default function TreeHole() {
         setTyping(true)
 
         try {
-            let data
             if (fileToSend) {
+                // 文件请求走 HTTP（非流式）
                 const formData = new FormData()
                 formData.append('file', fileToSend, fileToSend.name)
                 formData.append('question', text)
@@ -106,28 +188,22 @@ export default function TreeHole() {
                     headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' },
                     timeout: 120000
                 })
-                data = res.data
+                const answerText = extractAnswer(res.data.answerJson) || '树洞暂时没有回应...'
+                setMessages(prev => [...prev, { role: 'ai', text: answerText, time: new Date().toISOString() }])
+                setTyping(false)
             } else {
-                const res = await axios.post('/api/v1/treehole/ask',
+                // 普通文本走流式（通过 WebSocket 推送）
+                await axios.post('/api/v1/treehole/ask',
                     { question: text, mood },
                     { headers: getAuthHeaders() }
                 )
-                data = res.data
+                // 流式版本：typing 由 WebSocket stream_start 消息关闭，不在这里关闭
+                return
             }
-
-            // 提取纯文本回答（模型可能返回 JSON 字符串）
-            const answerText = extractAnswer(data.answerJson) || '树洞暂时没有回应...'
-
-            setMessages(prev => [...prev, {
-                role: 'ai',
-                text: answerText,
-                time: new Date().toISOString()
-            }])
         } catch (err) {
             const msg = err.response?.data || '发送失败，请稍后重试'
             setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
             setMessages(prev => prev.slice(0, -1))
-        } finally {
             setTyping(false)
         }
     }, [hasInput, mood, typing, selectedFile])

@@ -8,14 +8,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -48,19 +45,21 @@ public class TreeHoleService {
     private final ModelConfigRepository modelConfigRepository;
     private final RateLimitService rateLimitService;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final LLMInvoker llmInvoker;
 
     public TreeHoleService(TreeHoleRepository treeHoleRepository,
                            ModelConfigRepository modelConfigRepository,
                            RateLimitService rateLimitService,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper,
+                           SimpMessagingTemplate messagingTemplate,
+                           LLMInvoker llmInvoker) {
         this.treeHoleRepository = treeHoleRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.rateLimitService = rateLimitService;
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(120))
-                .build();
+        this.messagingTemplate = messagingTemplate;
+        this.llmInvoker = llmInvoker;
     }
 
     /** 固定使用 model_configs 中 id=2 的千问模型配置（树洞主模型） */
@@ -170,9 +169,6 @@ public class TreeHoleService {
         ModelConfig config = resolveImageParseConfig();
         if (config == null) throw new RuntimeException("图片解析模型未配置（id=8）");
 
-        String baseUrl = resolveBaseUrl(config);
-        String apiKey = config.apiKeyEncrypted;
-
         // 推断 mimeType
         String lowerName = fileName != null ? fileName.toLowerCase() : "";
         String mimeType = lowerName.endsWith(".png") ? "image/png"
@@ -195,18 +191,14 @@ public class TreeHoleService {
         messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT + "\n\n如果用户上传了图片，请结合图片内容给予温暖的情感陪伴与回应。"));
         messages.add(Map.of("role", "user", "content", contentParts));
 
-        log.info("TreeHole 图片解析 -> {} model={}", baseUrl, config.model);
-        return callLLM(baseUrl, apiKey, config.model, messages);
+        log.info("TreeHole 图片解析 model={}", config.model);
+        return llmInvoker.invoke(config, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
     }
 
     /** 非图片文件：提取文本内容，用智谱解析 */
     private String handleTextFile(String question, String mood, String fileName, byte[] fileBytes) throws Exception {
         ModelConfig zhipu = resolveZhipuConfig();
         if (zhipu == null) throw new RuntimeException("智谱模型未配置，请在模型管理中启用智谱");
-
-        String baseUrl = resolveBaseUrl(zhipu);
-        String apiKey = zhipu.apiKeyEncrypted;
-        String model = zhipu.model;
 
         String fileText = "";
         String lowerName = fileName != null ? fileName.toLowerCase() : "";
@@ -245,30 +237,90 @@ public class TreeHoleService {
         messages.add(Map.of("role", "system", "content", systemPrompt));
         messages.add(Map.of("role", "user", "content", userContent));
 
-        return callLLM(baseUrl, apiKey, model, messages);
-    }
-
-    private String resolveBaseUrl(ModelConfig config) {
-        if (config.metaJson != null && !config.metaJson.isBlank()) {
-            try {
-                Map<?, ?> meta = objectMapper.readValue(config.metaJson, Map.class);
-                Object url = meta.get("base_url");
-                if (url != null) return url.toString();
-            } catch (Exception ignored) {}
-        }
-        if (config.provider == null) return defaultBaseUrl;
-        return switch (config.provider.toLowerCase()) {
-            case "deepseek" -> "https://api.deepseek.com/v1";
-            case "qwen"     -> "https://dashscope.aliyuncs.com/compatible-mode/v1";
-            case "doubao"   -> "https://ark.cn-beijing.volces.com/api/v3";
-            case "zhipu"    -> "https://open.bigmodel.cn/api/paas/v4";
-            default         -> defaultBaseUrl;
-        };
+        return llmInvoker.invoke(zhipu, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
     }
 
     /** 获取当前用户的树洞历史（最多50条，独立数据表） */
     public List<TreeHoleMessage> getHistory(Long userId) {
         return treeHoleRepository.findByUserId(userId);
+    }
+
+    /**
+     * 流式版本：发送情绪内容，逐 token 通过 WebSocket 推送给前端
+     * 推送 topic: /topic/treehole.{userId}
+     * 消息类型: stream_start / stream_token / done / error
+     */
+    public void askAndStream(Long userId, String question, String mood) {
+        log.info("TreeHole askAndStream 被调用, userId={}, question={}", userId, question);
+        if (!rateLimitService.isAllowed(userId)) {
+            long retry = rateLimitService.getRemainingSeconds(userId);
+            messagingTemplate.convertAndSend("/topic/treehole." + userId,
+                    Map.of("type", "error", "message", "发送太频繁，请 " + retry + " 秒后再试"));
+            return;
+        }
+
+        // 构建历史上下文
+        List<TreeHoleMessage> recent = treeHoleRepository.findRecentByUserId(userId);
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
+        int start = Math.max(0, recent.size() - 10);
+        for (int i = start; i < recent.size(); i++) {
+            TreeHoleMessage prev = recent.get(i);
+            messages.add(Map.of("role", "user", "content", prev.question));
+            if (prev.answerJson != null && !prev.answerJson.isBlank()) {
+                messages.add(Map.of("role", "assistant", "content", prev.answerJson));
+            }
+        }
+        String fullQuestion = (mood != null && !mood.isBlank())
+                ? "[情绪：" + mood + "] " + question : question;
+        messages.add(Map.of("role", "user", "content", fullQuestion));
+
+        // 保存记录
+        TreeHoleMessage m = new TreeHoleMessage();
+        m.reqId = UUID.randomUUID().toString();
+        m.userId = userId;
+        m.question = question;
+        m.mood = mood;
+        m.status = "pending";
+        treeHoleRepository.insert(m);
+
+        ModelConfig config = resolveModelConfig();
+        String effectiveApiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
+                ? config.apiKeyEncrypted : defaultApiKey;
+
+        final String reqId = m.reqId;
+        final Long fUserId = userId;
+
+        // 通知前端开始流式输出
+        log.info("TreeHole 推送 stream_start, topic=/topic/treehole.{}", fUserId);
+        messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
+                Map.of("type", "stream_start", "req_id", reqId));
+
+        // 异步调用流式 API
+        new Thread(() -> {
+            try {
+                String answer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
+                        defaultBaseUrl, effectiveApiKey,
+                        token -> {
+                            messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
+                                    Map.of("type", "stream_token", "req_id", reqId, "token", token));
+                        });
+
+                m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
+                m.status = "done";
+                treeHoleRepository.updateByReqId(m);
+
+                messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
+                        Map.of("type", "done", "req_id", reqId, "answer", answer));
+            } catch (Exception e) {
+                log.error("TreeHole 流式调用失败: {}", e.getMessage(), e);
+                m.answerJson = "{\"answer\":\"树洞暂时出了点小问题，请稍后再试...\"}";
+                m.status = "error";
+                treeHoleRepository.updateByReqId(m);
+                messagingTemplate.convertAndSend("/topic/treehole." + fUserId,
+                        Map.of("type", "error", "req_id", reqId, "message", "生成失败: " + e.getMessage()));
+            }
+        }).start();
     }
 
     /**
@@ -312,17 +364,12 @@ public class TreeHoleService {
         m.status = "pending";
         treeHoleRepository.insert(m);
 
-        // 解析模型配置（从数据库读取，与 ChatProcessor 一致）
+        // 解析模型配置（从数据库读取）
         ModelConfig config = resolveModelConfig();
-        String effectiveApiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : defaultApiKey;
-        String effectiveBaseUrl = resolveBaseUrl(config);
-        String effectiveModel = (config.model != null && !config.model.isBlank())
-                ? config.model : defaultModel;
 
-        // 调用 AI
+        // 调用 AI（通过 LLMInvoker 统一入口）
         try {
-            String answer = callLLM(effectiveBaseUrl, effectiveApiKey, effectiveModel, messages);
+            String answer = llmInvoker.invoke(config, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
             m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
             m.status = "done";
         } catch (Exception e) {
@@ -333,40 +380,5 @@ public class TreeHoleService {
 
         treeHoleRepository.updateByReqId(m);
         return m;
-    }
-
-    @SuppressWarnings("unchecked")
-    private String callLLM(String baseUrl, String apiKey, String model,
-                           List<Map<String, Object>> messages) throws Exception {
-        String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
-
-        LinkedHashMap<String, Object> requestBody = new LinkedHashMap<>();
-        requestBody.put("model", model);
-        requestBody.put("messages", messages);
-        requestBody.put("temperature", 0.85);
-
-        String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(Duration.ofSeconds(120))
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("LLM API returned status " + response.statusCode() + ": " + response.body());
-        }
-
-        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("LLM API returned no choices");
-        }
-        Map<String, Object> msg = (Map<String, Object>) choices.get(0).get("message");
-        return msg != null && msg.get("content") != null ? msg.get("content").toString() : "无回应";
     }
 }

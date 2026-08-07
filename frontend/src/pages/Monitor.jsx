@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react'
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
@@ -59,7 +59,6 @@ export default function Monitor() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem('monitor_authed') === '1')
   const [pwd, setPwd] = useState('')
   const [loginErr, setLoginErr] = useState('')
-  const [history, setHistory] = useState({})
   const [current, setCurrent] = useState({})
   const [dailyVisits, setDailyVisits] = useState({})
   const [pageDailyVisits, setPageDailyVisits] = useState({})
@@ -115,11 +114,9 @@ export default function Monitor() {
   async function fetchData() {
     try {
       const res = await axios.get('/api/v1/monitor/online-history', { params: { days: 8 } })
-      setHistory(res.data.history || {})
       setCurrent(res.data.current || {})
       setDailyVisits(res.data.dailyVisits || {})
       setHourlyTotal(res.data.hourlyTotal || 0)
-      // 尝试获取分页面日访问量
       if (res.data.pageDailyVisits) {
         setPageDailyVisits(res.data.pageDailyVisits)
       }
@@ -162,37 +159,29 @@ export default function Monitor() {
         pages.add(page)
       }
     })
-    // 兜底：如果 pageDailyVisits 为空，从 history 统计
-    if (pages.size === 0) {
-      const dayMs = 24 * 60 * 60 * 1000
-      Object.keys(history).forEach(page => {
-        if (HIDDEN_PAGES.has(page)) return
-        const points = history[page] || []
-        let hasOver3 = false
-        dayList.forEach(dateStr => {
-          const dayStart = new Date(dateStr + 'T00:00:00').getTime()
-          const dayEnd = dayStart + dayMs
-          let total = 0
-          points.forEach(p => {
-            const t = new Date(p.time).getTime()
-            if (t >= dayStart && t < dayEnd) total += p.count || 0
-          })
-          if (total > 3) hasOver3 = true
-        })
-        if (hasOver3) pages.add(page)
-      })
-    }
     return [...pages].sort()
-  }, [pageDailyVisits, history, dayList])
+  }, [pageDailyVisits, dayList])
 
   // 存储各页面曲线的坐标点，用于点击检测
   const curvePointsRef = useRef({})
-  const [hoveredPage, setHoveredPage] = useState(null)
-  const [tooltip, setTooltip] = useState(null) // {x, y, page, dateStr, count}
+
+  // 用 ref 存储 hover 状态
+  const hoveredPageRef = useRef(null)
+  const tooltipRef = useRef(null)
+  const [hoverTick, setHoverTick] = useState(0)  // 触发重绘的计数器
+
+  // 更新 hover 并用 rAF 节流重绘
+  const rafRef = useRef(null)
+  const updateHover = useCallback((page, tip) => {
+    hoveredPageRef.current = page
+    tooltipRef.current = tip
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => setHoverTick(t => t + 1))
+  }, [])
 
   useEffect(() => {
     drawChart()
-  }, [canvasSize, selectedDate, dailyVisits, pageDailyVisits, activePages, hoveredPage, tooltip])
+  }, [canvasSize, selectedDate, dailyVisits, pageDailyVisits, activePages, hoverTick])
 
   function drawChart() {
     const canvas = canvasRef.current
@@ -212,21 +201,11 @@ export default function Monitor() {
     const dayMs = 24 * 60 * 60 * 1000
 
     // 收集各页面每天的访问量
-    // 优先用 pageDailyVisits，否则从 history 统计
     function getPageVisits(page, dateStr) {
       if (pageDailyVisits[page] && pageDailyVisits[page][dateStr] !== undefined) {
         return pageDailyVisits[page][dateStr] || 0
       }
-      // 从 history 统计：该日期当天该 page 的所有记录点 count 之和
-      const points = history[page] || []
-      const dayStart = new Date(dateStr + 'T00:00:00').getTime()
-      const dayEnd = dayStart + dayMs
-      let total = 0
-      points.forEach(p => {
-        const t = new Date(p.time).getTime()
-        if (t >= dayStart && t < dayEnd) total += p.count || 0
-      })
-      return total
+      return 0
     }
 
     // 计算最大值
@@ -312,7 +291,7 @@ export default function Monitor() {
       }))
       curvePointsRef.current[page] = points
 
-      const isHovered = hoveredPage === page
+      const isHovered = hoveredPageRef.current === page
 
       // 平滑曲线
       ctx.strokeStyle = color
@@ -409,7 +388,7 @@ export default function Monitor() {
       const curCount = getPageVisits(page, selectedDate)
       const text = `${label} (${curCount})`
       const y = legendStartY + idx * legendLineH
-      const isHovered = hoveredPage === page
+      const isHovered = hoveredPageRef.current === page
 
       ctx.font = isHovered ? 'bold 12px sans-serif' : '11px sans-serif'
       ctx.fillStyle = isHovered ? color : color
@@ -444,31 +423,32 @@ export default function Monitor() {
     }
 
     // 画 tooltip
-    if (tooltip) {
+    const tip = tooltipRef.current
+    if (tip) {
       const tw = 160
       const th = 56
-      let tx = tooltip.x + 12
-      let ty = tooltip.y - th - 8
-      if (tx + tw > W) tx = tooltip.x - tw - 12
-      if (ty < 0) ty = tooltip.y + 12
+      let tx = tip.x + 12
+      let ty = tip.y - th - 8
+      if (tx + tw > W) tx = tip.x - tw - 12
+      if (ty < 0) ty = tip.y + 12
 
       ctx.fillStyle = 'rgba(15,23,42,0.95)'
-      ctx.strokeStyle = getColor(tooltip.page)
+      ctx.strokeStyle = getColor(tip.page)
       ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.roundRect(tx, ty, tw, th, 8)
       ctx.fill()
       ctx.stroke()
 
-      ctx.fillStyle = getColor(tooltip.page)
+      ctx.fillStyle = getColor(tip.page)
       ctx.font = 'bold 13px sans-serif'
       ctx.textAlign = 'left'
-      ctx.fillText(getLabel(tooltip.page), tx + 10, ty + 18)
+      ctx.fillText(getLabel(tip.page), tx + 10, ty + 18)
 
       ctx.fillStyle = '#cbd5e1'
       ctx.font = '12px sans-serif'
-      ctx.fillText(`日期: ${tooltip.dateStr}`, tx + 10, ty + 36)
-      ctx.fillText(`访问量: ${tooltip.count}`, tx + 10, ty + 52)
+      ctx.fillText(`日期: ${tip.dateStr}`, tx + 10, ty + 36)
+      ctx.fillText(`访问量: ${tip.count}`, tx + 10, ty + 52)
     }
   }
 
@@ -570,7 +550,6 @@ export default function Monitor() {
                   const rect = e.currentTarget.getBoundingClientRect()
                   const x = e.clientX - rect.left
                   const y = e.clientY - rect.top
-                  // 找最近的曲线点
                   let closest = null
                   let minDist = 20
                   Object.entries(curvePointsRef.current).forEach(([page, points]) => {
@@ -583,16 +562,13 @@ export default function Monitor() {
                     })
                   })
                   if (closest) {
-                    setHoveredPage(closest.page)
-                    setTooltip(closest)
+                    updateHover(closest.page, closest)
                   } else {
-                    setHoveredPage(null)
-                    setTooltip(null)
+                    updateHover(null, null)
                   }
                 }}
                 onMouseLeave={() => {
-                  setHoveredPage(null)
-                  setTooltip(null)
+                  updateHover(null, null)
                 }}
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect()
@@ -610,8 +586,7 @@ export default function Monitor() {
                     })
                   })
                   if (closest) {
-                    setHoveredPage(closest.page)
-                    setTooltip(closest)
+                    updateHover(closest.page, closest)
                   }
                 }}
                 onTouchStart={(e) => {
@@ -631,16 +606,13 @@ export default function Monitor() {
                     })
                   })
                   if (closest) {
-                    setHoveredPage(closest.page)
-                    setTooltip(closest)
+                    updateHover(closest.page, closest)
                     e.preventDefault()
                   }
                 }}
                 onTouchEnd={() => {
-                  // 触摸结束后保留 tooltip 一段时间
                   setTimeout(() => {
-                    setHoveredPage(null)
-                    setTooltip(null)
+                    updateHover(null, null)
                   }, 3000)
                 }}
                  />

@@ -27,7 +27,12 @@ export default function Debate() {
   const [modelNames, setModelNames] = useState({})
   const [wsStatus, setWsStatus] = useState('connecting')
   const stompRef = useRef(null)
+  const currentRoundRef = useRef(0)
+  const modelNamesRef = useRef({})
   const scrollRef = useAutoScroll([rounds, finalAnswer, synthesizing])
+
+  useEffect(() => { currentRoundRef.current = currentRound }, [currentRound])
+  useEffect(() => { modelNamesRef.current = modelNames }, [modelNames])
   const [userId] = useState(() => {
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -60,12 +65,53 @@ export default function Debate() {
                 next[p.round - 1] = next[p.round - 1] || []
                 return next
               })
+            } else if (p.type === 'stream_token') {
+              // 最终整合的流式 token（model_id=4）
+              if (p.model_id === 4) {
+                setFinalAnswer(prev => (prev || '') + p.token)
+              } else {
+                // 辩论轮次的流式 token
+                setRounds(prev => {
+                  const next = [...prev]
+                  const roundIdx = currentRoundRef.current - 1
+                  if (roundIdx < 0) return prev
+                  next[roundIdx] = next[roundIdx] || []
+                  const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
+                  if (existingIdx === -1) {
+                    // 新建一条流式回答
+                    const provider = modelNamesRef.current[p.model_id] || ''
+                    next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider, answer: p.token, streaming: true }]
+                    setThinking(prev => prev.filter(id => id !== p.model_id))
+                  } else {
+                    // 追加 token（创建新对象触发重渲染）
+                    const updated = [...next[roundIdx]]
+                    updated[existingIdx] = {
+                      ...updated[existingIdx],
+                      answer: (updated[existingIdx].answer || '') + p.token
+                    }
+                    next[roundIdx] = updated
+                  }
+                  return [...next]
+                })
+              }
             } else if (p.type === 'round_response') {
               setThinking(prev => prev.filter(id => id !== p.model_id))
               setRounds(prev => {
                 const next = [...prev]
                 const roundIdx = p.round - 1
                 next[roundIdx] = next[roundIdx] || []
+                const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
+                if (existingIdx !== -1) {
+                  // 更新已有条目
+                  const updated = [...next[roundIdx]]
+                  updated[existingIdx] = {
+                    ...updated[existingIdx],
+                    answer: extractAnswer(p.answer),
+                    streaming: false
+                  }
+                  next[roundIdx] = updated
+                  return [...next]
+                }
                 next[roundIdx] = [...next[roundIdx], {
                   modelId: p.model_id,
                   provider: p.provider,
@@ -96,7 +142,7 @@ export default function Debate() {
     })
     stompRef.current = client
     client.activate()
-    return () => { client.deactivate() }
+    return () => { try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {} }
   }, [userId])
 
   useEffect(() => {

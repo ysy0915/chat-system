@@ -112,16 +112,53 @@ export default function PersonalChat() {
         client.subscribe(`/topic/user.${userId}`, (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            if (payload.type === 'done' || payload.answer) {
+            if (payload.type === 'stream_start') {
+              // 流式输出开始：创建一条空的 AI 消息
               setTyping(false)
               failCountRef.current = 0
-              const answer = extractAnswer(payload.answer || '')
-              setMessages(prev => [...prev, { role: 'ai', content: answer }])
+              setMessages(prev => [...prev, { role: 'ai', content: '', streaming: true, reqId: payload.req_id }])
+            } else if (payload.type === 'stream_token') {
+              // 流式 token：追加到最后一条 AI 消息
+              setMessages(prev => {
+                const updated = [...prev]
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].role === 'ai' && updated[i].streaming) {
+                    updated[i] = { ...updated[i], content: (updated[i].content || '') + payload.token }
+                    break
+                  }
+                }
+                return updated
+              })
+            } else if (payload.type === 'done' || payload.answer) {
+              // 流式结束或非流式完成
+              setTyping(false)
+              failCountRef.current = 0
+              setMessages(prev => {
+                // 如果最后一条是流式消息，更新它而不是新增
+                const last = prev[prev.length - 1]
+                if (last && last.role === 'ai' && last.streaming) {
+                  const answer = extractAnswer(payload.answer || '')
+                  const updated = [...prev]
+                  updated[updated.length - 1] = { role: 'ai', content: answer || last.content, streaming: false }
+                  return updated
+                }
+                const answer = extractAnswer(payload.answer || '')
+                return [...prev, { role: 'ai', content: answer }]
+              })
             } else if (payload.type === 'error') {
               setTyping(false)
               triggerFailure()
               const errMsg = payload.message || '处理失败，请稍后重试'
-              setMessages(prev => [...prev, { role: 'system', content: '❌ ' + errMsg }])
+              setMessages(prev => {
+                // 如果最后一条是流式消息，标记为错误
+                const last = prev[prev.length - 1]
+                if (last && last.role === 'ai' && last.streaming) {
+                  const updated = [...prev]
+                  updated[updated.length - 1] = { role: 'system', content: '❌ ' + errMsg }
+                  return updated
+                }
+                return [...prev, { role: 'system', content: '❌ ' + errMsg }]
+              })
             }
           } catch (e) { console.error(e) }
         })

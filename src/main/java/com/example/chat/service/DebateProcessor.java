@@ -9,14 +9,8 @@ import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -25,33 +19,27 @@ public class DebateProcessor {
     private static final Logger log = LoggerFactory.getLogger(DebateProcessor.class);
     private final MessageRepository messageRepository;
     private final ModelConfigRepository modelConfigRepository;
-    private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
     private final ExecutorService debateExecutor;
     private final DebateRecordRepository debateRecordRepository;
     private final BroadcastService broadcastService;
+    private final LLMInvoker llmInvoker;
 
     @org.springframework.beans.factory.annotation.Value("${app.llm.api-key:}")
     private String defaultApiKey;
 
-    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(120);
-
     public DebateProcessor(MessageRepository messageRepository,
                            ModelConfigRepository modelConfigRepository,
-                           SimpMessagingTemplate messagingTemplate,
                            ObjectMapper objectMapper,
                            DebateRecordRepository debateRecordRepository,
-                           BroadcastService broadcastService) {
+                           BroadcastService broadcastService,
+                           LLMInvoker llmInvoker) {
         this.messageRepository = messageRepository;
         this.modelConfigRepository = modelConfigRepository;
-        this.messagingTemplate = messagingTemplate;
         this.objectMapper = objectMapper;
         this.debateRecordRepository = debateRecordRepository;
         this.broadcastService = broadcastService;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(30))
-                .build();
+        this.llmInvoker = llmInvoker;
         this.debateExecutor = Executors.newFixedThreadPool(6);
     }
 
@@ -147,7 +135,16 @@ public class DebateProcessor {
 
                 CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
                     try {
-                        String answer = callLLM(config, prompt);
+                        String answer = llmInvoker.invokeStream(config,
+                                List.of(Map.of("role", "user", "content", prompt)),
+                                0.7, "debate", null, defaultApiKey,
+                                token -> {
+                                    if (userId != null && reqId != null) {
+                                        broadcastService.broadcast("/topic/debate." + userId,
+                                                Map.of("type", "stream_token", "req_id", reqId,
+                                                        "model_id", modelId, "token", token));
+                                    }
+                                });
                         return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", answer);
                     } catch (Exception e) {
                         return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", "[" + displayName + " 调用失败]");
@@ -179,7 +176,16 @@ public class DebateProcessor {
         String synthesisPrompt = buildSynthesisPrompt(question, allRounds, providerDisplayName(summaryModel.provider));
 
         try {
-            String finalAnswer = callLLM(summaryModel, synthesisPrompt);
+            String finalAnswer = llmInvoker.invokeStream(summaryModel,
+                    List.of(Map.of("role", "user", "content", synthesisPrompt)),
+                    0.7, "debate", null, defaultApiKey,
+                    token -> {
+                        if (userId != null && reqId != null) {
+                            broadcastService.broadcast("/topic/debate." + userId,
+                                    Map.of("type", "stream_token", "req_id", reqId,
+                                            "model_id", 4, "token", token));
+                        }
+                    });
 
             broadcastService.broadcast("/topic/debate." + userId,
                     Map.of("type", "done", "req_id", reqId, "answer", finalAnswer));
@@ -266,126 +272,4 @@ public class DebateProcessor {
         return sb.toString();
     }
 
-    private String buildFinalPrompt(String question, String synthesisResult) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("请根据用户的问题，结合以下多个AI辩论后的整合结论，给出最终回答。\n\n");
-        sb.append("## 用户的问题\n").append(question).append("\n\n");
-        sb.append("## 整合结论\n").append(synthesisResult).append("\n\n");
-        sb.append("请直接将返回结果限制在50个字以内，简洁明了地回答用户的问题。");
-        return sb.toString();
-    }
-
-    private String callLLM(ModelConfig config, String prompt) throws Exception {
-        String baseUrl = resolveBaseUrl(config);
-        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : defaultApiKey;
-
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("模型 " + config.provider + " 未配置 API Key");
-        }
-
-        boolean isDoubao = "doubao".equalsIgnoreCase(config.provider);
-
-        if (isDoubao) {
-            return callDoubaoResponses(baseUrl, apiKey, config.model, prompt);
-        }
-
-        String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
-
-        Map<String, Object> requestBody = Map.of(
-                "model", config.model,
-                "messages", List.of(Map.of("role", "user", "content", prompt)),
-                "temperature", 0.7
-        );
-
-        String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(HTTP_TIMEOUT)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("LLM API returned status " + response.statusCode() + ": " + response.body());
-        }
-
-        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("LLM API returned no choices");
-        }
-
-        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-        return message != null ? message.get("content").toString() : "No response";
-    }
-
-    private String callDoubaoResponses(String baseUrl, String apiKey, String model, String prompt) throws Exception {
-        String url = baseUrl.replaceAll("/+$", "") + "/responses";
-
-        Map<String, Object> requestBody = Map.of(
-                "model", model,
-                "input", List.of(Map.of(
-                        "role", "user",
-                        "content", List.of(Map.of("type", "input_text", "text", prompt))
-                ))
-        );
-
-        String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(HTTP_TIMEOUT)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Doubao API returned status " + response.statusCode() + ": " + response.body());
-        }
-
-        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-        List<Map<String, Object>> output = (List<Map<String, Object>>) result.get("output");
-        if (output == null || output.isEmpty()) {
-            throw new RuntimeException("Doubao API returned no output");
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (Map<String, Object> item : output) {
-            List<Map<String, Object>> contents = (List<Map<String, Object>>) item.get("content");
-            if (contents != null) {
-                for (Map<String, Object> c : contents) {
-                    if ("output_text".equals(c.get("type")) && c.get("text") != null) {
-                        sb.append(c.get("text").toString());
-                    }
-                }
-            }
-        }
-
-        return sb.length() > 0 ? sb.toString() : "No response";
-    }
-
-    private String resolveBaseUrl(ModelConfig config) {
-        if (config.metaJson != null && !config.metaJson.isBlank()) {
-            try {
-                Map<String, Object> meta = objectMapper.readValue(config.metaJson, Map.class);
-                Object baseUrl = meta.get("base_url");
-                if (baseUrl != null) return baseUrl.toString();
-            } catch (Exception ignored) {}
-        }
-        switch (config.provider.toLowerCase()) {
-            case "deepseek": return "https://api.deepseek.com/v1";
-            case "qwen": return "https://dashscope.aliyuncs.com/compatible-mode/v1";
-            case "doubao": return "https://ark.cn-beijing.volces.com/api/v3";
-            case "zhipu": return "https://open.bigmodel.cn/api/paas/v4";
-            default: return "https://api.openai.com/v1";
-        }
-    }
 }

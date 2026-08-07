@@ -32,7 +32,7 @@ public class TreeHoleController {
         return ResponseEntity.ok(list);
     }
 
-    /** 发送情绪内容，获取 AI 回应 */
+    /** 发送情绪内容，流式返回 AI 回应（通过 WebSocket 推送） */
     @PostMapping("/ask")
     public ResponseEntity<?> ask(@RequestBody Map<String, String> body, HttpServletRequest request) {
         Long userId = extractUserId(request);
@@ -44,8 +44,8 @@ public class TreeHoleController {
             return ResponseEntity.badRequest().body("内容不能为空");
         }
         try {
-            TreeHoleMessage result = treeHoleService.askAndSave(userId, question, mood);
-            return ResponseEntity.ok(result);
+            treeHoleService.askAndStream(userId, question, mood);
+            return ResponseEntity.ok(Map.of("status", "streaming"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

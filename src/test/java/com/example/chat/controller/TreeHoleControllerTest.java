@@ -38,7 +38,7 @@ class TreeHoleControllerTest {
     // BiFunction<userId, question, result or throw>
     private final AtomicReference<BiFunction<Long, String, TreeHoleMessage>> askFn = new AtomicReference<>();
 
-    private final TreeHoleService treeHoleServiceStub = new TreeHoleService(null, null, null, null) {
+    private final TreeHoleService treeHoleServiceStub = new TreeHoleService(null, null, null, null, null, null) {
         @Override
         public List<TreeHoleMessage> getHistory(Long userId) {
             return historyResult.get();

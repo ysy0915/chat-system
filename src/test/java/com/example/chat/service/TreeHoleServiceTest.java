@@ -75,7 +75,7 @@ class TreeHoleServiceTest {
         modelConfigRepo = new StubModelConfigRepo();
         rateLimitService = new StubRateLimitService();
 
-        service = new TreeHoleService(treeHoleRepo, modelConfigRepo, rateLimitService, objectMapper);
+        service = new TreeHoleService(treeHoleRepo, modelConfigRepo, rateLimitService, objectMapper, null, null);
         ReflectionTestUtils.setField(service, "defaultBaseUrl",
                 "https://dashscope.aliyuncs.com/compatible-mode/v1");
         ReflectionTestUtils.setField(service, "defaultApiKey", "test-key-invalid");

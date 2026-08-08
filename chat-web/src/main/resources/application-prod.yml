@@ -38,7 +38,6 @@ jwt:
 app:
   core:
     base-url: http://127.0.0.1:9090
-    base-urls: http://127.0.0.1:9091
   module:
     core: false
   cross-node:

@@ -1,0 +1,485 @@
+从单体到微服务：AI聊天系统的模块化架构演进实战
+==================================================
+
+一、背景
+========
+
+我们的 AI 聊天系统最初是一个 Spring Boot 单体应用，包含群聊、个人会话、情绪树洞、AI博弈辩论、多模态生成、游戏等功能。随着功能不断迭代，单体架构的痛点逐渐暴露：
+
+1. jar 包膨胀到 118M，每次部署上传耗时 5+ 分钟
+2. 所有功能耦合在一个进程中，游戏突发流量影响 AI 对话响应
+3. 启动时间 21 秒，调试和部署效率低
+4. 无法按模块独立扩容，游戏和多模态与核心 AI 争抢内存
+5. 代码维护困难，110 个 Java 文件混在一个工程中
+
+本文记录了从单体到微服务的完整拆分过程，包括 Maven 多模块化、服务间 RPC 通信、Nacos 服务注册、Nginx 反向代理、JVM 调优等实战经验。
+
+
+二、架构演进路线
+================
+
+阶段一：单体应用
+----------------
+所有代码在一个 Spring Boot 项目中，一个 jar 包打天下。
+
+    用户 → Nginx → Spring Boot (8081/8082)
+                    ├─ 群聊/个人会话/树洞/辩论
+                    ├─ 多模态生成（图片/视频/3D）
+                    ├─ 游戏（攻城战/SQL执行器）
+                    ├─ MySQL / Redis / Milvus / RabbitMQ
+                    └─ 前端静态资源
+
+阶段二：Maven 多模块拆分
+------------------------
+将单体拆成 5 个 Maven 子模块，各自独立打包部署。
+
+阶段三：微服务化
+----------------
+chat-web 和 chat-core 分离为独立微服务，通过 HTTP REST 通信，Nacos 做服务注册发现。
+
+
+三、最终架构
+============
+
+    公网用户
+      ↓
+    Nginx (112.124.106.108, 1.6G)
+      ├─ /              → 静态资源（前端 SPA）
+      ├─ /api/*         → 172.23.172.13:8081/8082 (chat-web)
+      ├─ /ws/*          → 172.23.172.13:8081/8082 (WebSocket)
+      ├─ /ws/games      → 172.23.172.13:8083 (游戏 WS)
+      ├─ /api/v1/games/ → 172.23.172.13:8083
+      └─ /api/v1/media/ → 172.23.172.13:8084
+
+    172.23.172.13 (8G, Milvus 服务器)
+      ├─ Nacos (8848)         ← 服务注册中心
+      ├─ Milvus (19530)       ← 向量数据库
+      ├─ chat-core (9090)     ← 核心 AI 微服务
+      ├─ chat-web (8081/8082) ← Web 接入层（双实例）
+      ├─ chat-games (8083)    ← 游戏服务
+      └─ chat-media (8084)    ← 多模态服务
+
+    112.124.106.108 (1.6G, 主服务器)
+      ├─ Nginx（反代 + 静态资源）
+      ├─ Redis (6379)
+      └─ RabbitMQ (5672)
+
+
+四、模块划分
+============
+
+5 个 Maven 子模块，依赖关系清晰无循环：
+
+    chat-common (67K)   ← 所有模块的公共依赖
+    chat-core  (113M)   → 依赖 chat-common
+    chat-web   (64M)    → 依赖 chat-common（不依赖 chat-core！）
+    chat-games (39M)    → 依赖 chat-common
+    chat-media (43M)    → 依赖 chat-common
+
+4.1 chat-common（公共组件库）
+----------------------------
+职责：提供所有模块共享的基础组件，不包含任何业务逻辑。
+
+    chat-common/
+    ├─ entity/         全部 Entity（User/Message/TreeHoleMessage/DebateRecord 等 8 个）
+    ├─ repository/     全部 Repository（MyBatis @Mapper 接口 8 个）
+    ├─ security/       JWT 认证、IP 限流、管理员认证
+    ├─ config/         WebSocket/Security/RabbitMQ/CrossNode/Jackson/SPA 路由
+    ├─ service/        BroadcastService（跨节点广播）
+    │                  ContentSafetyService（内容安全）
+    │                  RateLimitService（限流）
+    │                  OnlineCountRedisService（在线人数）
+    │                  AuditService（审计日志）
+    └─ common/         ApiResponse
+
+关键设计：将 Nacos、RabbitMQ、阿里云内容安全等重依赖设为 optional，子模块按需引入，
+避免 games/media 不需要的依赖被打进 jar。
+
+4.2 chat-core（核心 AI 微服务）
+------------------------------
+职责：所有 AI 业务逻辑，通过 REST API 给 chat-web 调用。
+
+    chat-core/
+    ├─ service/        ChatProcessor（群聊处理）
+    │                  TreeHoleService（树洞服务）
+    │                  DebateProcessor（辩论处理）
+    │                  LLMInvoker（LLM 统一调用入口）
+    │                  LLMStrategyFactory（策略工厂）
+    │                  LLMCallRecorder（调用记录）
+    │                  SummaryService（对话摘要）
+    │                  ModelAutoChatService（自动对话）
+    ├─ internal/       InternalApiController（内部 REST API）
+    ├─ langchain4j/    LangChain4j AI 编排（TreeHoleAssistant/PersonalChatAssistant）
+    ├─ langgraph4j/    LangGraph4j 辩论图（DebateGraphService/DebateNodes/DebateState）
+    ├─ agent/          工具调度（ToolDispatcher/WeatherTool/CalculatorTool 等）
+    ├─ observability/  可观测性（TraceContext/CallTrace/ErrorAggregator/SelfHealing）
+    ├─ router/         动态路由（TaskClassifier/ModelRouter）
+    ├─ rag/            RAG 知识库（RAGService/EmbeddingService/VectorStoreService）
+    ├─ strategy/       LLM 策略（DoubaoStrategy/OpenAICompatStrategy）
+    ├─ factory/        LLMStrategyFactory
+    ├─ util/           BaseUrlResolver
+    └─ CoreApplication.java（启动类，端口 9090）
+
+AI 依赖：LangChain4j、LangGraph4j、Milvus SDK、Apache POI、PDFBox、阿里云 OSS
+
+4.3 chat-web（Web 接入层）
+--------------------------
+职责：接收前端请求，调用 chat-core 的内部 API，通过 WebSocket 推送结果给前端。
+
+    chat-web/
+    ├─ controller/     MessageController（群聊 API）
+    │                  TreeHoleController（树洞 API）
+    │                  DebateController（辩论 API）
+    │                  AuthController（登录注册）
+    │                  MonitorController（监控）
+    │                  ProfileController（个人资料）
+    │                  ModelConfigController（模型配置）
+    │                  AttachmentController（附件）
+    │                  IpAdminController（IP 管理）
+    │                  FrontendErrorController（前端错误上报）
+    ├─ client/         CoreClient（HTTP 调用 chat-core 的 RestTemplate 客户端）
+    └─ WebApplication.java（启动类，端口 8081/8082）
+
+关键设计：chat-web 不依赖 chat-core，只依赖 chat-common。
+Controller 不直接调用 Service，而是通过 CoreClient 发 HTTP 请求到 chat-core 的 /internal/* API。
+
+4.4 chat-games（游戏服务）
+-------------------------
+职责：攻城战游戏、排行榜、SQL 执行器。独立运行，不依赖 AI 功能。
+
+    chat-games/
+    ├─ controller/     CastleSiegeBattlefieldController（WebSocket 游戏）
+    │                  CastleSiegeLordController（排行榜 REST）
+    │                  SqlExecutorController（SQL 执行器）
+    ├─ service/        CastleSiegeBattlefieldService（游戏逻辑）
+    │                  CastleSiegeLordService（排行榜逻辑）
+    └─ GamesApplication.java（启动类，端口 8083）
+
+最轻量模块，仅依赖 chat-common，jar 仅 39M。
+
+4.5 chat-media（多模态服务）
+---------------------------
+职责：图片生成、视频生成、3D 模型生成，结果转存到阿里云 OSS。
+
+    chat-media/
+    ├─ controller/     MediaGenController（生成 API）
+    ├─ service/        OssService（OSS 上传）
+    └─ MediaApplication.java（启动类，端口 8084）
+
+依赖 chat-common + 阿里云 OSS SDK，jar 43M。
+
+
+五、服务间通信
+==============
+
+5.1 chat-web → chat-core（HTTP REST）
+-------------------------------------
+chat-web 的 Controller 通过 CoreClient 调用 chat-core 的 InternalApiController。
+
+    前端 → chat-web(8081) → CoreClient → HTTP POST → chat-core(9090) → LLM API
+                                        ↓
+                                    返回 JSON
+
+CoreClient 是一个 RestTemplate 封装，所有方法对应 chat-core 的 /internal/* 接口：
+
+    POST /internal/chat/process          → 群聊处理
+    POST /internal/chat/process-with-file → 带文件处理
+    POST /internal/chat/regenerate       → 重新生成
+    POST /internal/chat/stop             → 停止生成
+    POST /internal/treehole/ask          → 树洞提问
+    POST /internal/treehole/ask-with-file → 树洞带文件
+    POST /internal/debate/start          → 辩论启动
+    GET  /internal/messages/*            → 消息查询
+    GET  /internal/treehole/*            → 树洞查询
+    GET  /internal/traces                → 调用链路
+    GET  /internal/errors                → 错误统计
+
+安全隔离：/internal/* 路径只在 127.0.0.1 上监听，Nginx 不转发，公网无法访问。
+
+5.2 chat-core → chat-web（WebSocket 跨进程推送）
+-----------------------------------------------
+这是最复杂的部分。chat-core 处理 AI 请求后需要通过 WebSocket 实时推送 token 给前端，
+但前端连的是 chat-web 的 WebSocket，不是 chat-core 的。
+
+解决方案：通过 RabbitMQ 跨节点广播。
+
+    chat-core 处理 LLM 流式响应
+      ↓
+    BroadcastService.broadcast(destination, data)
+      ├─ SimpMessagingTemplate.convertAndSend()  → 本地 STOMP（chat-core 自己的 WS，无前端连接）
+      └─ RabbitTemplate.convertAndSend()         → RabbitMQ Fanout Exchange
+                                                    ↓
+    chat-web 的 CrossNodeMessageListener 监听 RabbitMQ
+      ↓
+    收到消息后 SimpMessagingTemplate.convertAndSend() → 推给前端 WebSocket
+
+关键代码（BroadcastService）：
+
+    public void broadcast(String destination, Object data) {
+        // 1. 本地推送（如果有前端直接连此服务）
+        messagingTemplate.convertAndSend(destination, data);
+        // 2. RabbitMQ 跨节点广播
+        if (rabbitTemplate == null) return;
+        String json = objectMapper.writeValueAsString(
+            Map.of("destination", destination, "data", data));
+        rabbitTemplate.convertAndSend(CrossNodeConfig.EXCHANGE, destination, json);
+    }
+
+关键代码（CrossNodeMessageListener）：
+
+    public void onMessage(Message message) {
+        Map<String, Object> payload = objectMapper.readValue(body, Map.class);
+        String destination = (String) payload.get("destination");
+        Object data = payload.get("data");
+        messagingTemplate.convertAndSend(destination, data);
+    }
+
+
+六、Nacos 服务注册
+==================
+
+6.1 部署
+--------
+Nacos 2.2.3 以 Docker 容器方式部署在 Milvus 服务器上：
+
+    docker run -d --name nacos --restart=always \
+        -e MODE=standalone \
+        -e JVM_XMS=256m -e JVM_XMX=256m \
+        -p 8848:8848 -p 9848:9848 \
+        nacos/nacos-server:v2.2.3
+
+控制台地址：http://121.40.188.98:8848/nacos/（账号 nacos/nacos）
+
+6.2 服务注册
+------------
+每个服务启动时通过 spring-cloud-starter-alibaba-nacos-discovery 自动注册：
+
+    spring:
+      cloud:
+        nacos:
+          discovery:
+            enabled: true
+            server-addr: 127.0.0.1:8848
+            ip: 172.23.172.13
+
+注册结果：
+- chat-core：1 个实例（172.23.172.13:9090）
+- chat-web：2 个实例（172.23.172.13:8081, 172.23.172.13:8082）
+
+6.3 依赖配置技巧
+----------------
+Nacos 依赖在 chat-common 中设为 optional，各子模块按需引入：
+
+    <!-- chat-common -->
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        <optional>true</optional>
+    </dependency>
+
+    <!-- chat-core / chat-web（需要注册） -->
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+
+    <!-- chat-games / chat-media（不注册，不引入） -->
+
+
+七、Nginx 反向代理
+==================
+
+7.1 路由规则
+------------
+Nginx 部署在主服务器（112.124.106.108），根据 URL 路径转发到不同服务：
+
+    location = /chat          → 301 重定向到 /chat/
+    location /                → 静态资源（/opt/app/static/chat/）
+    location /api/            → chat-web (172.23.172.13:8081/8082)
+    location /ws/             → chat-web (WebSocket)
+    location /ws/games        → chat-games (172.23.172.13:8083)
+    location /api/v1/games/   → chat-games (172.23.172.13:8083)
+    location /api/v1/sql/     → chat-games (172.23.172.13:8083)
+    location /api/v1/media/   → chat-media (172.23.172.13:8084)
+
+7.2 关键配置
+------------
+- 静态资源用 try_files 支持 SPA 路由
+- API 请求转发 User-Agent 头（IP 限流拦截器需要）
+- WebSocket 配置 Upgrade/Connection 头 + 3600s 超时
+- upstream 用 ip_hash 保证 WebSocket 会话粘性
+
+
+八、依赖精简
+============
+
+拆分后对每个模块的 pom.xml 进行了精细优化，去掉不需要的依赖：
+
+8.1 chat-common 的 optional 依赖
+-------------------------------
+将以下依赖设为 optional，不传递给子模块：
+- spring-cloud-starter-alibaba-nacos-discovery（只有 core/web 需要）
+- spring-boot-starter-amqp（只有 core/web 需要）
+- green20220302 阿里云内容安全（只有 core/web 需要）
+
+8.2 各模块实际依赖
+-----------------
+| 模块        | 依赖数 | 额外依赖                          |
+|-------------|--------|-----------------------------------|
+| chat-common | 10     | Web/WebSocket/MyBatis/Redis/Security/MySQL/JWT/Actuator + 3个optional |
+| chat-core   | 12     | common + Nacos + RabbitMQ + Reactor + 内容安全 + POI + Milvus + PDFBox + LangChain4j + LangGraph4j + OSS |
+| chat-web    | 4      | common + Nacos + RabbitMQ + 内容安全 |
+| chat-games  | 1      | 仅 common                          |
+| chat-media  | 2      | common + OSS SDK                   |
+
+8.3 精简效果
+------------
+| 模块        | 精简前 | 精简后 | 减少   |
+|-------------|--------|--------|--------|
+| chat-common | 122K   | 67K    | -45%   |
+| chat-core   | 118M   | 113M   | -4%    |
+| chat-web    | 226M   | 64M    | -72%   |
+| chat-games  | 59M    | 39M    | -34%   |
+| chat-media  | 62M    | 43M    | -31%   |
+
+chat-web 从 226M 降到 64M，效果最显著——不再包含 LangChain4j/LangGraph4j/Milvus/POI/PDFBox 等 AI 重依赖。
+
+
+九、遇到的坑与解决方案
+======================
+
+9.1 MyBatis Mapper XML 与注解冲突
+---------------------------------
+问题：MessageRepository 同时有 @Insert 注解和 MessageMapper.xml 中的 insert 定义，
+导致 "Mapped Statements collection already contains value" 错误。
+
+解决：删除所有 Mapper XML，只保留注解方式（注解版本 SQL 更完整，包含新字段）。
+
+9.2 Spring Boot fat jar 依赖问题
+-------------------------------
+问题：chat-core 用 spring-boot-maven-plugin 打成 fat jar（BOOT-INF/classes/），
+chat-web 编译时无法从 fat jar 中读取 class。
+
+解决：spring-boot-maven-plugin 配置 attach=false，生成两个 jar：
+- chat-core-0.0.1-SNAPSHOT.jar（普通 jar，install 到本地仓库给 chat-web 编译用）
+- chat-core-0.0.1-SNAPSHOT.jar.original（183K，纯 class）
+
+部署时用 fat jar（113M，可执行），编译时用普通 jar。
+
+9.3 Jackson Instant 序列化失败
+------------------------------
+问题：CoreClient 从 chat-core 获取 User 对象时，User.createdAt 是 Instant 类型，
+Jackson 默认不支持，报 "Java 8 date/time type not supported"。
+
+解决：
+1. chat-common 添加 jackson-datatype-jsr310 依赖
+2. 添加 JacksonConfig 配置类，注册 JavaTimeModule
+3. Controller 中用 Spring 注入的 ObjectMapper（不要 new ObjectMapper()）
+4. CoreClient 中用注入的 RestTemplate（不要 new RestTemplate()）
+
+9.4 WebSocket 跨进程推送不生效
+-----------------------------
+问题：chat-core 通过 SimpMessagingTemplate 推送 WebSocket 消息，但前端连的是 chat-web，
+消息推到了 chat-core 自己的 STOMP broker，前端收不到。
+
+解决：将 TreeHoleService 中的 messagingTemplate.convertAndSend() 改为
+broadcastService.broadcast()，通过 RabbitMQ 跨节点广播到 chat-web。
+
+9.5 chat-core 频繁 OOM 退出
+---------------------------
+问题：chat-core 运行一段时间后进程消失，没有错误日志。
+
+原因：JVM 堆内存 512M 太小，LLM 流式调用时内存峰值超过限制；
+系统没有 swap，内存不足时直接杀进程。
+
+解决：
+1. JVM 堆内存从 512M 调到 768M（-Xmx768m）
+2. 添加 -XX:+HeapDumpOnOutOfMemoryError 记录堆 dump
+3. 创建 2G swap 空间
+4. 部署 daemon-core.sh 守护脚本，chat-core 挂掉后自动重启
+
+9.6 IP 限流拦截器误杀浏览器请求
+------------------------------
+问题：浏览器请求返回 403 "访问被拒绝"。
+
+原因：Nginx 反代时没转发 User-Agent 头，IpRateLimitInterceptor 检测到空 UA 就拦截。
+
+解决：Nginx 配置中加 proxy_set_header User-Agent $http_user_agent;
+同时放宽 UA 检查，不再拦截短 UA（ua.length() < 10 的判断去掉）。
+
+
+十、运维体系
+============
+
+10.1 独立重启脚本
+-----------------
+每个模块有独立的重启脚本，改了哪个模块就重启哪个：
+
+    bash /opt/app/restart-core.sh     # 重启 chat-core
+    bash /opt/app/restart-web.sh      # 重启 chat-web 双实例
+    bash /opt/app/restart-web.sh 8081 # 只重启 8081
+    bash /opt/app/restart-games.sh    # 重启 chat-games
+    bash /opt/app/restart-media.sh    # 重启 chat-media
+    bash /opt/app/restart-all.sh      # 全量重启
+
+每个脚本的流程：杀旧进程 → 等端口释放（循环检测）→ 启动新进程 → 轮询健康检查直到就绪。
+
+10.2 守护进程
+-------------
+daemon-core.sh 每 10 秒检测 chat-core 健康状态，挂掉后自动重启。
+
+10.3 JVM 参数
+-------------
+    chat-core:  -Xms256m -Xmx768m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError
+    chat-web:   -Xms128m -Xmx256m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError
+    chat-games: -Xms128m -Xmx256m -XX:+UseG1GC
+    chat-media: -Xms128m -Xmx256m -XX:+UseG1GC
+
+
+十一、收益总结
+==============
+
+| 指标         | 单体架构       | 微服务架构      | 改善     |
+|-------------|---------------|----------------|----------|
+| jar 总大小   | 118M × 2      | 113+64+39+43=259M | 按需部署 |
+| chat-web    | 226M          | 64M            | -72%     |
+| 启动时间     | 21s           | core 5s / web 10s | -52%    |
+| 内存占用     | ~800M × 2     | core 500M + web 256M×2 + games 256M + media 256M | 更均衡 |
+| 故障隔离     | 全耦合         | 游戏不影响AI    | ✓        |
+| 独立扩容     | 不支持         | 按模块扩容      | ✓        |
+| 服务注册     | 无             | Nacos 自动发现  | ✓        |
+| 健康监控     | Nginx 被动    | Actuator + 守护 | ✓        |
+
+
+十二、后续优化方向
+==================
+
+1. gRPC 替换 HTTP：chat-web → chat-core 改用 gRPC，降低延迟
+2. Nacos 配置中心：动态修改配置不重启
+3. Spring Cloud Gateway：替代 Nginx 做 API 网关
+4. 链路追踪：集成 SkyWalking 或 Zipkin
+5. GraalVM Native Image：chat-web 编译为原生镜像，启动降到 0.1s
+6. K8s 容器化：Docker + K8s 部署，自动扩缩容
+
+
+十三、技术栈
+============
+
+- Spring Boot 3.1.6 + Java 17
+- Spring Cloud 2022.0.4 + Spring Cloud Alibaba 2022.0.0.0
+- Nacos 2.2.3（服务注册发现）
+- MyBatis 3.0.2（ORM）
+- MySQL 8.0（阿里云 RDS）
+- Redis 7.x（缓存 + 限流 + 在线人数）
+- RabbitMQ（跨节点消息广播）
+- Milvus 2.3.4（向量数据库）
+- LangChain4j 0.34.0（AI 编排）
+- LangGraph4j 1.0-beta1（图式工作流）
+- Nginx 1.30（反向代理 + 静态资源）
+- Docker（Nacos + Milvus 容器化）
+- React 18 + Vite（前端）
+
+---
+
+作者：杨思义
+日期：2026-08-08

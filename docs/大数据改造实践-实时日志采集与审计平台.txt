@@ -1,0 +1,478 @@
+AI聊天系统大数据改造实践
+——从单体日志到实时流处理审计平台
+
+========================================
+一、改造背景
+========================================
+
+我们的AI聊天系统经过多次迭代，已经从单体架构演进为5个微服务模块（chat-core/chat-web/chat-games/chat-media/chat-common），部署在两台阿里云服务器上。随着系统复杂度增长，传统的日志排查方式（SSH登录服务器grep日志）暴露出严重问题：
+
+1. 排查困难：5个服务的日志分散在不同文件中，跨服务追踪一条请求链路需要手动关联
+2. 无实时性：无法实时监控错误和异常，通常是用户反馈后才知道出了问题
+3. 无审计能力：日志按服务实例存放，实例重启后日志丢失，无法满足日志审计需求
+4. 无统计分析：无法统计各服务的日志量、错误率、响应延迟等指标
+
+为解决这些问题，我们引入了大数据流处理技术栈，构建了完整的实时日志采集、处理、存储和可视化平台。
+
+
+========================================
+二、技术选型
+========================================
+
+经过调研和对比，我们选择了以下技术栈：
+
+┌─────────────────────────────────────────────────────┐
+│              完整数据流架构                           │
+│                                                       │
+│  Java服务日志                                         │
+│      │                                                │
+│      ▼                                                │
+│  Filebeat (日志采集器)                                │
+│      │                                                │
+│      ▼                                                │
+│  Kafka (消息队列, 缓冲削峰)                           │
+│      │                                                │
+│      ▼                                                │
+│  Flink (流处理引擎, 解析+分发)                        │
+│      ├──→ Elasticsearch (全文检索, 实时看板)          │
+│      │       └──→ Kibana (可视化界面)                 │
+│      └──→ 按天归档文件 (日志审计)                     │
+│                                                       │
+└─────────────────────────────────────────────────────┘
+
+各组件选型理由：
+
+1. Filebeat vs Logstash
+   - Filebeat 轻量（内存仅128M），适合容器化部署
+   - Logstash 资源消耗大（至少512M），JVM启动慢
+   - Filebeat 原生支持 multiline（多行日志合并）和 Kafka output
+
+2. Kafka 作为中间层
+   - 削峰填谷：日志高峰时 Kafka 缓冲，避免 Flink 被冲垮
+   - 解耦合：Filebeat 只管采集发 Kafka，不关心下游处理
+   - 可重放：Flink 作业重启后可以从 Kafka 重新消费
+
+3. Flink vs Spark Streaming
+   - Flink 真正的流处理（逐条处理），延迟毫秒级
+   - Spark Streaming 是微批处理，延迟秒级
+   - Flink 状态管理和 checkpoint 机制更成熟
+   - Flink 适合实时告警场景
+
+4. Elasticsearch 7.17 vs 8.x
+   - 7.17 内存占用更小（512M可运行），8.x至少需要1G
+   - 7.17 稳定性更好，社区资料丰富
+   - 对于日志场景，7.17 功能完全够用
+
+5. 归档文件方案
+   - 不使用 HDFS（太重，需要额外集群）
+   - 直接按天写本地文件，简单可靠
+   - 每天一个目录，按服务分文件，方便审计查阅
+
+
+========================================
+三、架构设计
+========================================
+
+3.1 部署架构
+
+两台服务器的资源分配：
+
+主服务器 (112.124.106.108) — 1.6G内存/2核
+├── Nginx (反向代理 + 静态资源)
+├── Redis (缓存/Session)
+├── RabbitMQ (WebSocket跨节点广播)
+└── Kafka 4.3.1 (日志消息队列, KRaft模式)
+
+Milvus服务器 (121.40.188.98) — 7.3G内存/4核
+├── Nacos (服务注册发现)
+├── chat-core (核心AI服务, 端口9090)
+├── chat-web (Web接入层, 端口8081)
+├── chat-games (游戏服务, 端口8083)
+├── chat-media (多模态服务, 端口8084)
+├── Neo4j (知识图谱)
+├── Elasticsearch 7.17 (日志检索, Docker)
+├── Kibana 7.17 (日志可视化, Docker)
+├── Flink 1.16.3 (流处理, Docker)
+│   ├── JobManager (512M)
+│   └── TaskManager (768M)
+├── Kafka 3.6 (Docker, KRaft模式)
+└── Filebeat 7.17 (日志采集, Docker)
+
+3.2 内存分配优化
+
+Milvus服务器7.3G内存的精细分配：
+
+| 组件                | 内存    | 说明                    |
+|---------------------|---------|-------------------------|
+| chat-core           | 1.5G    | JVM -Xmx1536m          |
+| chat-web            | 384M    | JVM -Xmx384m           |
+| chat-games          | 256M    | JVM -Xmx256m           |
+| chat-media          | 256M    | JVM -Xmx256m           |
+| Neo4j               | 768M    | heap 512M + pagecache  |
+| Nacos               | ~600M   | Docker容器              |
+| Elasticsearch       | 640M    | JVM -Xmx256m + 堆外    |
+| Kibana              | 384M    | Node.js进程             |
+| Flink JobManager    | 512M    | JVM -Xmx256m           |
+| Flink TaskManager   | 768M    | JVM -Xmx384m           |
+| Kafka               | 512M    | JVM heap               |
+| Filebeat            | 128M    | Go进程                  |
+| 系统+Docker开销     | ~500M   |                         |
+| 合计                | ~7.1G   | 剩余~200M buffer        |
+
+关键决策：去掉了core的第二个实例（原计划双core高可用），为大数据组件腾出1.5G内存。单core+health-check自动重启已能满足可用性要求。
+
+3.3 Kafka部署：KRaft模式
+
+传统Kafka需要Zookeeper，额外占用256M内存。Kafka 3.x支持KRaft模式（内置共识协议），无需Zookeeper：
+
+# Kafka KRaft 模式配置
+process.roles=broker,controller
+node.id=1
+controller.quorum.voters=1@127.0.0.1:9093
+listeners=PLAINTEXT://:9092,CONTROLLER://:9093
+controller.listener.names=CONTROLLER
+advertised.listeners=PLAINTEXT://172.23.172.13:9092
+
+KRaft模式省去了Zookeeper，单容器即可运行完整的Kafka，内存仅需512M。
+
+
+========================================
+四、实现细节
+========================================
+
+4.1 Filebeat 采集配置
+
+Filebeat 以 Docker 容器方式运行，挂载宿主机的日志目录：
+
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/app/core-*.log     # chat-core 日志
+    fields:
+      service: chat-core            # 服务标识
+      log_type: java
+    fields_under_root: true
+    multiline.pattern: '^\d{4}-\d{2}-\d{2}'  # 多行合并
+    multiline.negate: true
+    multiline.match: after
+
+  - type: log
+    paths:
+      - /var/log/app/web-*.log      # chat-web 日志
+    fields:
+      service: chat-web
+    # ... 其他服务类似
+
+output.kafka:
+  hosts: ["172.23.172.13:9092"]
+  topic: "app-logs"
+
+关键设计：
+- fields.service 字段标记日志来源，Flink 解析时用于分服务归档
+- multiline 处理 Java 异常堆栈（多行合并为一条消息）
+- 每个服务单独配置 input，方便后续按服务调整采集策略
+
+4.2 Flink 日志处理作业
+
+Flink 作业是整个链路的核心，承担三个职责：
+
+职责一：日志解析
+从 Kafka 消费 Filebeat JSON 格式的日志，解析出结构化字段：
+
+public static class LogParser implements MapFunction<String, ObjectNode> {
+    public ObjectNode map(String raw) throws Exception {
+        ObjectNode node = mapper.createObjectNode();
+        ObjectNode fb = (ObjectNode) mapper.readTree(raw);
+
+        // 提取 Filebeat 字段
+        node.put("service", fb.get("service").asText());
+        node.put("hostname", fb.get("hostname").asText());
+
+        // 解析 Java 日志格式:
+        // 2024-01-01 12:00:00.123 INFO [thread] ClassName - message
+        String message = fb.get("message").asText();
+        Pattern pattern = Pattern.compile(
+            "^(\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d+)\\s+" +
+            "(\\w+)\\s+" +           // level
+            "\\[([^\\]]+)\\]\\s+" +  // thread
+            "([\\w.]+)\\s+-\\s+" +   // logger class
+            "(.*)$"                   // message body
+        );
+        Matcher matcher = pattern.matcher(message);
+        if (matcher.find()) {
+            node.put("timestamp", matcher.group(1));
+            node.put("level", matcher.group(2));
+            node.put("thread", matcher.group(3));
+            node.put("logger", matcher.group(4));
+            node.put("message", matcher.group(5));
+        }
+
+        // 异常检测：消息中包含 Exception 关键字时自动升级为 ERROR
+        if (message.contains("Exception") || message.contains("Caused by")) {
+            node.put("level", "ERROR");
+        }
+
+        return node;
+    }
+}
+
+职责二：分发到 Elasticsearch
+解析后的日志分发到三个 ES 索引：
+
+// 1. 全量日志 → app-logs 索引
+parsedLogs.addSink(esSinkAll.build());
+
+// 2. ERROR/WARN 日志 → app-errors 索引（快速定位错误）
+parsedLogs
+    .filter(node -> "ERROR".equals(node.get("level").asText())
+                  || "WARN".equals(node.get("level").asText()))
+    .addSink(esSinkErrors.build());
+
+// 3. 按服务统计 → app-stats 索引（30秒窗口聚合）
+parsedLogs
+    .map(node -> new Tuple2<>(service + ":" + level, 1L))
+    .returns(new TypeHint<Tuple2<String, Long>>() {})  // 解决类型擦除
+    .keyBy(value -> value.f0)
+    .timeWindow(Time.seconds(30))
+    .reduce((v1, v2) -> new Tuple2<>(v1.f0, v1.f1 + v2.f1))
+    .addSink(esSinkStats.build());
+
+职责三：按天归档文件（日志审计）
+自定义 SinkFunction，按服务+日期分文件，追加模式写入：
+
+public static class ArchiveSink extends RichSinkFunction<ObjectNode> {
+    private FileWriter writer;
+    private String currentDate;
+    private String currentService;
+
+    public void invoke(ObjectNode node, Context context) throws Exception {
+        String service = node.get("service").asText();
+        String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+
+        // 日期或服务变化时切换文件
+        if (writer == null || !date.equals(currentDate) || !service.equals(currentService)) {
+            closeWriter();
+            File dir = new File("/opt/flink-stack/archive/" + service);
+            dir.mkdirs();
+            writer = new FileWriter(new File(dir, date + ".log"), true); // 追加模式
+            currentDate = date;
+            currentService = service;
+        }
+
+        // 格式: timestamp LEVEL [service] logger - message
+        writer.write(timestamp + " " + level + " [" + service + "] " + message + "\n");
+
+        // 每10秒flush，保证近实时
+        if (System.currentTimeMillis() - lastFlushTime > 10000) {
+            writer.flush();
+            lastFlushTime = System.currentTimeMillis();
+        }
+    }
+}
+
+归档文件结构：
+/opt/flink-stack/archive/
+├── chat-core/
+│   ├── 2026-08-08.log    ← 每天一个文件
+│   ├── 2026-08-09.log
+│   └── ...
+├── chat-web/
+│   ├── 2026-08-08.log
+│   └── ...
+├── chat-games/
+│   └── ...
+└── chat-media/
+    └── ...
+
+4.3 类型擦除问题
+
+Flink 作业开发中遇到的一个经典问题——Java泛型类型擦除导致 Flink 无法自动推断返回类型：
+
+// 错误：Lambda 表达式中 Tuple2 的泛型类型丢失
+parsedLogs
+    .map(node -> new Tuple2<>(service + ":" + level, 1L))
+    .keyBy(value -> value.f0)  // 报错：无法推断 Tuple2<String, Long>
+
+// 解决方案：使用 returns() 显式指定类型
+parsedLogs
+    .map(node -> new Tuple2<>(service + ":" + level, 1L))
+    .returns(new TypeHint<Tuple2<String, Long>>() {})  // 显式类型提示
+    .keyBy(value -> value.f0)
+
+4.4 Docker 容器内存优化
+
+部署过程中遇到的最大挑战是内存。ES 8.x 至少需要 1G 内存才能启动，在 7.3G 服务器上运行 12+ 个服务/容器，内存极度紧张。
+
+踩过的坑：
+
+坑1: ES 8.11 OOM
+- ES 8.x 的 mem_limit 设为 512M → 启动时加载模块阶段 OOM
+- 原因：JVM heap 256M + 堆外内存 + Metaspace 超过 512M
+- 解决：降级到 ES 7.17（更轻量），mem_limit 设为 640M
+
+坑2: Flink TaskManager OOM
+- mem_limit 384M → JVM 256M + Metaspace 超过限制
+- Flink 容器反复重启，dmesg 显示 oom-kill
+- 解决：JobManager 512M，TaskManager 768M
+
+坑3: ES 数据目录权限
+- ES 7.17 容器以 uid=1000 运行，挂载的 data 目录是 root:root
+- 启动报 AccessDeniedException
+- 解决：chown -R 1000:1000 /opt/flink-stack/es
+
+坑4: Kibana 索引迁移失败
+- ES 重启后 .kibana 索引损坏，Kibana 启动 FATAL
+- 解决：curl -X DELETE 'http://localhost:9200/.kibana*' 后重启 Kibana
+
+坑5: Docker 容器内访问外部 Kafka
+- Filebeat 容器内连主服务器 Kafka 超时
+- 原因：两台服务器不在同一 VPC，安全组未放行 9092
+- 解决：在 Milvus 服务器本地部署 Kafka（Docker KRaft 模式）
+
+
+========================================
+五、运维保障
+========================================
+
+5.1 健康检查 + 自动重启
+
+cron 每分钟执行健康检查脚本，检测端口不通时自动重启：
+
+# 端口检测兼容 ss/netstat/curl 三级 fallback
+port_listening() {
+    if command -v ss &>/dev/null; then
+        ss -tlnp | grep -q ":$port "
+    elif command -v netstat &>/dev/null; then
+        netstat -tlnp | grep -q ":$port "
+    else
+        curl -s -m 2 -o /dev/null "http://127.0.0.1:$port/actuator/health"
+    fi
+}
+
+# 连续失败3次才重启（避免启动慢误判）
+if [ "$fail_count" -ge 3 ]; then
+    bash "$restart_script"
+fi
+
+踩坑记录：cron 环境的 PATH 不包含 /usr/sbin（ss 所在目录），导致 ss 命令找不到，每分钟误杀所有服务。修复方案是兼容三种检测方式 + 连续失败3次才重启。
+
+5.2 重启脚本三重杀进程
+
+#!/bin/bash
+# 1. PID 文件杀
+OLD_PID=$(cat "$PID_FILE")
+kill -9 "$OLD_PID"
+
+# 2. pkill 兜底
+pkill -9 -f 'chat-core.*9090'
+
+# 3. 端口强杀
+PORT_PID=$(ss -tlnp | grep ":9090 " | grep -oP 'pid=\K\d+')
+kill -9 "$PORT_PID"
+
+5.3 Flink 作业自动恢复
+
+Flink 作业通过 REST API 提交，TaskManager 重启后作业会丢失。通过 checkpoint 机制可以恢复，但需要配置 state backend：
+
+env.enableCheckpointing(60000);  // 60秒checkpoint
+// checkpoint 保存到 TaskManager 本地，重启后可恢复
+
+
+========================================
+六、效果与价值
+========================================
+
+6.1 实时监控
+
+Kibana 界面实时展示日志数据：
+- Discover 页面：实时查看所有服务的日志，支持全文搜索和字段过滤
+- Dashboard：按服务统计日志量、错误率、响应延迟
+- 告警规则：ERROR 日志超过阈值时触发告警（后续可接入钉钉/邮件）
+
+6.2 日志审计
+
+归档文件按天生成，格式规范：
+/opt/flink-stack/archive/chat-core/2026-08-08.log
+
+文件内容：
+2026-08-08T19:32:26.001Z INFO  [chat-core] [OnlineCount] 刷新虚拟在线数 total=114
+2026-08-08T19:32:38.959Z WARN  [chat-web]  [CoreClient] POST /internal/chat/process 失败
+2026-08-08T19:33:01.234Z ERROR [chat-core] [ChatProcessor] ChatProcessor: java.net.SocketTimeoutException
+
+审计场景：
+- 按日期查阅某天的完整操作日志
+- 按服务筛选特定模块的日志
+- ERROR 级别日志快速定位故障时间点
+- 日志文件可定期归档到 OSS 长期保存
+
+6.3 性能指标
+
+| 指标 | 数值 |
+|------|------|
+| 日志采集延迟 | < 5秒 |
+| Flink 处理延迟 | < 1秒 |
+| ES 写入延迟 | < 2秒（批量flush） |
+| 归档文件写入 | 每10秒flush |
+| Kafka 消息积压 | 0（消费速度 > 生产速度） |
+| 额外内存消耗 | ~2.5G（ES+Kibana+Flink+Kafka+Filebeat） |
+
+
+========================================
+七、经验总结
+========================================
+
+1. 内存是最大约束
+   在 7.3G 服务器上跑 12+ 个服务/容器，每 M 内存都要精打细算。
+   - ES 8.x 太重，7.17 是更好的选择
+   - KRaft 模式省去 Zookeeper，省 256M
+   - 去掉 core 双实例，省 1.5G
+   - 各容器 mem_limit 要留 20% 余量
+
+2. Docker 网络是常见陷阱
+   - 容器内访问宿主机服务要用 host.docker.internal 或内网 IP
+   - 跨服务器通信需要安全组放行
+   - 最简方案：所有大数据组件部署在同一台服务器
+
+3. Flink 类型擦除要小心
+   - Lambda 表达式中泛型类型会丢失
+   - 用 .returns(TypeHint) 显式指定
+   - 或用匿名类代替 Lambda
+
+4. 健康检查要容错
+   - 命令可能找不到（PATH 问题）
+   - 服务启动可能慢（健康检查超时）
+   - 连续失败 N 次才重启，避免误杀
+
+5. 日志归档用文件最简单
+   - 不需要 HDFS（太重）
+   - 不需要 OSS（有延迟）
+   - 本地文件 + 按天分割 + 追加模式
+   - 定期 tar 归档到 OSS 即可
+
+
+========================================
+八、后续优化方向
+========================================
+
+1. 日志告警：接入钉钉/飞书机器人，ERROR 日志实时推送
+2. 链路追踪：给每条请求加 traceId，在 Flink 中关联完整调用链
+3. 异常聚类：用 Flink CEP（复杂事件处理）检测异常模式
+4. 日志压缩：归档文件定期 gzip 压缩，节省磁盘
+5. ES 索引生命周期：配置 ILM 策略，7天后自动删除旧索引
+6. Flink 作业持久化：配置 RocksDB state backend + checkpoint 到持久化存储
+
+
+========================================
+
+结语：
+
+本次大数据改造在有限的硬件资源下（7.3G内存/4核），完整落地了 Filebeat→Kafka→Flink→ES→Kibana 的实时日志处理链路，同时实现了按天归档的日志审计能力。整个系统额外消耗约 2.5G 内存，实现了实时监控、全文检索、错误告警、日志审计四大核心能力，为系统的稳定运行和问题排查提供了强有力的支撑。
+
+关键经验是：大数据不一定要大集群。在合适的场景下，合理的资源分配和技术选型，单台 4 核 7G 的服务器也能跑起完整的流处理平台。
+
+========================================
+
+作者：杨思义
+日期：2026年8月9日
+系统：博思AI智能体聊天系统

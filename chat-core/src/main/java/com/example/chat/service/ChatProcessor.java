@@ -65,6 +65,10 @@ public class ChatProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SummaryService summaryService;
 
+    /** 知识图谱服务（可选注入，失败不阻塞主流程） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private KnowledgeGraphService knowledgeGraphService;
+
     /** 工具调度器（可选注入，仅在 app.agent.enabled=true 时存在） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.agent.tool.ToolDispatcher toolDispatcher;
@@ -763,6 +767,15 @@ public class ChatProcessor {
                     summaryService.summarizeAsync(m.id, question, answer);
                 } catch (Exception ex) {
                     log.warn("[Summary] 触发摘要生成失败 messageId={}: {}", m.id, ex.getMessage());
+                }
+            }
+
+            // 触发知识图谱抽取（异步，失败不阻塞主流程）
+            if (knowledgeGraphService != null && m.id != null) {
+                try {
+                    knowledgeGraphService.extractAndSaveAsync(m.id, question, answer, "chat");
+                } catch (Exception ex) {
+                    log.warn("[KnowledgeGraph] 触发知识抽取失败 messageId={}: {}", m.id, ex.getMessage());
                 }
             }
         }

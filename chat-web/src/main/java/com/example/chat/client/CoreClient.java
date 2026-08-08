@@ -22,10 +22,35 @@ public class CoreClient {
     @Value("${app.core.base-url:http://127.0.0.1:9090}")
     private String coreBaseUrl;
 
+    @Value("${app.core.base-urls:}")
+    private String coreBaseUrlsExtra;
+
     private final RestTemplate restTemplate;
+    private final java.util.List<String> coreUrls = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final java.util.concurrent.atomic.AtomicInteger roundRobin = new java.util.concurrent.atomic.AtomicInteger(0);
 
     public CoreClient(@Autowired(required = false) RestTemplate restTemplate) {
         this.restTemplate = restTemplate != null ? restTemplate : new RestTemplate();
+    }
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        coreUrls.add(coreBaseUrl);
+        if (coreBaseUrlsExtra != null && !coreBaseUrlsExtra.isBlank()) {
+            for (String url : coreBaseUrlsExtra.split(",")) {
+                String trimmed = url.trim();
+                if (!trimmed.isEmpty() && !coreUrls.contains(trimmed)) {
+                    coreUrls.add(trimmed);
+                }
+            }
+        }
+        log.info("[CoreClient] Core 服务地址: {}", coreUrls);
+    }
+
+    private String nextCoreUrl() {
+        if (coreUrls.size() == 1) return coreUrls.get(0);
+        int idx = Math.abs(roundRobin.getAndIncrement()) % coreUrls.size();
+        return coreUrls.get(idx);
     }
 
     // ==================== 群聊 ====================
@@ -253,28 +278,64 @@ public class CoreClient {
         return get("/internal/errors");
     }
 
+    // ==================== 知识图谱 ====================
+
+    public Object getGraph(int limit) {
+        return get("/internal/graph?limit=" + limit);
+    }
+
+    public Object searchGraph(String keyword, int limit) {
+        return get("/internal/graph/search?keyword=" + keyword + "&limit=" + limit);
+    }
+
+    public Object getGraphStats() {
+        return get("/internal/graph/stats");
+    }
+
+    public Object importToGraph() {
+        return post("/internal/graph/import", new HashMap<>());
+    }
+
+    public Object getImportStatus() {
+        return get("/internal/graph/import/status");
+    }
+
     // ==================== 内部方法 ====================
 
     private Object get(String path) {
-        try {
-            ResponseEntity<Object> resp = restTemplate.getForEntity(coreBaseUrl + path, Object.class);
-            return resp.getBody();
-        } catch (Exception e) {
-            log.error("[CoreClient] GET {} 失败: {}", path, e.getMessage());
-            throw new RuntimeException("调用核心服务失败: " + e.getMessage(), e);
+        Exception lastEx = null;
+        for (int i = 0; i < coreUrls.size(); i++) {
+            String url = nextCoreUrl();
+            try {
+                ResponseEntity<Object> resp = restTemplate.getForEntity(url + path, Object.class);
+                return resp.getBody();
+            } catch (Exception e) {
+                log.warn("[CoreClient] GET {} 从 {} 失败: {}", path, url, e.getMessage());
+                lastEx = e;
+            }
         }
+        log.error("[CoreClient] GET {} 所有 Core 实例均失败", path);
+        throw new RuntimeException("调用核心服务失败: " + (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
     }
 
     private Object post(String path, Map<String, Object> payload) {
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
-            ResponseEntity<Object> resp = restTemplate.postForEntity(coreBaseUrl + path, entity, Object.class);
-            return resp.getBody();
-        } catch (Exception e) {
-            log.error("[CoreClient] POST {} 失败: {}", path, e.getMessage());
-            throw new RuntimeException("调用核心服务失败: " + e.getMessage(), e);
+        Exception lastEx = null;
+        for (int i = 0; i < coreUrls.size(); i++) {
+            String url = nextCoreUrl();
+            try {
+                log.info("[CoreClient] POST {} -> {} payload={}", path, url, payload);
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+                ResponseEntity<Object> resp = restTemplate.postForEntity(url + path, entity, Object.class);
+                log.info("[CoreClient] POST {} -> {} 成功 status={}", path, url, resp.getStatusCode());
+                return resp.getBody();
+            } catch (Exception e) {
+                log.warn("[CoreClient] POST {} 从 {} 失败: {}", path, url, e.getMessage());
+                lastEx = e;
+            }
         }
+        log.error("[CoreClient] POST {} 所有 Core 实例均失败", path);
+        throw new RuntimeException("调用核心服务失败: " + (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
     }
 }

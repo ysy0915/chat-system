@@ -6,12 +6,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListener;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 @Component
+@ConditionalOnClass(name = "org.springframework.amqp.rabbit.connection.ConnectionFactory")
+@ConditionalOnProperty(name = "app.cross-node.enabled", havingValue = "true")
 public class CrossNodeMessageListener implements MessageListener {
 
     private static final Logger log = LoggerFactory.getLogger(CrossNodeMessageListener.class);

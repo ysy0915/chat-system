@@ -8,14 +8,14 @@ import { Client } from '@stomp/stompjs'
 export default function Landing() {
   const animRef = useRef(null)
   const lastTimeRef = useRef(null)
-  const [onlineCount, setOnlineCount] = useState(0)
+  const [onlineCount, setOnlineCount] = useState(() => Math.floor(Math.random() * 300) + 1)
   const [totalUsage, setTotalUsage] = useState(0)
   const stompRef = useRef(null)
 
   useEffect(() => {
     // 从后端获取虚拟在线数（0-300 随机）
     axios.get('/api/v1/messages/online-count', { params: { page: 'landing' } })
-      .then(res => setOnlineCount(res.data?.count || 0))
+      .then(res => { if (res.data?.count > 0) setOnlineCount(res.data.count) })
       .catch(() => {})
 
     // 订阅 WebSocket，接收定时刷新的在线数
@@ -32,7 +32,7 @@ export default function Landing() {
         client.subscribe('/topic/online-count/landing', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count || 0)
+            setOnlineCount(payload.count > 0 ? payload.count : onlineCount)
           } catch {}
         })
       }
@@ -79,20 +79,20 @@ export default function Landing() {
               <h3>观点辩论场</h3>
               <p>让三位AI专家为你展开辩论，在思想交锋中，帮你获得更全面、更深入的结论。</p>
             </Link>
-            <Link to="/games" className="feature-card">
-              <div className="feature-icon">🎮</div>
-              <h3>AI多人游戏</h3>
-              <p>和真人玩家、AI模型同场竞技，在蛇王争霸、城池争夺战与AI乒乓球中体验更有代入感的多人对抗乐趣。</p>
-            </Link>
-            <Link to="/treehole" className="feature-card">
-              <div className="feature-icon">🌳</div>
-              <h3>情绪树洞</h3>
-              <p>有情绪无处安放？在这里悄悄说出来，AI会温柔倾听、真诚回应，陪你走过每一段情绪低谷。</p>
+            <Link to="/graph" className="feature-card">
+              <div className="feature-icon">🌐</div>
+              <h3>知识脉络图</h3>
+              <p>将零散的知识点连接成网，帮你一眼看清问题的来龙去脉和核心关联。</p>
             </Link>
             <Link to="/personal" className="feature-card">
               <div className="feature-icon">🔒</div>
               <h3>个人对话空间</h3>
               <p>你的专属私密空间，安全归档所有灵感与深度探讨，让AI成为你成长的长期伙伴。</p>
+            </Link>
+            <Link to="/treehole" className="feature-card">
+              <div className="feature-icon">🌳</div>
+              <h3>情绪树洞</h3>
+              <p>有情绪无处安放？在这里悄悄说出来，AI会温柔倾听、真诚回应，陪你走过每一段情绪低谷。</p>
             </Link>
             <Link to="/" className="feature-card">
               <div className="feature-icon">💬</div>
@@ -109,10 +109,10 @@ export default function Landing() {
               <h3>3D 模型生成</h3>
               <p>输入文字描述，AI 自动生成 3D 模型，支持下载查看，让创意从平面走向立体。</p>
             </Link>
-            <Link to="/graph" className="feature-card">
-              <div className="feature-icon">🌐</div>
-              <h3>知识脉络图</h3>
-              <p>将零散的知识点连接成网，帮你一眼看清问题的来龙去脉和核心关联。</p>
+            <Link to="/games" className="feature-card">
+              <div className="feature-icon">🎮</div>
+              <h3>AI多人游戏</h3>
+              <p>和真人玩家、AI模型同场竞技，在蛇王争霸、城池争夺战与AI乒乓球中体验更有代入感的多人对抗乐趣。</p>
             </Link>
             <Link to="/history" className="feature-card">
               <div className="feature-icon">📋</div>

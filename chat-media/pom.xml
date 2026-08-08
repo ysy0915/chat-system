@@ -21,6 +21,12 @@
             <artifactId>chat-common</artifactId>
         </dependency>
 
+        <!-- RabbitMQ（chat-common 中有跨节点广播相关类，需要 amqp 类在 classpath） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- Alibaba Cloud OSS -->
         <dependency>
             <groupId>com.aliyun.oss</groupId>

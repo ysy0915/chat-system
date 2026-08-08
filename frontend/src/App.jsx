@@ -1,26 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Link, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import Landing from './pages/Landing'
 import ChatPage from './pages/Chat'
-import History from './pages/History'
-import AdminModels from './pages/AdminModels'
-import KnowledgeGraph from './pages/KnowledgeGraph'
-import SqlExecutor from './pages/SqlExecutor'
-import MediaGen from './pages/MediaGen'
-import Model3D from './pages/Model3D'
-import Profile from './pages/Profile'
 import PersonalChat from './pages/PersonalChat'
 import Debate from './pages/Debate'
-import Monitor from './pages/Monitor'
-import KnowledgeBase from './pages/KnowledgeBase'
-import Games from './pages/game'
-import PingPong from './pages/pingpang'
-import SnakeKing from './pages/snakeking'
-import CastleSiege from './pages/castlesiege'
 import TreeHole from './pages/TreeHole'
+
+// 懒加载不常用页面，减少首屏体积
+const History = lazy(() => import('./pages/History'))
+const AdminModels = lazy(() => import('./pages/AdminModels'))
+const KnowledgeGraph = lazy(() => import('./pages/KnowledgeGraph'))
+const SqlExecutor = lazy(() => import('./pages/SqlExecutor'))
+const MediaGen = lazy(() => import('./pages/MediaGen'))
+const Model3D = lazy(() => import('./pages/Model3D'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Monitor = lazy(() => import('./pages/Monitor'))
+const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'))
+const Games = lazy(() => import('./pages/game'))
+const PingPong = lazy(() => import('./pages/pingpang'))
+const SnakeKing = lazy(() => import('./pages/snakeking'))
+const CastleSiege = lazy(() => import('./pages/castlesiege'))
 
 function getPresencePage(pathname) {
     if (pathname === '/' || pathname === '') return 'chat'
@@ -242,7 +244,7 @@ function AnnouncementModal({ onClose }) {
 }
 
 // 需要登录才能访问的页面
-const AUTH_REQUIRED_PAGES = new Set(['/personal', '/treehole', '/profile'])
+const AUTH_REQUIRED_PAGES = new Set(['/profile'])
 
 function NavBar({ authUser, onLogout, onOpenAuth }) {
     const location = useLocation()
@@ -258,29 +260,45 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
     const navLinks = [
         { to: '/home', label: '首页' },
         { to: '/debate', label: '观点辩论场' },
+        { to: '/graph', label: '知识脉络图' },
         { to: '/personal', label: '个人对话空间' },
         { to: '/treehole', label: '情绪树洞' },
         { to: '/', label: 'AI伙伴群聊' },
-        { to: '/graph', label: '知识脉络图' },
         { to: '/media', label: '图片与视频' },
         { to: '/3d', label: '3D模型生成' },
+        { to: '/games', label: 'AI多人游戏' },
         { to: '/history', label: '问答列表' },
         { to: '/profile', label: '个人信息' },
-        { to: '/games', label: 'AI多人游戏' },
         { to: '/admin/models', label: '模型管理' },
         { to: '/knowledge', label: '知识库' },
     ]
 
+    // 懒加载路由 hover 预取：鼠标悬停时预加载组件，切换零延迟
+    const prefetched = useRef(new Set())
+    const prefetchRoute = (path) => {
+        const routeMap = { '/media': () => import('./pages/MediaGen'), '/3d': () => import('./pages/Model3D'),
+            '/games': () => import('./pages/game'), '/games/pingpong': () => import('./pages/pingpang'),
+            '/games/snakeking': () => import('./pages/snakeking'), '/games/castlesiege': () => import('./pages/castlesiege'),
+            '/history': () => import('./pages/History'), '/graph': () => import('./pages/KnowledgeGraph'),
+            '/profile': () => import('./pages/Profile'), '/admin/models': () => import('./pages/AdminModels'),
+            '/sql': () => import('./pages/SqlExecutor'), '/monitor': () => import('./pages/Monitor'),
+            '/knowledge': () => import('./pages/KnowledgeBase') }
+        if (routeMap[path] && !prefetched.current.has(path)) {
+            prefetched.current.add(path)
+            routeMap[path]()
+        }
+    }
+
     const mobileNavLinks = [
         { to: '/home', label: '首页' },
         { to: '/debate', label: '观点辩论场' },
-        { to: '/treehole', label: '情绪树洞' },
-        { to: '/personal', label: '个人对话空间' },
-        { to: '/games', label: 'AI多人游戏' },
-        { to: '/', label: 'AI伙伴群聊' },
         { to: '/graph', label: '知识脉络图' },
+        { to: '/personal', label: '个人对话空间' },
+        { to: '/treehole', label: '情绪树洞' },
+        { to: '/', label: 'AI伙伴群聊' },
         { to: '/media', label: '图片与视频' },
         { to: '/3d', label: '3D模型生成' },
+        { to: '/games', label: 'AI多人游戏' },
         { to: '/history', label: '问答列表' },
         { to: '/profile', label: '个人信息' },
         { to: '/admin/models', label: '模型管理' },
@@ -297,6 +315,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                 <div className="navbar-links">
                     {navLinks.map(l => (
                         <Link key={l.to} to={l.to} className={isActive(l.to)}
+                              onMouseEnter={() => prefetchRoute(l.to)}
                               onClick={(e) => {
                                   if (AUTH_REQUIRED_PAGES.has(l.to) && !authUser) {
                                       e.preventDefault()
@@ -390,6 +409,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         <div className="mobile-drawer-links">
                             {mobileNavLinks.map(l => (
                                 <Link key={l.to} to={l.to} className={isActive(l.to)}
+                                      onTouchStart={() => prefetchRoute(l.to)}
                                       onClick={(e) => {
                                           if (AUTH_REQUIRED_PAGES.has(l.to) && !authUser) {
                                               e.preventDefault()
@@ -544,27 +564,28 @@ const KeepAliveRoute = React.memo(function KeepAliveRoute({ pathname, matchPath,
     )
 }, (prev, next) => prev.pathname === next.pathname && prev.matchPath === next.matchPath)
 
+// 常驻页面（最常用的5个，KeepAlive保持状态）
 const ROUTES = [
     { path: '/home', element: <Landing/> },
     { path: '/', element: <ChatPage/> },
-    { path: '/media', element: <MediaGen/> },
-    { path: '/3d', element: <Model3D/> },
     { path: '/personal', element: <PersonalChat/> },
     { path: '/debate', element: <Debate/> },
+    { path: '/treehole', element: <TreeHole/> },
+]
+
+// 按需加载的页面（不常驻，路由切换时才加载）
+const EPHEMERAL_ROUTES = [
+    { path: '/media', element: <MediaGen/> },
+    { path: '/3d', element: <Model3D/> },
     { path: '/games', element: <Games/> },
+    { path: '/games/pingpong', element: <PingPong/> },
+    { path: '/games/snakeking', element: <SnakeKing/> },
+    { path: '/games/castlesiege', element: <CastleSiege/> },
     { path: '/history', element: <History/> },
     { path: '/graph', element: <KnowledgeGraph/> },
     { path: '/profile', element: <Profile/> },
     { path: '/admin/models', element: <AdminModels/> },
     { path: '/sql', element: <SqlExecutor/> },
-    { path: '/treehole', element: <TreeHole/> },
-]
-
-// 不常驻的页面（含全局 keydown 监听器，常驻会吞掉其他页面的键盘输入）
-const EPHEMERAL_ROUTES = [
-    { path: '/games/pingpong', element: <PingPong/> },
-    { path: '/games/snakeking', element: <SnakeKing/> },
-    { path: '/games/castlesiege', element: <CastleSiege/> },
     { path: '/monitor', element: <Monitor/> },
     { path: '/knowledge', element: <KnowledgeBase/> },
 ]
@@ -653,8 +674,10 @@ function AppShell(){
             <OnlinePresenceTracker authUser={authUser} />
             <NavBar authUser={authUser} onLogout={handleLogout} onOpenAuth={openAuth} />
             <KeepAliveShellMemo pathname={location.pathname} />
-            {/* 非常驻页面：仅访问时挂载，离开即卸载（避免全局 keydown 吞掉输入） */}
-            {ephemeralRoute && ephemeralRoute.element}
+            {/* 非常驻页面：仅访问时挂载，离开即卸载 */}
+            <Suspense fallback={<div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b' }}>加载中...</div>}>
+                {ephemeralRoute && ephemeralRoute.element}
+            </Suspense>
             {/* 兜底：未知路径显示 Landing */}
             {!ROUTES.some(r => r.path === location.pathname) && !ephemeralRoute && (
                 <Landing/>

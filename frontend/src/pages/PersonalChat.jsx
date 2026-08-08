@@ -299,10 +299,6 @@ export default function PersonalChat() {
 
   const sendQuestion = async (e) => {
     e?.preventDefault?.()
-    if (!authUser) {
-      window.dispatchEvent(new CustomEvent('open-auth-modal', { detail: { mode: 'login', redirect: '/personal' } }))
-      return
-    }
     if (!question.trim() && !selectedFile) return
     if (circuitOpen) {
       setMessages(prev => [...prev, { role: 'system', content: '⚡ 服务熔断中，请稍后再试' }])

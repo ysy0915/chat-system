@@ -1,603 +1,450 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 
-const STOP_WORDS = new Set('的了是在我有和就不人都一个上也这到说们为你会对就而且但如果因为所以可以已经还是或者虽然然而因此而且及其等等关于以及之后之前什么哪个哪些怎么如何为什么哪谁哪里什么时候'.split(''))
-
-function extractWords(text) {
-  const cleaned = text.replace(/[？?！!。，、；：""''（）\[\]【】《》\n\r]/g, '')
-  const ngrams = new Set()
-  for (let i = 0; i < cleaned.length - 1; i++) ngrams.add(cleaned.substring(i, i + 2))
-  for (let i = 0; i < cleaned.length - 2; i++) ngrams.add(cleaned.substring(i, i + 3))
-  return [...ngrams].filter(w => {
-    if (/^[a-zA-Z0-9]+$/.test(w) && w.length < 2) return false
-    if ([...w].every(c => STOP_WORDS.has(c))) return false
-    return true
-  })
-}
-
-function extractKeyword(question) {
-  const words = extractWords(question)
-  if (words.length > 0) return words.join(' ')
-  const kw = question.replace(/[？?！!。，、；：""''（）\[\]【】《》\n\r]/g, ' ').trim()
-  return kw.length > 10 ? kw.substring(0, 10) : kw || '问题'
-}
-
-function parseAnswer(answerJson) {
-  if (!answerJson) return ''
-  try { const p = JSON.parse(answerJson); return p.answer || answerJson } catch { return answerJson }
-}
-
-function charOverlap(a, b) {
-  const sa = new Set(a), sb = new Set(b)
-  let s = 0; sa.forEach(c => { if (sb.has(c)) s++ }); return s
-}
-
-function wordsSimilar(a, b) {
-  if (a === b) return true
-  if (a.length < 2 || b.length < 2) return false
-  return charOverlap(a, b) >= Math.ceil(Math.min(a.length, b.length) * 0.5)
-}
-
-function buildGraph(nodes) {
-  const nodeKeywords = nodes.map(n => extractWords(n.question + ' ' + n.keyword))
-  const keywordDocFreq = {}
-  nodeKeywords.forEach(ws => {
-    const unique = new Set(ws)
-    unique.forEach(w => { keywordDocFreq[w] = (keywordDocFreq[w] || 0) + 1 })
-  })
-  const totalDocs = nodes.length
-  const edges = []
-  for (let i = 0; i < nodes.length; i++) {
-    const kwI = new Set(nodeKeywords[i])
-    for (let j = i + 1; j < nodes.length; j++) {
-      const kwJ = new Set(nodeKeywords[j])
-      const shared = []
-      kwI.forEach(w => { if (kwJ.has(w)) shared.push(w) })
-      if (shared.length > 0) {
-        shared.sort((a, b) => {
-          const idfA = Math.log(totalDocs / (keywordDocFreq[a] || 1))
-          const idfB = Math.log(totalDocs / (keywordDocFreq[b] || 1))
-          return idfB - idfA
-        })
-        const topKeywords = shared.slice(0, 3)
-        const similarity = Math.min(shared.length * 0.3 + 0.15, 1)
-        edges.push({ source: i, target: j, similarity, sharedKeywords: topKeywords })
-      }
-    }
-  }
-  edges.sort((a, b) => b.similarity - a.similarity)
-  return { wordSets: nodeKeywords, edges }
-}
-
-function forceLayout3D(n, edges, R) {
-  if (n === 0) return []
-  const boundary = R * 0.92
-  const pos = []
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-  for (let i = 0; i < n; i++) {
-    const y = 1 - (i / (n - 1 || 1)) * 2
-    const radiusAtY = Math.sqrt(1 - y * y)
-    const theta = goldenAngle * i
-    const r = boundary * (0.6 + 0.4 * ((i * 7 + 3) % n) / n)
-    pos.push({
-      x: r * radiusAtY * Math.cos(theta),
-      y: r * y,
-      z: r * radiusAtY * Math.sin(theta),
-      vx: 0, vy: 0, vz: 0
-    })
-  }
-  for (let iter = 0; iter < 200; iter++) {
-    const cool = 1 - (iter / 200) * 0.6
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const dx = pos[i].x - pos[j].x, dy = pos[i].y - pos[j].y, dz = pos[i].z - pos[j].z
-        const d2 = dx * dx + dy * dy + dz * dz || 1
-        const d = Math.sqrt(d2)
-        const minSep = 40
-        if (d < minSep) {
-          const f = Math.min((minSep - d) * 0.5, 8)
-          pos[i].vx += (dx / d) * f; pos[i].vy += (dy / d) * f; pos[i].vz += (dz / d) * f
-          pos[j].vx -= (dx / d) * f; pos[j].vy -= (dy / d) * f; pos[j].vz -= (dz / d) * f
-        }
-      }
-    }
-    for (const e of edges) {
-      const s = pos[e.source], t = pos[e.target]
-      const dx = t.x - s.x, dy = t.y - s.y, dz = t.z - s.z
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1
-      const f = 0.001 * e.similarity
-      s.vx += (dx / d) * f; s.vy += (dy / d) * f; s.vz += (dz / d) * f
-      t.vx -= (dx / d) * f; t.vy -= (dy / d) * f; t.vz -= (dz / d) * f
-    }
-    for (let i = 0; i < n; i++) {
-      pos[i].vx *= 0.6 * cool; pos[i].vy *= 0.6 * cool; pos[i].vz *= 0.6 * cool
-      pos[i].x += pos[i].vx; pos[i].y += pos[i].vy; pos[i].z += pos[i].vz
-      const dist = Math.sqrt(pos[i].x ** 2 + pos[i].y ** 2 + pos[i].z ** 2)
-      if (dist > boundary) {
-        const s = boundary / dist
-        pos[i].x *= s; pos[i].y *= s; pos[i].z *= s
-      }
-    }
-  }
-  return pos
-}
-
-function project(x, y, z, cx, cy, fov) {
-  const scale = fov / (fov + z)
-  return { sx: cx + x * scale, sy: cy + y * scale, scale, z }
-}
-
+/**
+ * 知识脉络图（基于 Neo4j）
+ *
+ * 数据来源：chat-core 的 KnowledgeGraphService 从 AI 问答中自动抽取的知识三元组
+ * 可视化：Canvas 力导向图
+ */
 export default function KnowledgeGraph() {
-  const [nodes, setNodes] = useState([])
-  const [hoveredIdx, setHoveredIdx] = useState(null)
-  const [showRelated, setShowRelated] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [answerCache, setAnswerCache] = useState({})
-  const [answerLoading, setAnswerLoading] = useState(false)
-  const pausedRef = useRef(false)
-  const animRef = useRef(null)
-  const lastTimeRef = useRef(null)
-  const posRef = useRef([])
-  const velRef = useRef([])
-  const degRef = useRef([])
-  const baseNodesRef = useRef([])
-  const allLoadedRef = useRef([])
-  const suppressSvgClickRef = useRef(false)
-  const isTouchDeviceRef = useRef(typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0))
-  const [, setTick] = useState(0)
+    const canvasRef = useRef(null)
+    const [stats, setStats] = useState({ entityCount: 0, relationCount: 0 })
+    const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
+    const [loading, setLoading] = useState(false)
+    const [keyword, setKeyword] = useState('')
+    const [selectedNode, setSelectedNode] = useState(null)
+    const [hoveredNode, setHoveredNode] = useState(null)
 
-  useEffect(() => { fetchData() }, [])
+    // 力导向布局状态
+    const simulationRef = useRef({ nodes: [], edges: [], alpha: 1 })
+    const animationRef = useRef(null)
+    const transformRef = useRef({ x: 0, y: 0, k: 1 })
+    const dragRef = useRef(null)
 
-  useEffect(() => {
-    const animate = (time) => {
-      if (lastTimeRef.current === null) lastTimeRef.current = time
-      const delta = time - lastTimeRef.current
-      lastTimeRef.current = time
-      if (!pausedRef.current && posRef.current.length > 0) {
-        const R = 260
-        const boundary = R * 0.92
-        const positions = posRef.current
-        const velocities = velRef.current
-        const degrees = degRef.current
-        const n = positions.length
-        for (let i = 0; i < n; i++) {
-          const v = velocities[i]
-          v.vx += (Math.random() - 0.5) * 0.04
-          v.vy += (Math.random() - 0.5) * 0.04
-          v.vz += (Math.random() - 0.5) * 0.04
-          v.vx *= 0.97
-          v.vy *= 0.97
-          v.vz *= 0.97
-          const speed = Math.sqrt(v.vx * v.vx + v.vy * v.vy + v.vz * v.vz)
-          if (speed > 0.4) {
-            const s = 0.4 / speed
-            v.vx *= s; v.vy *= s; v.vz *= s
-          }
-        }
-        for (let i = 0; i < n; i++) {
-          for (let j = i + 1; j < n; j++) {
-            const pi = positions[i], pj = positions[j]
-            const dx = pi.x - pj.x, dy = pi.y - pj.y, dz = pi.z - pj.z
-            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1
-            const ri = 14 + Math.min((degrees[i] || 0) * 1.5, 10)
-            const rj = 14 + Math.min((degrees[j] || 0) * 1.5, 10)
-            const minDist = Math.max((ri + rj) * 1.5, 50)
-            if (dist < minDist) {
-              const push = (minDist - dist) * 0.12
-              const nx = dx / dist, ny = dy / dist, nz = dz / dist
-              velocities[i].vx += nx * push
-              velocities[i].vy += ny * push
-              velocities[i].vz += nz * push
-              velocities[j].vx -= nx * push
-              velocities[j].vy -= ny * push
-              velocities[j].vz -= nz * push
+    // 加载图谱数据
+    const loadGraph = useCallback(async (searchKw) => {
+        setLoading(true)
+        try {
+            let resp
+            if (searchKw && searchKw.trim()) {
+                resp = await axios.get(`/api/v1/graph/search?keyword=${encodeURIComponent(searchKw.trim())}&limit=50`)
+            } else {
+                resp = await axios.get('/api/v1/graph?limit=100')
             }
-          }
-        }
-        for (let i = 0; i < n; i++) {
-          const p = positions[i]
-          const v = velocities[i]
-          p.x += v.vx; p.y += v.vy; p.z += v.vz
-          const dist = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z)
-          if (dist > boundary) {
-            const ratio = boundary / dist
-            p.x *= ratio; p.y *= ratio; p.z *= ratio
-            const nx = p.x / dist, ny = p.y / dist, nz = p.z / dist
-            const dot = v.vx * nx + v.vy * ny + v.vz * nz
-            v.vx -= 1.5 * dot * nx; v.vy -= 1.5 * dot * ny; v.vz -= 1.5 * dot * nz
-            v.vx *= 0.3; v.vy *= 0.3; v.vz *= 0.3
-          }
-        }
-      }
-      setTick(t => t + 1)
-      animRef.current = requestAnimationFrame(animate)
-    }
-    animRef.current = requestAnimationFrame(animate)
-    return () => { cancelAnimationFrame(animRef.current) }
-  }, [nodes.length])
-
-  const handleNodeEnter = async (i) => {
-    pausedRef.current = true
-    setHoveredIdx(i)
-    setShowRelated(false)
-    const node = nodes[i]
-    if (node && node.msgId && !answerCache[node.msgId]) {
-      setAnswerLoading(true)
-      try {
-        const res = await axios.get(`/api/v1/messages/${node.msgId}/answer`)
-        const answer = parseAnswer(res.data?.answer)
-        setAnswerCache(prev => ({ ...prev, [node.msgId]: answer }))
-      } catch (e) { console.error(e) }
-      finally { setAnswerLoading(false) }
-    }
-  }
-  const handleNodeLeave = () => { pausedRef.current = false; lastTimeRef.current = null; setHoveredIdx(null) }
-
-  // 手机端：点击节点显示/切换 tooltip，阻止冒泡到 svg 的 onClick
-  const handleNodeClick = (e, i) => {
-    e.stopPropagation()
-    e.preventDefault()
-    // 标记本次点击来自节点，svg 的 onClick 不应清除 hoveredIdx
-    suppressSvgClickRef.current = true
-    setTimeout(() => { suppressSvgClickRef.current = false }, 300)
-    if (hoveredIdx === i) {
-      // 再次点击同一节点 → 关闭
-      handleNodeLeave()
-    } else {
-      handleNodeEnter(i)
-    }
-  }
-
-  async function fetchData() {
-    setLoading(true)
-    try {
-      const res = await axios.get('/api/v1/messages/questions')
-      const items = (res.data || []).filter(m => m.question)
-      const all = items.map(item => ({
-        msgId: item.id,
-        keyword: extractKeyword(item.question),
-        question: item.question,
-      }))
-      const wordSets = all.map(n => new Set(extractWords(n.question)))
-      const wordFreq = {}
-      wordSets.forEach(ws => ws.forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1 }))
-      const hotWords = new Set(Object.keys(wordFreq).filter(w => wordFreq[w] >= 2))
-      const scored = all.map((n, i) => {
-        const hot = new Set([...wordSets[i]].filter(w => hotWords.has(w)))
-        let score = 0
-        for (let j = 0; j < all.length; j++) {
-          if (i === j) continue
-          for (const w of hot) {
-            if (wordSets[j].has(w)) { score++; break }
-          }
-        }
-        return { ...n, score }
-      })
-      scored.sort((a, b) => b.score - a.score)
-      const top = scored.slice(0, 30)
-      baseNodesRef.current = top
-      allLoadedRef.current = [...all]
-      setNodes(top)
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
-  }
-
-  const handleSearch = async (value) => {
-    setSearchQuery(value)
-    setHoveredIdx(null)
-    const q = value.trim()
-    if (q.length === 0) {
-      setNodes(baseNodesRef.current)
-      return
-    }
-    const lowerQ = q.toLowerCase()
-    const localMatches = allLoadedRef.current.filter(n =>
-      n.question.toLowerCase().includes(lowerQ) || n.keyword.toLowerCase().includes(lowerQ)
-    )
-    if (localMatches.length > 0) {
-      const matchIds = new Set(localMatches.map(n => n.msgId))
-      const others = baseNodesRef.current.filter(n => !matchIds.has(n.msgId))
-      const result = [...localMatches]
-      while (result.length < 30 && others.length > 0) {
-        const idx = Math.floor(Math.random() * others.length)
-        result.push(others.splice(idx, 1)[0])
-      }
-      setNodes(result)
-      return
-    }
-    try {
-      const res = await axios.get('/api/v1/messages/search-all', { params: { q } })
-      const remoteMatches = (res.data || []).filter(m => m.question).map(item => ({
-        msgId: item.id,
-        keyword: extractKeyword(item.question),
-        question: item.question,
-      }))
-      const existingIds = new Set(allLoadedRef.current.map(n => n.msgId))
-      const newNodes = remoteMatches.filter(m => !existingIds.has(m.msgId))
-      newNodes.forEach(n => allLoadedRef.current.push(n))
-      if (remoteMatches.length > 0) {
-        const result = [...baseNodesRef.current]
-        for (const match of remoteMatches) {
-          if (result.length >= 30) {
-            const removeIdx = Math.floor(Math.random() * result.length)
-            result.splice(removeIdx, 1)
-          }
-          result.push(match)
-        }
-        setNodes(result)
-      } else {
-        setNodes(baseNodesRef.current)
-      }
-    } catch (e) { console.error(e) }
-  }
-
-  const { edges } = useMemo(() => nodes.length > 1 ? buildGraph(nodes) : { edges: [] }, [nodes])
-
-  useEffect(() => {
-    if (nodes.length === 0) return
-    const layout = forceLayout3D(nodes.length, edges, 250)
-    posRef.current = layout.map(p => ({ x: p.x, y: p.y, z: p.z }))
-    velRef.current = layout.map(() => ({
-      vx: (Math.random() - 0.5) * 0.5,
-      vy: (Math.random() - 0.5) * 0.5,
-      vz: (Math.random() - 0.5) * 0.5
-    }))
-    lastTimeRef.current = null
-  }, [nodes.length, edges.length])
-
-  const nodeDegrees = useMemo(() => {
-    const deg = new Array(nodes.length).fill(0)
-    edges.forEach(e => { deg[e.source]++; deg[e.target]++ })
-    degRef.current = deg
-    return deg
-  }, [nodes.length, edges])
-
-  const isSearching = searchQuery.trim().length > 0
-  const matchedIndices = useMemo(() => {
-    if (!isSearching) return []
-    const q = searchQuery.trim().toLowerCase()
-    return nodes.map((n, i) => (n.question.toLowerCase().includes(q) || n.keyword.toLowerCase().includes(q)) ? i : -1).filter(i => i !== -1)
-  }, [nodes, searchQuery])
-  useEffect(() => { pausedRef.current = isSearching }, [isSearching])
-
-  const W = 700, H = 700, cx = W / 2, cy = H / 2, R = 260, fov = 600
-
-  const projected = posRef.current.map((p, i) => {
-    const pr = project(p.x, p.y, p.z, cx, cy, fov)
-    return { ...pr, idx: i }
-  })
-
-  const drawables = []
-  edges.forEach((e, idx) => {
-    const s = projected[e.source], t = projected[e.target]
-    if (!s || !t) return
-    const avgZ = (s.z + t.z) / 2
-    drawables.push({ type: 'edge', data: e, s, t, idx, z: avgZ })
-  })
-  projected.forEach((p, i) => {
-    drawables.push({ type: 'node', idx: i, p, z: p.z })
-  })
-  drawables.sort((a, b) => b.z - a.z)
-
-  return (
-    <div className="kg-page">
-      <Link to="/home" className="btn-back-home">← 返回首页</Link>
-      <p className="kg-subtitle">基于语义相似度构建的问答关联网络 · 悬停节点查看答案 · 中心搜索定位问题</p>
-
-      {loading && <div className="kg-loading">加载中…</div>}
-      {!loading && nodes.length === 0 && (
-        <div className="kg-empty">暂无问答数据，先去对话页面提问吧</div>
-      )}
-
-      {nodes.length > 0 && (
-        <div className="kg-canvas">
-          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}
-               onClick={() => { if (!suppressSvgClickRef.current) setHoveredIdx(null) }}>
-            <defs>
-              <radialGradient id="globeGrad" cx="40%" cy="35%" r="60%">
-                <stop offset="0%" stopColor="rgba(59,130,246,0.12)" />
-                <stop offset="70%" stopColor="rgba(59,130,246,0.06)" />
-                <stop offset="100%" stopColor="rgba(59,130,246,0)" />
-              </radialGradient>
-              <radialGradient id="globeEdge" cx="50%" cy="50%" r="50%">
-                <stop offset="85%" stopColor="rgba(59,130,246,0)" />
-                <stop offset="100%" stopColor="rgba(59,130,246,0.2)" />
-              </radialGradient>
-              <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b" />
-                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
-              <filter id="glowStrong"><feGaussianBlur stdDeviation="4" result="b" />
-                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
-            </defs>
-
-            <circle cx={cx} cy={cy} r={R} fill="url(#globeGrad)" />
-            <circle cx={cx} cy={cy} r={R} fill="url(#globeEdge)" />
-            <ellipse cx={cx} cy={cy} rx={R} ry={R * 0.15} fill="none" stroke="rgba(59,130,246,0.15)" strokeWidth="1" />
-            <ellipse cx={cx} cy={cy} rx={R * 0.15} ry={R} fill="none" stroke="rgba(59,130,246,0.15)" strokeWidth="1" />
-            <ellipse cx={cx} cy={cy} rx={R * 0.6} ry={R} fill="none" stroke="rgba(59,130,246,0.1)" strokeWidth="0.8" />
-            <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(59,130,246,0.25)" strokeWidth="1.5" />
-
-            {drawables.map((d, di) => {
-              if (d.type === 'edge') {
-                const { s, t, data: e, idx } = d
-                const active = hoveredIdx === e.source || hoveredIdx === e.target || matchedIndices.includes(e.source) || matchedIndices.includes(e.target)
-                const dimmed = (isSearching || hoveredIdx !== null) && !active
-                const depthAlpha = Math.max(0.15, Math.min(1, (fov / (fov + d.z)) * 0.7))
-                return (
-                  <line key={'e' + idx}
-                    x1={s.sx} y1={s.sy} x2={t.sx} y2={t.sy}
-                    stroke={active ? '#7c3aed' : 'rgba(124,58,237,0.5)'}
-                    strokeWidth={active ? 1.5 : 0.6 + e.similarity * 1}
-                    opacity={dimmed ? 0.08 : (active ? 0.8 : 0.25 * depthAlpha)}
-                    filter={active ? 'url(#glow)' : undefined}
-                  />
-                )
-              } else {
-                const { p, idx } = d
-                const i = idx
-                const node = nodes[i]
-                const deg = nodeDegrees[i] || 0
-                const baseR = 14 + Math.min(deg * 1.5, 10)
-                const r = baseR * p.scale
-                const isHov = hoveredIdx === i
-                const isMatch = matchedIndices.includes(i)
-                const highlighted = isHov || isMatch
-                const dimmed = (isSearching || (hoveredIdx !== null && !isHov)) && !isMatch
-                const depthAlpha = Math.max(0.2, Math.min(1, p.scale * 0.9))
-                const label = node.question.length > 6 ? node.question.substring(0, 6) + '..' : node.question
-
-                return (
-                  <g key={'n' + i}
-                     onMouseEnter={!isTouchDeviceRef.current ? handleNodeEnter.bind(null, i) : undefined}
-                     onMouseLeave={!isTouchDeviceRef.current ? handleNodeLeave : undefined}
-                     onClick={(e) => handleNodeClick(e, i)}
-                     onTouchStart={(e) => { e.stopPropagation(); }}
-                     style={{ cursor: 'pointer', touchAction: 'manipulation' }}>
-                    {highlighted && (
-                      <circle cx={p.sx} cy={p.sy} r={r + 8}
-                        fill="none" stroke="rgba(59,130,246,0.3)" strokeWidth="1" />
-                    )}
-                    <circle cx={p.sx} cy={p.sy} r={highlighted ? r + 2 : r}
-                      fill={highlighted ? 'rgba(59,130,246,0.4)' : dimmed ? 'rgba(59,130,246,0.08)' : `rgba(59,130,246,${0.2 * depthAlpha})`}
-                      stroke={highlighted ? '#3b82f6' : dimmed ? 'rgba(59,130,246,0.15)' : `rgba(59,130,246,${0.5 * depthAlpha})`}
-                      strokeWidth={highlighted ? 2.5 : 1.5}
-                      opacity={dimmed ? 0.4 : depthAlpha}
-                      filter={highlighted ? 'url(#glowStrong)' : undefined} />
-                    <text x={p.sx} y={p.sy + r * 0.3} textAnchor="middle"
-                      fontSize={Math.max(8, 10 * p.scale)}
-                      fill={highlighted ? '#1e40af' : dimmed ? 'rgba(100,116,139,0.3)' : `rgba(30,64,175,${0.85 * depthAlpha})`}
-                      fontWeight="600" opacity={dimmed ? 0.3 : depthAlpha}>
-                      {label}
-                    </text>
-                  </g>
-                )
-              }
-            })}
-          </svg>
-
-          <div className="kg-center-search">
-            <input
-              className="kg-search-input"
-              type="text"
-              placeholder="搜索问答..."
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setHoveredIdx(null) }}
-              onFocus={() => setHoveredIdx(null)}
-            />
-          </div>
-
-          {(hoveredIdx !== null || (isSearching && matchedIndices.length > 0)) && (
-            <div className="kg-tooltip" style={{ left: '50%', transform: 'translateX(-50%)', bottom: '20px' }}>
-              {hoveredIdx !== null && nodes[hoveredIdx] && !showRelated ? (
-                <>
-                  <div className="kg-tooltip-q">💬 {nodes[hoveredIdx].question}</div>
-                  {answerLoading && hoveredIdx !== null && !answerCache[nodes[hoveredIdx]?.msgId] ? (
-                    <div className="kg-tooltip-a" style={{ color: '#64748b' }}>加载中…</div>
-                  ) : answerCache[nodes[hoveredIdx]?.msgId] ? (
-                    <div className="kg-tooltip-a">
-                      {answerCache[nodes[hoveredIdx].msgId].length > 200
-                        ? answerCache[nodes[hoveredIdx].msgId].substring(0, 200) + '...'
-                        : answerCache[nodes[hoveredIdx].msgId]}
-                      <span className="ai-generated-tag" style={{ marginTop: 4 }}>AI生成</span>
-                    </div>
-                  ) : null}
-                  {nodeDegrees[hoveredIdx] > 0 && (() => {
-                    const relatedEdges = edges.filter(e => e.source === hoveredIdx || e.target === hoveredIdx)
-                    const seen = new Set()
-                    let uniqueCount = 0
-                    for (const e of relatedEdges) {
-                      const otherIdx = e.source === hoveredIdx ? e.target : e.source
-                      const q = nodes[otherIdx]?.question
-                      if (q && !seen.has(q)) { seen.add(q); uniqueCount++ }
+            const data = resp.data
+            if (data.nodes) {
+                setGraphData(data)
+                // 初始化力导向布局 — 用圆形分布，避免节点飞到屏幕外
+                const canvas = canvasRef.current
+                const w = canvas?.clientWidth || window.innerWidth || 800
+                const h = canvas?.clientHeight || window.innerHeight || 600
+                const cx = w / 2, cy = h / 2
+                const radius = Math.min(w, h) * 0.3
+                const nodes = data.nodes.map((n, i) => {
+                    const angle = (i / data.nodes.length) * Math.PI * 2
+                    return {
+                        ...n,
+                        x: cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 20,
+                        y: cy + Math.sin(angle) * radius + (Math.random() - 0.5) * 20,
+                        vx: 0,
+                        vy: 0
                     }
-                    if (uniqueCount === 0) return null
-                    return (
-                      <div style={{ fontSize: '11px', color: '#8b5cf6', marginTop: '6px', cursor: 'pointer' }}
-                           onClick={(ev) => { ev.stopPropagation(); setShowRelated(true) }}>
-                        🔗 关联 {uniqueCount} 个相似问题
-                      </div>
-                    )
-                  })()}
-                </>
-              ) : hoveredIdx !== null && showRelated ? (
-                <>
-                  <div className="kg-tooltip-q" style={{ cursor: 'pointer' }}
-                       onClick={() => setShowRelated(false)}>
-                    ← 返回答案
-                  </div>
-                  {(() => {
-                    const relatedEdges = edges.filter(e => e.source === hoveredIdx || e.target === hoveredIdx)
-                      .sort((a, b) => b.similarity - a.similarity)
-                    const seen = new Set()
-                    const unique = []
-                    for (const e of relatedEdges) {
-                      const otherIdx = e.source === hoveredIdx ? e.target : e.source
-                      const q = nodes[otherIdx]?.question
-                      if (q && !seen.has(q)) {
-                        seen.add(q)
-                        unique.push({ e, otherIdx })
-                      }
-                    }
-                    return unique.map(({ e, otherIdx }, idx) => (
-                      <div key={idx} className="kg-tooltip-item"
-                           onClick={() => { setHoveredIdx(otherIdx); setShowRelated(false); pausedRef.current = true }}>
-                        💬 {nodes[otherIdx]?.question}
-                        <span style={{ fontSize: '10px', color: '#8b5cf6', marginLeft: '6px' }}>
-                          {Math.round(e.similarity * 100)}%
-                        </span>
-                      </div>
-                    ))
-                  })()}
-                </>
-              ) : isSearching && matchedIndices.length > 0 ? (
-                <>
-                  {(() => {
-                    const seen = new Set()
-                    const uniqueIndices = []
-                    for (const idx of matchedIndices) {
-                      const q = nodes[idx]?.question
-                      if (q && !seen.has(q)) {
-                        seen.add(q)
-                        uniqueIndices.push(idx)
-                      }
-                    }
-                    return (
-                      <>
-                        <div className="kg-tooltip-q">🔍 找到 {uniqueIndices.length} 条匹配结果</div>
-                        {uniqueIndices.slice(0, 5).map(idx => (
-                          <div key={idx} className="kg-tooltip-item"
-                               onClick={async () => {
-                                 setSearchQuery('')
-                                 setHoveredIdx(idx)
-                                 setShowRelated(false)
-                                 pausedRef.current = true
-                                 const node = nodes[idx]
-                                 if (node && node.msgId && !answerCache[node.msgId]) {
-                                   try {
-                                     const res = await axios.get(`/api/v1/messages/${node.msgId}/answer`)
-                                     const answer = parseAnswer(res.data?.answer)
-                                     setAnswerCache(prev => ({ ...prev, [node.msgId]: answer }))
-                                   } catch (e) { console.error(e) }
-                                 }
-                               }}>
-                            💬 {nodes[idx].question}
-                          </div>
-                        ))}
-                        {uniqueIndices.length > 5 && (
-                          <div className="kg-tooltip-a">...还有 {uniqueIndices.length - 5} 条</div>
-                        )}
-                      </>
-                    )
-                  })()}
-                </>
-              ) : null}
+                })
+                const nodeMap = {}
+                nodes.forEach(n => { nodeMap[n.id] = n })
+                const edges = data.edges.map(e => ({
+                    source: nodeMap[e.source] || { id: e.source },
+                    target: nodeMap[e.target] || { id: e.target },
+                    label: e.label,
+                    question: e.question
+                })).filter(e => e.source && e.target && e.source.x !== undefined && e.target.x !== undefined)
+                simulationRef.current = { nodes, edges, alpha: 1 }
+            }
+        } catch (err) {
+            console.error('加载图谱失败:', err)
+        } finally {
+            setLoading(false)
+        }
+    }, [])
+
+    // 加载统计
+    const loadStats = useCallback(async () => {
+        try {
+            const resp = await axios.get('/api/v1/graph/stats')
+            setStats(resp.data)
+        } catch (err) {
+            console.error('加载统计失败:', err)
+        }
+    }, [])
+
+    useEffect(() => {
+        loadStats()
+        loadGraph()
+    }, [loadStats, loadGraph])
+
+    // 力导向模拟 + Canvas 渲染
+    useEffect(() => {
+        const canvas = canvasRef.current
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+
+        // 设置 canvas 实际尺寸
+        const resize = () => {
+            const parent = canvas.parentElement
+            const w = parent.clientWidth || window.innerWidth
+            const h = parent.clientHeight || (window.innerHeight - 120)
+            canvas.width = w
+            canvas.height = Math.max(h, 300)
+        }
+        resize()
+        window.addEventListener('resize', resize)
+
+        const tick = () => {
+            const sim = simulationRef.current
+            const { nodes, edges } = sim
+            if (nodes.length === 0) {
+                animationRef.current = requestAnimationFrame(tick)
+                drawEmpty(ctx, canvas)
+                return
+            }
+
+            // 力导向模拟
+            const w = canvas.width
+            const h = canvas.height
+            const cx = w / 2
+            const cy = h / 2
+            const alpha = sim.alpha
+
+            // 斥力（节点之间）— 降到1500，避免弹飞
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const dx = nodes[j].x - nodes[i].x
+                    const dy = nodes[j].y - nodes[i].y
+                    let dist = Math.sqrt(dx * dx + dy * dy)
+                    if (dist < 1) dist = 1
+                    const force = 1500 / (dist * dist) * alpha
+                    const fx = (dx / dist) * force
+                    const fy = (dy / dist) * force
+                    nodes[i].vx -= fx
+                    nodes[i].vy -= fy
+                    nodes[j].vx += fx
+                    nodes[j].vy += fy
+                }
+            }
+
+            // 引力（边的两端）
+            for (const edge of edges) {
+                const dx = edge.target.x - edge.source.x
+                const dy = edge.target.y - edge.source.y
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1
+                const force = (dist - 100) * 0.05 * alpha
+                const fx = (dx / dist) * force
+                const fy = (dy / dist) * force
+                edge.source.vx += fx
+                edge.source.vy += fy
+                edge.target.vx -= fx
+                edge.target.vy -= fy
+            }
+
+            // 中心引力 + 阻尼 + 更新位置
+            for (const node of nodes) {
+                // 中心引力 — 加强，避免节点飘出屏幕
+                node.vx += (cx - node.x) * 0.02 * alpha
+                node.vy += (cy - node.y) * 0.02 * alpha
+                // 阻尼 — 加强，更快稳定
+                node.vx *= 0.8
+                node.vy *= 0.8
+                // 更新位置
+                if (!dragRef.current || dragRef.current.node !== node) {
+                    node.x += node.vx
+                    node.y += node.vy
+                }
+            }
+
+            // alpha 衰减 — 0.95 快速稳定，不再飘
+            if (sim.alpha > 0.02) sim.alpha *= 0.95
+            else sim.alpha = 0.02
+
+            // 渲染
+            render(ctx, canvas, sim)
+            animationRef.current = requestAnimationFrame(tick)
+        }
+
+        animationRef.current = requestAnimationFrame(tick)
+
+        return () => {
+            window.removeEventListener('resize', resize)
+            if (animationRef.current) cancelAnimationFrame(animationRef.current)
+        }
+    }, [graphData, hoveredNode, selectedNode])
+
+    const render = (ctx, canvas, sim) => {
+        const { nodes, edges } = sim
+        const { x: tx, y: ty, k: tk } = transformRef.current
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        ctx.save()
+        ctx.translate(tx, ty)
+        ctx.scale(tk, tk)
+
+        // 画边
+        ctx.strokeStyle = 'rgba(100, 180, 255, 0.3)'
+        ctx.lineWidth = 1
+        ctx.font = '11px sans-serif'
+        ctx.fillStyle = 'rgba(150, 200, 255, 0.6)'
+        for (const edge of edges) {
+            if (!edge.source || !edge.target) continue
+            ctx.beginPath()
+            ctx.moveTo(edge.source.x, edge.source.y)
+            ctx.lineTo(edge.target.x, edge.target.y)
+            ctx.stroke()
+
+            // 边标签
+            const mx = (edge.source.x + edge.target.x) / 2
+            const my = (edge.source.y + edge.target.y) / 2
+            if (tk > 0.7) {
+                ctx.fillText(edge.label || '', mx + 2, my - 2)
+            }
+        }
+
+        // 画节点
+        for (const node of nodes) {
+            const r = Math.max(8, Math.min(25, (node.value || 1) * 3))
+            const isSelected = selectedNode && selectedNode.id === node.id
+            const isHovered = hoveredNode && hoveredNode.id === node.id
+
+            // 光晕
+            if (isSelected || isHovered) {
+                ctx.beginPath()
+                ctx.arc(node.x, node.y, r + 6, 0, Math.PI * 2)
+                ctx.fillStyle = isSelected ? 'rgba(255, 200, 50, 0.3)' : 'rgba(100, 200, 255, 0.3)'
+                ctx.fill()
+            }
+
+            // 节点圆
+            ctx.beginPath()
+            ctx.arc(node.x, node.y, r, 0, Math.PI * 2)
+            const gradient = ctx.createRadialGradient(node.x - r / 3, node.y - r / 3, 0, node.x, node.y, r)
+            if (isSelected) {
+                gradient.addColorStop(0, '#ffd700')
+                gradient.addColorStop(1, '#ff9500')
+            } else if (isHovered) {
+                gradient.addColorStop(0, '#7dd3fc')
+                gradient.addColorStop(1, '#0284c7')
+            } else {
+                gradient.addColorStop(0, '#818cf8')
+                gradient.addColorStop(1, '#4f46e5')
+            }
+            ctx.fillStyle = gradient
+            ctx.fill()
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+            ctx.lineWidth = 1.5
+            ctx.stroke()
+
+            // 节点标签
+            ctx.fillStyle = '#e2e8f0'
+            ctx.font = `${Math.max(10, Math.min(14, r * 0.7))}px sans-serif`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(node.label || '', node.x, node.y + r + 12)
+        }
+
+        ctx.restore()
+    }
+
+    const drawEmpty = (ctx, canvas) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        ctx.fillStyle = '#64748b'
+        ctx.font = '16px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('暂无知识图谱数据，发起 AI 对话后将自动构建', canvas.width / 2, canvas.height / 2)
+    }
+
+    // 鼠标交互：拖拽节点 + 悬停 + 点击
+    const getMousePos = (e) => {
+        const canvas = canvasRef.current
+        const rect = canvas.getBoundingClientRect()
+        const { x: tx, y: ty, k: tk } = transformRef.current
+        return {
+            x: (e.clientX - rect.left - tx) / tk,
+            y: (e.clientY - rect.top - ty) / tk
+        }
+    }
+
+    const findNode = (pos) => {
+        const { nodes } = simulationRef.current
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            const node = nodes[i]
+            const r = Math.max(8, Math.min(25, (node.value || 1) * 3))
+            const dx = pos.x - node.x
+            const dy = pos.y - node.y
+            if (dx * dx + dy * dy < r * r) return node
+        }
+        return null
+    }
+
+    const handleMouseDown = (e) => {
+        const pos = getMousePos(e)
+        const node = findNode(pos)
+        if (node) {
+            dragRef.current = { node, startX: e.clientX, startY: e.clientY, moved: false }
+        } else {
+            // 拖拽画布
+            dragRef.current = { pan: true, startX: e.clientX, startY: e.clientY,
+                                origX: transformRef.current.x, origY: transformRef.current.y }
+        }
+    }
+
+    const handleMouseMove = (e) => {
+        const pos = getMousePos(e)
+        const node = findNode(pos)
+        setHoveredNode(node)
+        canvasRef.current.style.cursor = node ? 'pointer' : 'default'
+
+        if (dragRef.current) {
+            if (dragRef.current.node) {
+                dragRef.current.node.x = pos.x
+                dragRef.current.node.y = pos.y
+                dragRef.current.node.vx = 0
+                dragRef.current.node.vy = 0
+                dragRef.current.moved = true
+                simulationRef.current.alpha = Math.max(simulationRef.current.alpha, 0.3)
+            } else if (dragRef.current.pan) {
+                transformRef.current.x = dragRef.current.origX + (e.clientX - dragRef.current.startX)
+                transformRef.current.y = dragRef.current.origY + (e.clientY - dragRef.current.startY)
+            }
+        }
+    }
+
+    const handleMouseUp = (e) => {
+        if (dragRef.current && dragRef.current.node && !dragRef.current.moved) {
+            // 点击节点
+            setSelectedNode(dragRef.current.node)
+        } else if (dragRef.current && dragRef.current.pan &&
+                   Math.abs(e.clientX - dragRef.current.startX) < 3 &&
+                   Math.abs(e.clientY - dragRef.current.startY) < 3) {
+            // 点击空白处取消选择
+            setSelectedNode(null)
+        }
+        dragRef.current = null
+    }
+
+    const handleWheel = (e) => {
+        e.preventDefault()
+        const delta = e.deltaY > 0 ? 0.9 : 1.1
+        const newK = Math.max(0.3, Math.min(3, transformRef.current.k * delta))
+        const canvas = canvasRef.current
+        const rect = canvas.getBoundingClientRect()
+        const mx = e.clientX - rect.left
+        const my = e.clientY - rect.top
+        transformRef.current.x = mx - (mx - transformRef.current.x) * (newK / transformRef.current.k)
+        transformRef.current.y = my - (my - transformRef.current.y) * (newK / transformRef.current.k)
+        transformRef.current.k = newK
+    }
+
+    const handleSearch = (e) => {
+        e.preventDefault()
+        loadGraph(keyword)
+    }
+
+    const handleReset = () => {
+        setKeyword('')
+        setSelectedNode(null)
+        loadGraph()
+    }
+
+    // 选中节点的相关边
+    const relatedEdges = selectedNode
+        ? simulationRef.current.edges.filter(
+            e => (e.source && e.source.id === selectedNode.id) || (e.target && e.target.id === selectedNode.id)
+        )
+        : []
+
+    return (
+        <div className="graph-page">
+            <div className="graph-header">
+                <Link to="/home" className="graph-back">← 返回</Link>
+                <h2 className="graph-title">知识脉络图</h2>
+                <div className="graph-stats">
+                    <span className="stat-badge">{stats.entityCount || 0} 实体</span>
+                    <span className="stat-badge">{stats.relationCount || 0} 关系</span>
+                </div>
             </div>
-          )}
+
+            <div className="graph-toolbar">
+                <form onSubmit={handleSearch} className="graph-search-form">
+                    <input
+                        type="text"
+                        value={keyword}
+                        onChange={e => setKeyword(e.target.value)}
+                        placeholder="搜索知识实体..."
+                        className="graph-search-input"
+                    />
+                    <button type="submit" className="graph-btn" disabled={loading}>
+                        {loading ? '搜索中...' : '搜索'}
+                    </button>
+                    <button type="button" onClick={handleReset} className="graph-btn graph-btn-secondary">
+                        重置
+                    </button>
+                </form>
+            </div>
+
+            <div className="graph-container">
+                <canvas
+                    ref={canvasRef}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                    onWheel={handleWheel}
+                    className="graph-canvas"
+                />
+
+                {selectedNode && (
+                    <div className="graph-detail-panel">
+                        <div className="graph-detail-header">
+                            <h3>{selectedNode.label}</h3>
+                            <button onClick={() => setSelectedNode(null)} className="graph-detail-close">✕</button>
+                        </div>
+                        <div className="graph-detail-body">
+                            <p className="graph-detail-meta">关联数：{selectedNode.value || 0}</p>
+                            {relatedEdges.length > 0 && (
+                                <div className="graph-detail-relations">
+                                    <h4>关联关系</h4>
+                                    {relatedEdges.map((e, i) => {
+                                        const other = e.source.id === selectedNode.id ? e.target : e.source
+                                        const direction = e.source.id === selectedNode.id ? '→' : '←'
+                                        return (
+                                            <div key={i} className="graph-relation-item"
+                                                 onClick={() => setSelectedNode(other)}>
+                                                <span className="relation-arrow">{direction}</span>
+                                                <span className="relation-type">{e.label}</span>
+                                                <span className="relation-node">{other.label}</span>
+                                                {e.question && (
+                                                    <div className="relation-source" title={e.question}>
+                                                        来源: {e.question.substring(0, 40)}...
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {hoveredNode && !selectedNode && (
+                    <div className="graph-tooltip">
+                        <strong>{hoveredNode.label}</strong>
+                        <span>关联数: {hoveredNode.value || 0}</span>
+                    </div>
+                )}
+            </div>
         </div>
-      )}
-    </div>
-  )
+    )
 }

@@ -20,6 +20,12 @@
             <groupId>com.example</groupId>
             <artifactId>chat-common</artifactId>
         </dependency>
+
+        <!-- RabbitMQ（chat-common 中有跨节点广播相关类，需要 amqp 类在 classpath） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

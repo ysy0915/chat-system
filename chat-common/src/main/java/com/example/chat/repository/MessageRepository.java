@@ -68,4 +68,12 @@ public interface MessageRepository {
     /** 树洞：搜索历史问题 */
     @Select("SELECT id, req_id AS reqId, user_id AS userId, question, answer_json AS answerJson, status, created_at AS createdAt FROM tree_hole_messages WHERE user_id = #{userId} AND answer_json IS NOT NULL AND answer_json != '' AND question LIKE CONCAT('%', #{keyword}, '%') ORDER BY created_at DESC LIMIT 30")
     java.util.List<com.example.chat.entity.TreeHoleMessage> searchTreeHoleMessages(@Param("userId") Long userId, @Param("keyword") String keyword);
+
+    /** 知识图谱导入：查询所有有答案的公开消息（排除树洞） */
+    @Select("SELECT id, req_id AS reqId, user_id AS userId, question, summary, answer_json AS answerJson, status, provider, model, tokens, is_private AS isPrivate, created_at AS createdAt FROM messages WHERE answer_json IS NOT NULL AND answer_json != '' AND status = 'done' ORDER BY id ASC LIMIT #{limit} OFFSET #{offset}")
+    java.util.List<Message> findAllWithAnswers(@Param("offset") int offset, @Param("limit") int limit);
+
+    /** 知识图谱导入：统计有答案的消息总数 */
+    @Select("SELECT COUNT(*) FROM messages WHERE answer_json IS NOT NULL AND answer_json != '' AND status = 'done'")
+    int countAllWithAnswers();
 }

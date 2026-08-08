@@ -29,6 +29,10 @@ public class DebateProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.langgraph4j.DebateGraphService debateGraphService;
 
+    /** 知识图谱服务（可选注入，失败不阻塞主流程） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private KnowledgeGraphService knowledgeGraphService;
+
     /** 是否启用 LangGraph4j 辩论模式 */
     @org.springframework.beans.factory.annotation.Value("${app.langgraph4j.debate.enabled:false}")
     private boolean langGraph4jDebateEnabled;
@@ -260,6 +264,15 @@ public class DebateProcessor {
                 debateRecord.userName = userName;
                 debateRecord.status = "completed";
                 debateRecordRepository.updateAnswer(debateRecord);
+            }
+
+            // 触发知识图谱抽取（异步，失败不阻塞主流程）
+            if (knowledgeGraphService != null && m != null && m.id != null) {
+                try {
+                    knowledgeGraphService.extractAndSaveAsync(m.id, question, finalAnswer, "debate");
+                } catch (Exception ex) {
+                    log.warn("[KnowledgeGraph] 辩论知识抽取失败 msgId={}: {}", m.id, ex.getMessage());
+                }
             }
         } catch (Exception e) {
             broadcastService.broadcast("/topic/debate." + userId,

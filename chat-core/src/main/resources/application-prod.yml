@@ -13,6 +13,10 @@ spring:
         ip: 172.23.172.13
   datasource:
     url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 10000
     username: yangsy
     password: YangSy@0915!
   data:
@@ -24,6 +28,11 @@ spring:
     port: 5672
     username: chatapp
     password: chatapp2024
+  neo4j:
+    uri: bolt://127.0.0.1:7687
+    authentication:
+      username: neo4j
+      password: neo4j123456
 
 mybatis:
   mapper-locations: classpath:mybatis/mappers/*.xml
@@ -33,6 +42,10 @@ mybatis:
 app:
   module:
     core: true
+  knowledge-graph:
+    enabled: true
+  cross-node:
+    enabled: true
   llm:
     api-key: ${LLM_API_KEY:}
   rag:

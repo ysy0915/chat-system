@@ -31,6 +31,7 @@ public class InternalApiController {
     private final UserRepository userRepository;
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
+    private final KnowledgeGraphService knowledgeGraphService;
 
     public InternalApiController(
             ChatProcessor chatProcessor,
@@ -41,7 +42,8 @@ public class InternalApiController {
             DebateRecordRepository debateRecordRepository,
             UserRepository userRepository,
             ModelConfigRepository modelConfigRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            @Autowired(required = false) KnowledgeGraphService knowledgeGraphService) {
         this.chatProcessor = chatProcessor;
         this.treeHoleService = treeHoleService;
         this.debateProcessor = debateProcessor;
@@ -51,12 +53,15 @@ public class InternalApiController {
         this.userRepository = userRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.objectMapper = objectMapper;
+        this.knowledgeGraphService = knowledgeGraphService;
     }
 
     // ==================== 群聊 ====================
 
     @PostMapping("/chat/process")
     public ResponseEntity<?> process(@RequestBody Map<String, Object> payload) {
+        log.info("[Internal] chat/process received: req_id={}, user_id={}, private={}", 
+                payload.get("req_id"), payload.get("user_id"), payload.get("private"));
         chatProcessor.process(payload);
         return ResponseEntity.ok(Map.of("status", "accepted"));
     }
@@ -331,5 +336,55 @@ public class InternalApiController {
         }
         return ResponseEntity.ok(Map.of("enabled", true, "errors", errorAggregator.getErrorStats(),
                 "topErrors", errorAggregator.getTopErrors(10)));
+    }
+
+    // ==================== 知识图谱 ====================
+
+    @GetMapping("/graph")
+    public ResponseEntity<?> getGraph(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+        if (knowledgeGraphService == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "nodes", Collections.emptyList(), "edges", Collections.emptyList()));
+        }
+        return ResponseEntity.ok(knowledgeGraphService.getGraph(limit));
+    }
+
+    @GetMapping("/graph/search")
+    public ResponseEntity<?> searchGraph(@RequestParam("keyword") String keyword,
+                                          @RequestParam(value = "limit", defaultValue = "30") int limit) {
+        if (knowledgeGraphService == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "nodes", Collections.emptyList(), "edges", Collections.emptyList()));
+        }
+        return ResponseEntity.ok(knowledgeGraphService.searchEntities(keyword, limit));
+    }
+
+    @GetMapping("/graph/stats")
+    public ResponseEntity<?> getGraphStats() {
+        if (knowledgeGraphService == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "entityCount", 0, "relationCount", 0));
+        }
+        return ResponseEntity.ok(knowledgeGraphService.getStats());
+    }
+
+    @PostMapping("/graph/import")
+    public ResponseEntity<?> importToGraph() {
+        if (knowledgeGraphService == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "message", "知识图谱服务未启用"));
+        }
+        boolean started = knowledgeGraphService.startBatchImport();
+        return ResponseEntity.ok(Map.of(
+                "started", started,
+                "importing", knowledgeGraphService.isImporting()
+        ));
+    }
+
+    @GetMapping("/graph/import/status")
+    public ResponseEntity<?> getImportStatus() {
+        if (knowledgeGraphService == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "importing", false));
+        }
+        return ResponseEntity.ok(Map.of(
+                "importing", knowledgeGraphService.isImporting(),
+                "stats", knowledgeGraphService.getStats()
+        ));
     }
 }

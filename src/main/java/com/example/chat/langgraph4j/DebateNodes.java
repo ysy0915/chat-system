@@ -41,6 +41,17 @@ public class DebateNodes {
         this.defaultApiKey = defaultApiKey;
     }
 
+    private static String providerName(ModelConfig config) {
+        if (config == null || config.provider == null) return "未知";
+        return switch (config.provider.toLowerCase()) {
+            case "doubao" -> "豆包";
+            case "qwen" -> "千问";
+            case "deepseek" -> "DeepSeek";
+            case "zhipu" -> "智谱";
+            default -> config.provider;
+        };
+    }
+
     /**
      * 节点1：正方发言
      */
@@ -56,19 +67,45 @@ public class DebateNodes {
 
             log.info("[DebateGraph] 正方发言 round={}", round);
 
-            String answer = llmInvoker.invoke(proModel,
-                List.of(Map.of("role", "user", "content", prompt)),
-                0.7, "debate:pro", null, defaultApiKey);
-
-            // 更新正方论点列表
-            List<String> newPro = new ArrayList<>(state.getProArguments());
-            newPro.add(answer);
-
+            // 推送轮次开始 + 思考状态
             if (state.getUserId() != 0) {
                 broadcastService.broadcast("/topic/debate." + state.getUserId(),
-                    Map.of("type", "debate_pro", "req_id", state.getReqId(),
-                           "round", round, "content", answer));
+                    Map.of("type", "round_start", "req_id", state.getReqId(), "round", round));
             }
+
+            // 流式调用，实时推送 token
+            final StringBuilder answerBuilder = new StringBuilder();
+            final Long userId = state.getUserId();
+            final String reqId = state.getReqId();
+            try {
+                llmInvoker.invokeStream(proModel,
+                    List.of(Map.of("role", "user", "content", prompt)),
+                    0.7, "debate:pro", null, defaultApiKey,
+                    token -> {
+                        answerBuilder.append(token);
+                        if (userId != 0) {
+                            broadcastService.broadcast("/topic/debate." + userId,
+                                Map.of("type", "stream_token", "req_id", reqId,
+                                       "model_id", 1, "token", token));
+                        }
+                    });
+            } catch (Exception e) {
+                log.error("[DebateGraph] 正方调用失败 round={}: {}", round, e.getMessage());
+                answerBuilder.append("[").append(providerName(proModel)).append(" 调用失败]");
+            }
+
+            String answer = answerBuilder.toString();
+
+            // 推送完整回答（标记流式结束）
+            if (userId != 0) {
+                broadcastService.broadcast("/topic/debate." + userId,
+                    Map.of("type", "round_response", "req_id", reqId,
+                           "round", round, "model_id", 1,
+                           "provider", providerName(proModel), "answer", answer));
+            }
+
+            List<String> newPro = new ArrayList<>(state.getProArguments());
+            newPro.add(answer);
 
             Map<String, Object> update = new HashMap<>();
             update.put(DebateState.PRO_ARGUMENTS, newPro);
@@ -92,18 +129,40 @@ public class DebateNodes {
 
             log.info("[DebateGraph] 反方发言 round={}", round);
 
-            String answer = llmInvoker.invoke(conModel,
-                List.of(Map.of("role", "user", "content", prompt)),
-                0.7, "debate:con", null, defaultApiKey);
+            final Long userId = state.getUserId();
+            final String reqId = state.getReqId();
+
+            // 流式调用，实时推送 token
+            final StringBuilder answerBuilder = new StringBuilder();
+            try {
+                llmInvoker.invokeStream(conModel,
+                    List.of(Map.of("role", "user", "content", prompt)),
+                    0.7, "debate:con", null, defaultApiKey,
+                    token -> {
+                        answerBuilder.append(token);
+                        if (userId != 0) {
+                            broadcastService.broadcast("/topic/debate." + userId,
+                                Map.of("type", "stream_token", "req_id", reqId,
+                                       "model_id", 3, "token", token));
+                        }
+                    });
+            } catch (Exception e) {
+                log.error("[DebateGraph] 反方调用失败 round={}: {}", round, e.getMessage());
+                answerBuilder.append("[").append(providerName(conModel)).append(" 调用失败]");
+            }
+
+            String answer = answerBuilder.toString();
+
+            // 推送完整回答
+            if (userId != 0) {
+                broadcastService.broadcast("/topic/debate." + userId,
+                    Map.of("type", "round_response", "req_id", reqId,
+                           "round", round, "model_id", 3,
+                           "provider", providerName(conModel), "answer", answer));
+            }
 
             List<String> newCon = new ArrayList<>(state.getConArguments());
             newCon.add(answer);
-
-            if (state.getUserId() != 0) {
-                broadcastService.broadcast("/topic/debate." + state.getUserId(),
-                    Map.of("type", "debate_con", "req_id", state.getReqId(),
-                           "round", round, "content", answer));
-            }
 
             return Map.of(DebateState.CON_ARGUMENTS, newCon);
         };
@@ -143,14 +202,41 @@ public class DebateNodes {
 
             log.info("[DebateGraph] 汇总共识 proRounds={} conRounds={}", proArgs.size(), conArgs.size());
 
-            String summary = llmInvoker.invoke(summaryModel,
-                List.of(Map.of("role", "user", "content", prompt.toString())),
-                0.5, "debate:summary", null, defaultApiKey);
+            final Long userId = state.getUserId();
+            final String reqId = state.getReqId();
 
-            if (state.getUserId() != 0) {
-                broadcastService.broadcast("/topic/debate." + state.getUserId(),
-                    Map.of("type", "debate_summary", "req_id", state.getReqId(),
-                           "content", summary));
+            // 推送整合阶段开始
+            if (userId != 0) {
+                broadcastService.broadcast("/topic/debate." + userId,
+                    Map.of("type", "synthesizing", "req_id", reqId,
+                           "synthesizer", providerName(summaryModel)));
+            }
+
+            // 流式调用，实时推送整合 token
+            final StringBuilder summaryBuilder = new StringBuilder();
+            try {
+                llmInvoker.invokeStream(summaryModel,
+                    List.of(Map.of("role", "user", "content", prompt.toString())),
+                    0.5, "debate:summary", null, defaultApiKey,
+                    token -> {
+                        summaryBuilder.append(token);
+                        if (userId != 0) {
+                            broadcastService.broadcast("/topic/debate." + userId,
+                                Map.of("type", "stream_token", "req_id", reqId,
+                                       "model_id", 4, "token", token));
+                        }
+                    });
+            } catch (Exception e) {
+                log.error("[DebateGraph] 汇总调用失败: {}", e.getMessage());
+                summaryBuilder.append("[整合失败]");
+            }
+
+            String summary = summaryBuilder.toString();
+
+            // 推送完成
+            if (userId != 0) {
+                broadcastService.broadcast("/topic/debate." + userId,
+                    Map.of("type", "done", "req_id", reqId, "answer", summary));
             }
 
             return Map.of(DebateState.SUMMARY, summary);

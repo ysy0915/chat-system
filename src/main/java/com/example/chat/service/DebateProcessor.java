@@ -112,25 +112,41 @@ public class DebateProcessor {
                         )));
 
         // LangGraph4j 模式：图式工作流编排辩论
+        // 节点内部已实时推送 round_start/stream_token/round_response/synthesizing/done 事件
         if (langGraph4jDebateEnabled && debateGraphService != null) {
             debateExecutor.submit(() -> {
                 try {
                     com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question);
+
+                    String summary = result.getSummary() != null ? result.getSummary() : "";
+
                     // 保存辩论记录
                     if (debateRecordId != null) {
                         try {
                             com.example.chat.entity.DebateRecord record = new com.example.chat.entity.DebateRecord();
                             record.id = debateRecordId;
-                            record.finalAnswer = result.getSummary() != null ? result.getSummary() : "";
+                            record.finalAnswer = summary;
                             record.status = "done";
                             debateRecordRepository.updateAnswer(record);
                         } catch (Exception ex) {
                             log.warn("[LangGraph4j] 辩论记录保存失败: {}", ex.getMessage());
                         }
                     }
-                    broadcastService.broadcast("/topic/debate." + userId,
-                            Map.of("type", "done", "req_id", reqId,
-                                   "summary", result.getSummary() != null ? result.getSummary() : ""));
+
+                    // 更新消息记录
+                    try {
+                        String answerJson = objectMapper.writeValueAsString(Map.of("answer", summary));
+                        Message m = messageRepository.findByReqId(reqId);
+                        if (m != null) {
+                            m.answerJson = answerJson;
+                            m.status = "done";
+                            m.provider = summaryModel.provider;
+                            m.model = summaryModel.model;
+                            messageRepository.updateByReqId(m);
+                        }
+                    } catch (Exception ex) {
+                        log.warn("[LangGraph4j] 消息记录更新失败: {}", ex.getMessage());
+                    }
                 } catch (Exception e) {
                     log.error("[LangGraph4j] 辩论图执行失败: {}", e.getMessage(), e);
                     broadcastService.broadcast("/topic/debate." + userId,

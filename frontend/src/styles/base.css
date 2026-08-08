@@ -107,3 +107,70 @@ input, textarea {
     user-select: none;
 }
 
+/* ─── 拖拽上传高亮 ─── */
+.chat-input-wrapper.drag-over {
+    border: 2px dashed var(--accent, #3b82f6) !important;
+    background: var(--accent-dim, rgba(59, 130, 246, 0.08)) !important;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12), 0 4px 20px rgba(59, 130, 246, 0.18) !important;
+    transform: scale(1.01);
+    transition: all 0.2s ease;
+}
+
+/* ─── 语音朗读按钮 ─── */
+.speak-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 8px;
+    margin-top: 6px;
+    padding: 1px 8px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.speak-btn:hover {
+    color: var(--accent, #3b82f6);
+    background: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+.speak-btn:active {
+    transform: scale(0.92);
+}
+
+/* ─── 麦克风按钮（语音输入） ─── */
+.mic-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.15);
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.mic-btn:hover {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent, #3b82f6);
+}
+.mic-btn.mic-listening {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger, #ef4444);
+    animation: micPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+    70%  { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+

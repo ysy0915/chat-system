@@ -321,6 +321,8 @@
 .history-a::-webkit-scrollbar-thumb { background:rgba(56,189,248,0.2); border-radius:3px; }
 .history-item:hover { box-shadow: 0 8px 30px rgba(56,189,248,0.04); border-color:var(--border-glow); }
 .history-meta { font-size:12px; color:var(--text-secondary); background:transparent; padding-left:6px; }
+.history-summary { font-weight:700; color:var(--text-primary); font-size:15px; line-height:1.4; margin-bottom:4px; }
+.history-subtitle { font-weight:400; font-size:13px; color:var(--text-secondary); opacity:0.75; line-height:1.4; }
 
 
 /* Section Common */

@@ -72,7 +72,7 @@ public class VectorStoreService {
      * 确保某个知识库的 Collection 存在，不存在则创建
      */
     public void ensureCollection(Long knowledgeBaseId) {
-        String collectionName = collectionPrefix + knowledgeBaseId;
+        String collectionName = getCollectionName(knowledgeBaseId);
         int dim = embeddingService.getDimension();
 
         FieldType idField = FieldType.newBuilder()
@@ -163,7 +163,7 @@ public class VectorStoreService {
     public void insertChunks(Long knowledgeBaseId, Long docId, List<ChunkText> chunks, String source) {
         if (chunks == null || chunks.isEmpty()) return;
 
-        String collectionName = collectionPrefix + knowledgeBaseId;
+        String collectionName = getCollectionName(knowledgeBaseId);
         ensureCollection(knowledgeBaseId);
 
         // 批量生成向量
@@ -208,7 +208,7 @@ public class VectorStoreService {
      * @return 匹配的分片列表，按相似度降序
      */
     public List<SearchResult> search(Long knowledgeBaseId, String query, int topK) {
-        String collectionName = collectionPrefix + knowledgeBaseId;
+        String collectionName = getCollectionName(knowledgeBaseId);
         float[] queryVec = embeddingService.embed(query);
 
         List<Float> vec = new ArrayList<>();
@@ -249,7 +249,7 @@ public class VectorStoreService {
      * 删除某个知识库的 Collection（删知识库时调用）
      */
     public void dropCollection(Long knowledgeBaseId) {
-        String collectionName = collectionPrefix + knowledgeBaseId;
+        String collectionName = getCollectionName(knowledgeBaseId);
         try {
             milvusClient.dropCollection(DropCollectionParam.newBuilder()
                     .withCollectionName(collectionName)
@@ -258,6 +258,14 @@ public class VectorStoreService {
         } catch (Exception e) {
             log.warn("[VectorStore] 删除 Collection 失败: {}", e.getMessage());
         }
+    }
+
+    /** 解析 collection 名（负数 kbId 用固定名字，避免非法字符） */
+    private String getCollectionName(Long knowledgeBaseId) {
+        if (knowledgeBaseId == null || knowledgeBaseId < 0) {
+            return "conversation_memory";
+        }
+        return collectionPrefix + knowledgeBaseId;
     }
 
     /** 文档分片（入库前） */

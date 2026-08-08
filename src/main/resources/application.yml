@@ -1,6 +1,8 @@
 spring:
   application:
     name: big-data-engine
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
   datasource:
     url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
@@ -110,3 +112,37 @@ app:
       max-chars: 3000
     upload:
       max-size: 10485760
+  # 动态模型路由
+  router:
+    enabled: true  # 开启动态路由
+  # 任务分类器
+  classifier:
+    enabled: true  # 开启任务分类
+  # LangChain4j（高级 AI 编排框架，默认关闭）
+  langchain4j:
+    enabled: false
+    treehole:
+      enabled: false
+    personal:
+      enabled: false
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api-key: ${DASHSCOPE_API_KEY:}
+    model: qwen-plus
+    temperature: 0.85
+    timeout: 60
+  # LangGraph4j（图式工作流编排，默认关闭）
+  langgraph4j:
+    enabled: false
+    debate:
+      enabled: false
+      rounds: 3
+  # 可观测性模块（链路追踪、错误聚合、AI 自愈）
+  observability:
+    enabled: true
+    trace-retention: 1000  # 保留最近1000条链路
+    auto-heal: true        # 启用自动自愈
+  # AI Agent 工具调度层（默认关闭，设置 true 开启）
+  agent:
+    enabled: true
+    max-tool-calls: 3        # 单次对话最多调用工具次数
+    default-kb-id: 1          # 知识库搜索工具默认检索的知识库 ID

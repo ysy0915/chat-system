@@ -2,6 +2,8 @@ package com.example.chat.controller;
 
 import com.example.chat.config.WebSocketSessionTracker;
 import com.example.chat.entity.OnlineCountRecord;
+import com.example.chat.observability.ErrorAggregator;
+import com.example.chat.observability.TraceRecorder;
 import com.example.chat.repository.OnlineCountRepository;
 import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.service.OnlineCountRedisService;
@@ -28,6 +30,12 @@ public class MonitorController {
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+
+    @Autowired(required = false)
+    private TraceRecorder traceRecorder;
+
+    @Autowired(required = false)
+    private ErrorAggregator errorAggregator;
 
     public MonitorController(OnlineCountRepository onlineCountRepository,
                              WebSocketSessionTracker sessionTracker,
@@ -56,10 +64,11 @@ public class MonitorController {
                 ? LocalDateTime.now().minusMinutes(minutes)
                 : LocalDateTime.now().minusDays(safeDays);
 
-        Map<String, Integer> currentCounts = sessionTracker.getAllCounts();
+        Map<String, Integer> currentCounts = sessionTracker.getAllRealCounts();
         Map<String, Integer> dailyVisits = onlineCountRedisService.getDailyVisitCounts(since);
         Map<String, Map<String, Integer>> pageDailyVisits = onlineCountRedisService.getPageDailyVisitCounts(since);
         int hourlyTotal = onlineCountRedisService.getHourlyPeakTotal();
+        int hourlyActive = onlineCountRedisService.getHourlyActiveCount();
 
         // 不再返回 history（逐分钟数据点），数据量太大导致加载缓慢
         // 前端用 pageDailyVisits 就够了
@@ -67,19 +76,20 @@ public class MonitorController {
                 "current", currentCounts,
                 "dailyVisits", dailyVisits,
                 "pageDailyVisits", pageDailyVisits,
-                "hourlyTotal", hourlyTotal
+                "hourlyTotal", hourlyTotal,
+                "hourlyActive", hourlyActive
         ));
     }
 
     @GetMapping("/current")
     public ResponseEntity<?> getCurrentCounts() {
-        return ResponseEntity.ok(sessionTracker.getAllCounts());
+        return ResponseEntity.ok(sessionTracker.getAllRealCounts());
     }
 
     @PostMapping("/record")
     public ResponseEntity<?> recordCurrentCounts() {
         LocalDateTime now = LocalDateTime.now();
-        Map<String, Integer> allCounts = sessionTracker.getAllCounts();
+        Map<String, Integer> allCounts = sessionTracker.getAllRealCounts();
         onlineCountRedisService.recordSnapshot(allCounts, now);
         for (Map.Entry<String, Integer> entry : allCounts.entrySet()) {
             OnlineCountRecord record = new OnlineCountRecord();
@@ -134,5 +144,40 @@ public class MonitorController {
     public ResponseEntity<?> getTotalUsage() {
         long total = onlineCountRepository.sumAllCounts();
         return ResponseEntity.ok(Map.of("totalUsage", total));
+    }
+
+    /**
+     * 获取最近调用链路
+     */
+    @GetMapping("/traces")
+    public ResponseEntity<?> getRecentTraces(@RequestParam(value = "n", required = false) Integer n) {
+        int count = n == null ? 20 : Math.max(1, Math.min(n, 1000));
+        if (traceRecorder == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "traces", Collections.emptyList()));
+        }
+        return ResponseEntity.ok(Map.of("enabled", true, "traces", traceRecorder.getRecentTraces(count)));
+    }
+
+    /**
+     * 获取错误聚合统计
+     */
+    @GetMapping("/errors")
+    public ResponseEntity<?> getErrorStats() {
+        if (errorAggregator == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "errors", Collections.emptyList()));
+        }
+        return ResponseEntity.ok(Map.of("enabled", true, "errors", errorAggregator.getErrorStats(),
+                "topErrors", errorAggregator.getTopErrors(10)));
+    }
+
+    /**
+     * 搜索调用链路（按场景/状态）
+     */
+    @GetMapping("/traces/search")
+    public ResponseEntity<?> searchTraces(@RequestParam(value = "keyword", required = false) String keyword) {
+        if (traceRecorder == null) {
+            return ResponseEntity.ok(Map.of("enabled", false, "traces", Collections.emptyList()));
+        }
+        return ResponseEntity.ok(Map.of("enabled", true, "traces", traceRecorder.searchTraces(keyword)));
     }
 }

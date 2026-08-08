@@ -8,5 +8,8 @@ public class TreeHoleMessage {
     public String answerJson;
     public String status;
     public String mood;
+    public String provider;
+    public String model;
+    public Integer tokens;
     public java.time.Instant createdAt = java.time.Instant.now();
 }

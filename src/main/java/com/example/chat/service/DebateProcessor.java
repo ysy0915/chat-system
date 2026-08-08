@@ -25,6 +25,14 @@ public class DebateProcessor {
     private final BroadcastService broadcastService;
     private final LLMInvoker llmInvoker;
 
+    /** LangGraph4j 辩论图服务（可选注入） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.langgraph4j.DebateGraphService debateGraphService;
+
+    /** 是否启用 LangGraph4j 辩论模式 */
+    @org.springframework.beans.factory.annotation.Value("${app.langgraph4j.debate.enabled:false}")
+    private boolean langGraph4jDebateEnabled;
+
     @org.springframework.beans.factory.annotation.Value("${app.llm.api-key:}")
     private String defaultApiKey;
 
@@ -102,6 +110,35 @@ public class DebateProcessor {
                                 Map.of("id", 3, "name", providerDisplayName(modelMap.get(3L).provider)),
                                 Map.of("id", 4, "name", providerDisplayName(summaryModel.provider))
                         )));
+
+        // LangGraph4j 模式：图式工作流编排辩论
+        if (langGraph4jDebateEnabled && debateGraphService != null) {
+            debateExecutor.submit(() -> {
+                try {
+                    com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question);
+                    // 保存辩论记录
+                    if (debateRecordId != null) {
+                        try {
+                            com.example.chat.entity.DebateRecord record = new com.example.chat.entity.DebateRecord();
+                            record.id = debateRecordId;
+                            record.finalAnswer = result.getSummary() != null ? result.getSummary() : "";
+                            record.status = "done";
+                            debateRecordRepository.updateAnswer(record);
+                        } catch (Exception ex) {
+                            log.warn("[LangGraph4j] 辩论记录保存失败: {}", ex.getMessage());
+                        }
+                    }
+                    broadcastService.broadcast("/topic/debate." + userId,
+                            Map.of("type", "done", "req_id", reqId,
+                                   "summary", result.getSummary() != null ? result.getSummary() : ""));
+                } catch (Exception e) {
+                    log.error("[LangGraph4j] 辩论图执行失败: {}", e.getMessage(), e);
+                    broadcastService.broadcast("/topic/debate." + userId,
+                            Map.of("type", "error", "req_id", reqId, "message", "辩论图执行失败: " + e.getMessage()));
+                }
+            });
+            return;
+        }
 
         debateExecutor.submit(() -> {
             try {

@@ -270,6 +270,31 @@ public class MessageController {
         return ResponseEntity.ok(list);
     }
 
+    /** 个人对话：最近 5 条历史（页面初始化） */
+    @GetMapping("/recent")
+    public ResponseEntity<?> listRecentPrivate(@RequestParam("user_id") Long userId) {
+        return ResponseEntity.ok(messageRepository.findRecentPrivateByUserId(userId, 5));
+    }
+
+    /** 个人对话：搜索历史（分页） */
+    @GetMapping("/search")
+    public ResponseEntity<?> searchPrivateMessages(@RequestParam("user_id") Long userId,
+                                                    @RequestParam("keyword") String keyword,
+                                                    @RequestParam(value = "page", defaultValue = "1") int page,
+                                                    @RequestParam(value = "size", defaultValue = "5") int size) {
+        int offset = (page - 1) * size;
+        List<Message> items = messageRepository.searchPrivateMessages(userId, keyword, offset, size);
+        int total = messageRepository.countSearchPrivateMessages(userId, keyword);
+        return ResponseEntity.ok(Map.of("items", items, "total", total, "page", page, "size", size, "totalPages", (total + size - 1) / size));
+    }
+
+    /** 个人对话：获取某条记录前后 5 条上下文 */
+    @GetMapping("/context")
+    public ResponseEntity<?> getContextMessages(@RequestParam("user_id") Long userId,
+                                                 @RequestParam("msg_id") Long msgId) {
+        return ResponseEntity.ok(messageRepository.findContextAround(userId, msgId));
+    }
+
     @GetMapping("/all")
     public ResponseEntity<?> listAllMessages() {
         List<Message> list = messageRepository.findAllMessages();
@@ -282,7 +307,7 @@ public class MessageController {
         return ResponseEntity.ok(list);
     }
 
-    @GetMapping("/search")
+    @GetMapping("/search-all")
     public ResponseEntity<?> searchQuestions(@RequestParam("q") String keyword) {
         if (keyword == null || keyword.isBlank()) {
             return ResponseEntity.ok(java.util.Collections.emptyList());
@@ -304,6 +329,42 @@ public class MessageController {
     public ResponseEntity<?> getOnlineCount(@RequestParam(value = "page", defaultValue = "global") String page) {
         // 返回虚拟在线数（0-300 随机分配，保证各页面之和 = 总数）
         return ResponseEntity.ok(Map.of("count", sessionTracker.getCount(page)));
+    }
+
+    /** 重新生成：根据原 reqId 重新调用 AI 生成回答 */
+    @PostMapping("/regenerate")
+    public ResponseEntity<?> regenerate(@RequestBody Map<String, Object> body) {
+        String reqId = body.get("req_id") == null ? null : String.valueOf(body.get("req_id"));
+        Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
+
+        if (reqId == null || reqId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "req_id 不能为空"));
+        }
+        if (userId == null || userId <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "user_id 不能为空"));
+        }
+
+        try {
+            chatProcessor.regenerate(reqId, userId);
+            return ResponseEntity.accepted().body(Map.of("status", "regenerating", "old_req_id", reqId));
+        } catch (Exception ex) {
+            log.error("[ERROR] regenerate 失败 reqId={}: {}", reqId, ex.getMessage(), ex);
+            return ResponseEntity.status(500).body(Map.of("error", "重新生成失败: " + ex.getMessage()));
+        }
+    }
+
+    /** 停止生成：通知后端中断指定 reqId 的流式输出 */
+    @PostMapping("/stop")
+    public ResponseEntity<?> stop(@RequestBody Map<String, Object> body) {
+        String reqId = body.get("req_id") == null ? null : String.valueOf(body.get("req_id"));
+
+        if (reqId == null || reqId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "req_id 不能为空"));
+        }
+
+        chatProcessor.requestStop(reqId);
+        log.info("[INFO] 收到停止请求 reqId={}", reqId);
+        return ResponseEntity.ok(Map.of("status", "stopped", "req_id", reqId));
     }
 
     @MessageMapping("/online.register")

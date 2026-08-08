@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -48,6 +49,26 @@ public class ChatProcessor {
     private final LLMCallRecorder llmCallRecorder;
     private final LLMInvoker llmInvoker;
 
+    /** 对话记忆服务（可选注入） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.rag.service.ConversationMemoryService memoryService;
+
+    /** LangChain4j 个人对话服务（可选注入） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.langchain4j.LangChain4jPersonalChatService langChain4jPersonalChatService;
+
+    /** 是否启用 LangChain4j 个人对话模式 */
+    @org.springframework.beans.factory.annotation.Value("${app.langchain4j.personal.enabled:false}")
+    private boolean langChain4jPersonalEnabled;
+
+    /** 对话摘要服务（可选注入，失败不阻塞主流程） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SummaryService summaryService;
+
+    /** 工具调度器（可选注入，仅在 app.agent.enabled=true 时存在） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.agent.tool.ToolDispatcher toolDispatcher;
+
     @org.springframework.beans.factory.annotation.Value("${app.llm.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
     private String defaultBaseUrl;
 
@@ -61,6 +82,20 @@ public class ChatProcessor {
     private String defaultProvider;
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
+
+    /** 流式生成停止标记：reqId -> 是否请求停止 */
+    private final ConcurrentHashMap<String, AtomicBoolean> stopFlags = new ConcurrentHashMap<>();
+
+    /** 请求停止某个流式生成 */
+    public void requestStop(String reqId) {
+        stopFlags.put(reqId, new AtomicBoolean(true));
+    }
+
+    /** 判断某个 reqId 是否已请求停止 */
+    public boolean isStopped(String reqId) {
+        AtomicBoolean flag = stopFlags.get(reqId);
+        return flag != null && flag.get();
+    }
 
     public ChatProcessor(MessageRepository messageRepository,
                          ModelConfigRepository modelConfigRepository,
@@ -158,6 +193,31 @@ public class ChatProcessor {
                 return;
             }
 
+            // LangChain4j 模式（个人对话空间）：AiServices 自动编排记忆+工具
+            if (isPrivate && langChain4jPersonalEnabled && langChain4jPersonalChatService != null) {
+                try {
+                    String answer = langChain4jPersonalChatService.chat(userId, question);
+                    // 保存消息
+                    Message m = new Message();
+                    m.reqId = reqId;
+                    m.userId = userId;
+                    m.question = question;
+                    m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
+                    m.status = "done";
+                    m.provider = "langchain4j";
+                    m.model = "qwen-plus";
+                    m.tokens = Math.max(1, answer.length() / 2);
+                    m.isPrivate = 1;
+                    messageRepository.insert(m);
+
+                    // 推送给前端
+                    completeWithAnswer(reqId, userId, question, answer, "langchain4j", "qwen-plus", System.currentTimeMillis());
+                    return;
+                } catch (Exception e) {
+                    log.warn("[LangChain4j] 个人对话调用失败，降级到原有模式: {}", e.getMessage());
+                }
+            }
+
             List<ModelConfig> configs;
             Long boundModelId = getPersonalModelId(userId);
             if (isPrivate && boundModelId == null) {
@@ -199,7 +259,8 @@ public class ChatProcessor {
             if (isPrivate) {
                 historyMessages = buildHistoryMessages(userId, question);
             } else {
-                historyMessages = null;
+                // 群聊也构建带记忆的上下文
+                historyMessages = buildGroupChatMessages(userId, question);
             }
 
             // 个人对话空间：走流式输出
@@ -216,18 +277,73 @@ public class ChatProcessor {
                         broadcastService.broadcast("/topic/user." + fUserId,
                                 Map.of("type", "stream_start", "req_id", fReqId, "model", fConfig.model));
 
+                        // 先尝试工具调度：如果命中工具，用工具增强后的回答（非流式一次性推送）
+                        if (toolDispatcher != null) {
+                            try {
+                                String toolAnswer = toolDispatcher.dispatch(fQuestion, fConfig, fHistory,
+                                        0.7, "personal", defaultBaseUrl, defaultApiKey);
+                                if (toolAnswer != null && !toolAnswer.isBlank()) {
+                                    broadcastService.broadcast("/topic/user." + fUserId,
+                                            Map.of("type", "stream_token", "req_id", fReqId, "token", toolAnswer));
+                                    if (isStopped(fReqId)) {
+                                        broadcastService.broadcast("/topic/user." + fUserId,
+                                                Map.of("type", "stopped", "req_id", fReqId, "answer", toolAnswer));
+                                        Message stoppedMsg = messageRepository.findByReqId(fReqId);
+                                        if (stoppedMsg != null) {
+                                            try {
+                                                stoppedMsg.answerJson = objectMapper.writeValueAsString(Map.of("answer", toolAnswer));
+                                            } catch (Exception e) {
+                                                stoppedMsg.answerJson = "{\"answer\":\"\"}";
+                                            }
+                                            stoppedMsg.status = "stopped";
+                                            messageRepository.updateByReqId(stoppedMsg);
+                                        }
+                                    } else {
+                                        completeWithAnswer(fReqId, fUserId, fQuestion, toolAnswer, fConfig.provider, fConfig.model, fStartTime);
+                                    }
+                                    return;
+                                }
+                            } catch (Exception toolEx) {
+                                log.warn("[ToolDispatcher] 工具调度失败，回退到普通流式: {}", toolEx.getMessage());
+                            }
+                        }
+
                         String fullAnswer = llmInvoker.invokeStream(fConfig, fHistory, 0.7, "personal",
                                 defaultBaseUrl, defaultApiKey,
                                 token -> {
+                                    // 检查停止标记：已停止则不再推送 token
+                                    if (stopFlags.getOrDefault(fReqId, new AtomicBoolean(false)).get()) {
+                                        return;
+                                    }
                                     broadcastService.broadcast("/topic/user." + fUserId,
                                             Map.of("type", "stream_token", "req_id", fReqId, "token", token));
                                 });
 
-                        completeWithAnswer(fReqId, fUserId, fQuestion, fullAnswer, fConfig.provider, fConfig.model, fStartTime);
+                        if (isStopped(fReqId)) {
+                            // 已停止：推送 stopped 消息，不更新 answer（保留前端已渲染的内容）
+                            broadcastService.broadcast("/topic/user." + fUserId,
+                                    Map.of("type", "stopped", "req_id", fReqId, "answer", fullAnswer));
+                            // 更新消息状态为 stopped
+                            Message stoppedMsg = messageRepository.findByReqId(fReqId);
+                            if (stoppedMsg != null) {
+                                try {
+                                    stoppedMsg.answerJson = objectMapper.writeValueAsString(Map.of("answer", fullAnswer));
+                                } catch (Exception e) {
+                                    stoppedMsg.answerJson = "{\"answer\":\"\"}";
+                                }
+                                stoppedMsg.status = "stopped";
+                                messageRepository.updateByReqId(stoppedMsg);
+                            }
+                        } else {
+                            completeWithAnswer(fReqId, fUserId, fQuestion, fullAnswer, fConfig.provider, fConfig.model, fStartTime);
+                        }
                     } catch (Exception ex) {
                         log.error("[ERROR] 流式调用失败: {}", ex.getMessage(), ex);
                         broadcastService.broadcast("/topic/user." + fUserId,
                                 Map.of("type", "error", "req_id", fReqId, "message", "生成失败: " + ex.getMessage()));
+                    } finally {
+                        // 清理停止标记
+                        stopFlags.remove(fReqId);
                     }
                 }, modelExecutor);
                 return;
@@ -275,6 +391,14 @@ public class ChatProcessor {
                                     savePersonalModelId(userId, result.config.id);
                                 }
                                 completeWithAnswer(reqId, userId, question, result.answer, result.config.provider, result.config.model, startTime);
+                                // 群聊额外保存记忆（completeWithAnswer 内默认存 personal）
+                                if (!isPrivate && memoryService != null) {
+                                    try {
+                                        memoryService.saveConversation("chat", userId, question, result.answer);
+                                    } catch (Exception memEx) {
+                                        log.warn("[Memory] 群聊记忆保存失败 user={} error={}", userId, memEx.getMessage());
+                                    }
+                                }
                             } catch (Exception e) {
                                 log.error("[ERROR] completeWithAnswer 失败: {}", e.getMessage(), e);
                             }
@@ -297,6 +421,48 @@ public class ChatProcessor {
             broadcastService.broadcast("/topic/user." + userId,
                     Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
         }
+    }
+
+    /**
+     * 重新生成：根据原始 reqId 找到原始 question，重新走流式处理流程
+     * 生成新的 reqId，复用 process() 的流式推送逻辑
+     */
+    public void regenerate(String oldReqId, Long userId) {
+        Message original = messageRepository.findByReqId(oldReqId);
+        if (original == null) {
+            broadcastService.broadcast("/topic/user." + userId,
+                    Map.of("type", "error", "req_id", oldReqId, "message", "原始消息不存在，无法重新生成"));
+            return;
+        }
+        if (original.question == null || original.question.isBlank()) {
+            broadcastService.broadcast("/topic/user." + userId,
+                    Map.of("type", "error", "req_id", oldReqId, "message", "原始问题为空，无法重新生成"));
+            return;
+        }
+
+        String newReqId = "regen-" + java.util.UUID.randomUUID().toString();
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("req_id", newReqId);
+        payload.put("user_id", userId);
+        payload.put("question", original.question);
+        payload.put("private", "true");
+        payload.put("ai_answer", "true");
+
+        // 先插入新的消息记录
+        Message m = new Message();
+        m.reqId = newReqId;
+        m.userId = userId;
+        m.question = original.question;
+        m.status = "queued";
+        m.isPrivate = 1;
+        try {
+            messageRepository.insert(m);
+        } catch (Exception ex) {
+            log.warn("[WARN] regenerate 插入消息记录失败: {}", ex.getMessage());
+        }
+
+        log.info("[INFO] regenerate oldReqId={} newReqId={} userId={}", oldReqId, newReqId, userId);
+        process(payload);
     }
 
     public void processWithFile(String reqId, Long userId, String question, String fileName, byte[] fileContent, String mimeType) {
@@ -423,13 +589,23 @@ public class ChatProcessor {
 
     private List<Map<String, Object>> buildHistoryMessages(Long userId, String currentQuestion) {
         List<Message> recent = getRecentMessages(userId);
-        if (recent == null || recent.isEmpty()) {
-            return null;
-        }
         List<Map<String, Object>> messages = new ArrayList<>();
-        for (Message m : recent) {
-            messages.add(Map.of("role", "user", "content", m.question));
-            messages.add(Map.of("role", "assistant", "content", m.answerJson));
+
+        // 系统 prompt（含记忆上下文）
+        StringBuilder systemPrompt = new StringBuilder("你是用户的AI助手，请友好地回答问题。");
+        if (memoryService != null) {
+            String memory = memoryService.buildMemoryContext("personal", userId, currentQuestion);
+            if (memory != null && !memory.isBlank()) {
+                systemPrompt.append("\n\n").append(memory);
+            }
+        }
+        messages.add(Map.of("role", "system", "content", systemPrompt.toString()));
+
+        if (recent != null) {
+            for (Message m : recent) {
+                messages.add(Map.of("role", "user", "content", m.question));
+                messages.add(Map.of("role", "assistant", "content", extractAnswerText(m.answerJson)));
+            }
         }
         messages.add(Map.of("role", "user", "content", currentQuestion));
         return messages;
@@ -447,6 +623,25 @@ public class ChatProcessor {
         return null;
     }
 
+    /**
+     * 构建群聊消息（带记忆上下文，但不带历史对话——群聊历史由前端展示）
+     */
+    private List<Map<String, Object>> buildGroupChatMessages(Long userId, String currentQuestion) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+
+        // 系统 prompt（含记忆上下文）
+        StringBuilder systemPrompt = new StringBuilder("你是AI伙伴群聊中的AI角色，请友好、有趣地回答问题。");
+        if (memoryService != null) {
+            String memory = memoryService.buildMemoryContext("chat", userId, currentQuestion);
+            if (memory != null && !memory.isBlank()) {
+                systemPrompt.append("\n\n").append(memory);
+            }
+        }
+        messages.add(Map.of("role", "system", "content", systemPrompt.toString()));
+        messages.add(Map.of("role", "user", "content", currentQuestion));
+        return messages;
+    }
+
     private List<Map<String, Object>> buildFileHistoryMessages(Long userId, String question, String fileName,
                                                                 String fileTextContent, boolean isImage,
                                                                 String fileBase64, String mimeType) {
@@ -456,7 +651,7 @@ public class ChatProcessor {
         if (recent != null) {
             for (Message m : recent) {
                 messages.add(Map.of("role", "user", "content", m.question));
-                messages.add(Map.of("role", "assistant", "content", m.answerJson));
+                messages.add(Map.of("role", "assistant", "content", extractAnswerText(m.answerJson)));
             }
         }
 
@@ -520,11 +715,15 @@ public class ChatProcessor {
 
     private void completeWithAnswer(String reqId, Long userId, String question, String answer, String provider, String model, long startTime) {
         long latency = System.currentTimeMillis() - startTime;
-        llmCallRecorder.record(provider, model, "chat", true, latency, answer != null ? answer.length() : 0);
-        log.info("[STATS] provider={} model={} latency={}ms answerLen={}", provider, model, latency, answer != null ? answer.length() : 0);
+        int answerLen = answer != null ? answer.length() : 0;
+        // token 估算：中文约 1.5 字/token，英文约 4 字符/token，取折中 2 字符/token
+        int estimatedTokens = Math.max(1, answerLen / 2);
+        llmCallRecorder.record(provider, model, "chat", true, latency, answerLen);
+        log.info("[STATS] provider={} model={} latency={}ms answerLen={} tokens~{}", provider, model, latency, answerLen, estimatedTokens);
 
         broadcastService.broadcast("/topic/user." + userId,
-                Map.of("type", "done", "req_id", reqId, "answer", answer));
+                Map.of("type", "done", "req_id", reqId, "answer", answer,
+                        "latency", latency, "tokens", estimatedTokens, "model", model));
 
         broadcastService.broadcast("/topic/public-questions",
                 Map.of("type", "answer", "req_id", reqId, "user_id", userId, "answer", answer));
@@ -534,6 +733,15 @@ public class ChatProcessor {
             redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
         } catch (Exception ex) {
             log.warn("[WARN] Redis write failed: {}", ex.getMessage());
+        }
+
+        // 保存对话记忆
+        if (memoryService != null) {
+            try {
+                memoryService.saveConversation("personal", userId, question, answer);
+            } catch (Exception ex) {
+                log.warn("[Memory] 个人对话记忆保存失败 user={} error={}", userId, ex.getMessage());
+            }
         }
 
         Message m = messageRepository.findByReqId(reqId);
@@ -546,7 +754,17 @@ public class ChatProcessor {
             m.status = "done";
             m.provider = provider;
             m.model = model;
+            m.tokens = estimatedTokens;
             messageRepository.updateByReqId(m);
+
+            // 触发对话摘要生成（异步，失败不阻塞主流程）
+            if (summaryService != null && m.id != null) {
+                try {
+                    summaryService.summarizeAsync(m.id, question, answer);
+                } catch (Exception ex) {
+                    log.warn("[Summary] 触发摘要生成失败 messageId={}: {}", m.id, ex.getMessage());
+                }
+            }
         }
     }
 
@@ -683,6 +901,19 @@ public class ChatProcessor {
         private LLMResult(ModelConfig config, String answer) {
             this.config = config;
             this.answer = answer;
+        }
+    }
+
+    /** 从 answerJson 中提取纯文本回答（避免把 JSON 格式传给 LLM 导致模仿） */
+    private String extractAnswerText(String answerJson) {
+        if (answerJson == null || answerJson.isBlank()) return "";
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(answerJson, Map.class);
+            Object answer = m.get("answer");
+            return answer != null ? answer.toString() : answerJson;
+        } catch (Exception e) {
+            return answerJson;
         }
     }
 }

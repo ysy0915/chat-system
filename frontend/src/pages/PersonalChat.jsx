@@ -8,6 +8,7 @@ import { generateId } from '../utils/id'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useAutoScroll } from '../hooks/useAutoScroll'
 import { useVoiceInput } from '../hooks/useVoiceInput'
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
 
 export default function PersonalChat() {
   const [question, setQuestion] = useState('')
@@ -26,8 +27,7 @@ export default function PersonalChat() {
       const authStr = localStorage.getItem('auth_user')
       if (authStr) {
         const auth = JSON.parse(authStr)
-        if (auth?.id) return auth.id
-      }
+        if (auth?.id) return auth.id      }
     } catch {}
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -35,16 +35,78 @@ export default function PersonalChat() {
     localStorage.setItem('chat_user_id', String(id))
     return id
   })
-  const [speechSupported, setSpeechSupported] = useState(() => !!(window.SpeechRecognition || window.webkitSpeechRecognition))
+  const [isDragging, setIsDragging] = useState(false)
+  const authUser = useAuthUser()
+  const scrollRef = useAutoScroll([messages, typing])
+  const { recording: isRecording, toggle: toggleVoice, isSupported: voiceSupported } = useVoiceInput(setQuestion)
+  const { speakingId, speak: speakMessage, stop: stopSpeak } = useSpeechSynthesis()
+  const [speechSupported, setSpeechSupported] = useState(() => voiceSupported ?? !!(window.SpeechRecognition || window.webkitSpeechRecognition))
   const userIdResolved = useRef(false)
   const clientRef = useRef(null)
   const connectedRef = useRef(false)
   const [currentModel, setCurrentModel] = useState('AI')
   const [showModelMenu, setShowModelMenu] = useState(false)
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [showSearch, setShowSearch] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [selectedResult, setSelectedResult] = useState(null)
+  const [searchPage, setSearchPage] = useState(1)
+  const [searchTotal, setSearchTotal] = useState(0)
+  const [searchTotalPages, setSearchTotalPages] = useState(0)
 
-  const authUser = useAuthUser()
-  const scrollRef = useAutoScroll([messages, typing])
-  const { recording: isRecording, toggle: toggleVoice } = useVoiceInput(setQuestion)
+  const handleSearch = (page = 1) => {
+    if (!searchKeyword.trim()) return
+    setSearching(true)
+    setSelectedResult(null)
+    setSearchPage(page)
+    const token = localStorage.getItem('auth_token')
+    axios.get('/api/v1/messages/search', {
+      params: { user_id: userId, keyword: searchKeyword, page, size: 5 },
+      headers: { Authorization: token ? `Bearer ${token}` : '' }
+    })
+      .then(res => {
+        setSearchResults(res.data?.items || [])
+        setSearchTotal(res.data?.total || 0)
+        setSearchTotalPages(res.data?.totalPages || 0)
+        setShowSearch(true)
+      })
+      .catch(() => {})
+      .finally(() => setSearching(false))
+  }
+
+  const loadSearchResult = (item) => {
+    const token = localStorage.getItem('auth_token')
+    axios.get('/api/v1/messages/context', {
+      params: { user_id: userId, msg_id: item.id },
+      headers: { Authorization: token ? `Bearer ${token}` : '' }
+    })
+      .then(res => {
+        const context = (res.data || []).reverse()
+        if (context.length > 0) {
+          const msgs = []
+          context.forEach(m => {
+            msgs.push({ role: 'user', content: m.question })
+            const answer = extractAnswer(m.answerJson)
+            msgs.push({ role: 'ai', content: answer,
+              latency: m.latency, tokens: m.tokens, model: m.model })
+          })
+          setSelectedResult({ item, messages: msgs })
+        } else {
+          setSelectedResult({ item, messages: [
+            { role: 'user', content: item.question },
+            { role: 'ai', content: extractAnswer(item.answerJson) }
+          ]})
+        }
+      })
+      .catch(() => {
+        setSelectedResult({ item, messages: [
+          { role: 'user', content: item.question },
+          { role: 'ai', content: extractAnswer(item.answerJson) }
+        ]})
+      })
+  }
+  const streamingReqIdRef = useRef(null)
 
   const MODEL_LIST = [
     { label: '豆包', keyword: '切换豆包', provider: 'doubao' },
@@ -75,12 +137,11 @@ export default function PersonalChat() {
 
   useEffect(() => {
     if (!userId) return
-    axios.get('/api/v1/messages', { params: { user_id: userId } })
+    axios.get('/api/v1/messages/recent', { params: { user_id: userId } })
       .then(res => {
         const history = (res.data || [])
           .filter(m => m.answerJson && m.answerJson.trim())
-          .slice(0, 10)
-          .reverse()
+          .reverse()  // 倒序变正序
         if (history.length > 0) {
           const msgs = []
           history.forEach(m => {
@@ -116,6 +177,7 @@ export default function PersonalChat() {
               // 流式输出开始：创建一条空的 AI 消息
               setTyping(false)
               failCountRef.current = 0
+              streamingReqIdRef.current = payload.req_id
               setMessages(prev => [...prev, { role: 'ai', content: '', streaming: true, reqId: payload.req_id }])
             } else if (payload.type === 'stream_token') {
               // 流式 token：追加到最后一条 AI 消息
@@ -133,20 +195,46 @@ export default function PersonalChat() {
               // 流式结束或非流式完成
               setTyping(false)
               failCountRef.current = 0
+              streamingReqIdRef.current = null
               setMessages(prev => {
                 // 如果最后一条是流式消息，更新它而不是新增
                 const last = prev[prev.length - 1]
                 if (last && last.role === 'ai' && last.streaming) {
                   const answer = extractAnswer(payload.answer || '')
                   const updated = [...prev]
-                  updated[updated.length - 1] = { role: 'ai', content: answer || last.content, streaming: false }
+                  updated[updated.length - 1] = {
+                    role: 'ai', content: answer || last.content, streaming: false,
+                    latency: payload.latency, tokens: payload.tokens, model: payload.model,
+                    reqId: last.reqId
+                  }
                   return updated
                 }
                 const answer = extractAnswer(payload.answer || '')
-                return [...prev, { role: 'ai', content: answer }]
+                return [...prev, {
+                  role: 'ai', content: answer,
+                  latency: payload.latency, tokens: payload.tokens, model: payload.model
+                }]
+              })
+            } else if (payload.type === 'stopped') {
+              // 流式被用户停止
+              setTyping(false)
+              streamingReqIdRef.current = null
+              setMessages(prev => {
+                const last = prev[prev.length - 1]
+                if (last && last.role === 'ai' && last.streaming) {
+                  const answer = extractAnswer(payload.answer || '')
+                  const updated = [...prev]
+                  updated[updated.length - 1] = {
+                    role: 'ai', content: answer || last.content, streaming: false, stopped: true,
+                    reqId: last.reqId
+                  }
+                  return updated
+                }
+                return prev
               })
             } else if (payload.type === 'error') {
               setTyping(false)
+              streamingReqIdRef.current = null
               triggerFailure()
               const errMsg = payload.message || '处理失败，请稍后重试'
               setMessages(prev => {
@@ -284,8 +372,91 @@ export default function PersonalChat() {
     }
   }
 
+  // 停止生成
+  const stopGeneration = async () => {
+    const reqId = streamingReqIdRef.current
+    if (!reqId) return
+    try {
+      await axios.post('/api/v1/messages/stop', { req_id: reqId }, { timeout: 5000 })
+    } catch (e) {
+      console.error('停止生成请求失败', e)
+    }
+    // 本地立即标记为已停止，避免等待后端响应
+    setTyping(false)
+    streamingReqIdRef.current = null
+    setMessages(prev => {
+      const updated = [...prev]
+      for (let i = updated.length - 1; i >= 0; i--) {
+        if (updated[i].role === 'ai' && updated[i].streaming) {
+          updated[i] = { ...updated[i], streaming: false, stopped: true }
+          break
+        }
+      }
+      return updated
+    })
+  }
+
+  // 重新生成
+  const regenerateAnswer = async (aiMessage) => {
+    if (!aiMessage?.reqId) return
+    // 找到该 AI 消息对应的上一条用户问题
+    const idx = messages.findIndex(m => m === aiMessage)
+    let userQuestion = null
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        userQuestion = messages[i]
+        break
+      }
+    }
+    if (!userQuestion) return
+
+    // 调用后端重新生成接口
+    setTyping(true)
+    try {
+      await axios.post('/api/v1/messages/regenerate', {
+        req_id: aiMessage.reqId,
+        user_id: userId
+      }, { timeout: 30000 })
+    } catch (e) {
+      console.error('重新生成请求失败', e)
+      setTyping(false)
+      setMessages(prev => [...prev, { role: 'system', content: '重新生成失败，请重试' }])
+    }
+  }
+
   const getUserAvatar = () => {
     return 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f430.png'
+  }
+
+  // 卸载时停止语音朗读
+  useEffect(() => () => stopSpeak(), [stopSpeak])
+
+  // 拖拽上传
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isDragging) setIsDragging(true)
+  }
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // 仅当离开外层容器时才取消高亮
+    if (e.currentTarget === e.target) setIsDragging(false)
+  }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    const files = e.dataTransfer?.files
+    if (files && files.length > 0) {
+      const f = files[0]
+      const allowed = ['.txt','.csv','.json','.log','.md','.xml','.xlsx','.xls','.pptx','.ppt','.jpg','.jpeg','.png','.gif','.webp']
+      const ext = '.' + (f.name.split('.').pop() || '').toLowerCase()
+      const isImage = f.type.startsWith('image/')
+      if (allowed.includes(ext) || isImage) {
+        setSelectedFile(f)
+      }
+    }
   }
 
   return (
@@ -305,6 +476,98 @@ export default function PersonalChat() {
       )}
 
       <div className="chat-messages">
+        {showSearch && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} onClick={() => { setShowSearch(false); setSelectedResult(null) }}>
+            <div style={{
+              background: '#1a1a2e', borderRadius: 12, maxWidth: 600, width: '90%',
+              maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }} onClick={e => e.stopPropagation()}>
+              {/* 弹窗头部 */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)',
+              }}>
+                <span style={{ fontSize: 15, color: '#f1f5f9', fontWeight: 600 }}>
+                  {selectedResult ? '对话详情' : `搜索结果（${searchResults.length}）`}
+                </span>
+                <button onClick={() => { setShowSearch(false); setSelectedResult(null) }}
+                  style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              </div>
+
+              {/* 弹窗内容 */}
+              <div style={{ overflowY: 'auto', flex: 1, padding: 14 }}>
+                {selectedResult ? (
+                  /* 详情视图 */
+                  <>
+                    <button onClick={() => setSelectedResult(null)}
+                      style={{
+                        background: 'rgba(255,255,255,0.08)', color: '#e2e8f0',
+                        border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
+                        padding: '6px 14px', cursor: 'pointer', fontSize: 13, marginBottom: 12,
+                      }}>← 返回列表</button>
+                    {selectedResult.messages.map((m, i) => (
+                      <div key={i} style={{
+                        marginBottom: 10,
+                        display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
+                      }}>
+                        <div style={{
+                          maxWidth: '80%', padding: '10px 14px', borderRadius: 12,
+                          background: m.role === 'user'
+                            ? 'linear-gradient(135deg, #667eea, #764ba2)'
+                            : '#334155',
+                          color: '#ffffff', fontSize: 14, lineHeight: 1.6,
+                          whiteSpace: 'pre-wrap',
+                        }}>{m.content}</div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  /* 列表视图 */
+                  searchResults.length === 0 ? (
+                    <p style={{ fontSize: 14, color: '#cbd5e1', textAlign: 'center', padding: 20 }}>无匹配结果</p>
+                  ) : (
+                    searchResults.map((item, i) => (
+                      <div key={i} onClick={() => loadSearchResult(item)}
+                        style={{
+                          padding: '10px 14px', marginBottom: 6,
+                          background: 'rgba(255,255,255,0.05)', borderRadius: 8, cursor: 'pointer',
+                          border: '1px solid rgba(255,255,255,0.06)',
+                          transition: 'background 0.15s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}>
+                        <div style={{ fontSize: 14, color: '#f1f5f9', fontWeight: 500 }}>
+                          {item.summary || item.question}
+                        </div>
+                        {item.summary && (
+                          <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 3 }}>
+                            {item.question}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )
+                )}
+                {/* 分页 */}
+                {!selectedResult && searchTotalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, padding: '10px 0 4px' }}>
+                    <button onClick={() => handleSearch(searchPage - 1)} disabled={searchPage <= 1}
+                      style={{ background: 'rgba(255,255,255,0.08)', color: searchPage <= 1 ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage <= 1 ? 'default' : 'pointer', fontSize: 13 }}>上一页</button>
+                    <span style={{ fontSize: 13, color: '#cbd5e1' }}>{searchPage} / {searchTotalPages}（共{searchTotal}条）</span>
+                    <button onClick={() => handleSearch(searchPage + 1)} disabled={searchPage >= searchTotalPages}
+                      style={{ background: 'rgba(255,255,255,0.08)', color: searchPage >= searchTotalPages ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage >= searchTotalPages ? 'default' : 'pointer', fontSize: 13 }}>下一页</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {messages.map((m, idx) => (
           m.role === 'user' ? (
             <div key={idx} className="msg-row msg-user-row">
@@ -322,7 +585,43 @@ export default function PersonalChat() {
                 {formatAnswer(m.content).map((sentence, i) => (
                   <span key={i} style={{display:'block'}}>{sentence}</span>
                 ))}
-                <span className="ai-generated-tag">AI生成</span>
+                {m.streaming && (
+                  <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'var(--accent, #818cf8)'}}>▋</span>
+                )}
+                <span className="ai-generated-tag">
+                  AI生成{m.latency != null ? ` · ${(m.latency / 1000).toFixed(1)}s` : ''}{m.tokens != null ? ` · ${m.tokens} tokens` : ''}{m.model ? ` · ${m.model}` : ''}{m.stopped ? ' · 已停止' : ''}
+                </span>
+                {!m.streaming && m.content && (
+                  <button
+                    type="button"
+                    className="speak-btn"
+                    onClick={() => speakMessage(idx, m.content)}
+                    title={speakingId === idx ? '停止朗读' : '朗读'}
+                  >
+                    {speakingId === idx ? '⏸' : '🔊'}
+                  </button>
+                )}
+                {!m.streaming && (
+                  <button
+                    type="button"
+                    onClick={() => regenerateAnswer(m)}
+                    style={{
+                      display: 'block',
+                      marginTop: 6,
+                      background: 'rgba(255,255,255,0.06)',
+                      color: 'var(--text-secondary, #94a3b8)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 6,
+                      padding: '3px 10px',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                  >
+                    ↻ 重新生成
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -343,7 +642,29 @@ export default function PersonalChat() {
       </div>
 
       <div className="chat-input-area">
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 4 }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', marginBottom: 8, paddingRight: 4, gap: 8 }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+            <input
+              type="text"
+              placeholder="搜索历史对话..."
+              value={searchKeyword}
+              onChange={e => setSearchKeyword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              style={{
+                flex: 1, maxWidth: 200,
+                background: 'rgba(255,255,255,0.08)',
+                color: 'var(--text-primary, #e2e8f0)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 16, padding: '5px 12px', fontSize: 12, outline: 'none',
+              }}
+            />
+            <button onClick={() => handleSearch()} disabled={searching}
+              style={{
+                background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary, #94a3b8)',
+                border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16,
+                padding: '5px 10px', cursor: 'pointer', fontSize: 12,
+              }}>🔍</button>
+          </div>
           <button
             onClick={() => setShowModelMenu(v => !v)}
             style={{
@@ -399,7 +720,13 @@ export default function PersonalChat() {
             </div>
           )}
         </div>
-        <form className="chat-input-wrapper" onSubmit={sendQuestion}>
+        <form
+          className={`chat-input-wrapper${isDragging ? ' drag-over' : ''}`}
+          onSubmit={sendQuestion}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
           <input
             type="file"
             ref={fileInputRef}
@@ -440,7 +767,15 @@ export default function PersonalChat() {
               )}
             </button>
           )}
-          <button type="submit" className="send-btn">↑</button>
+          {streamingReqIdRef.current || typing ? (
+            <button type="button" className="send-btn stop-btn" onClick={stopGeneration} title="停止生成">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+            </button>
+          ) : (
+            <button type="submit" className="send-btn">↑</button>
+          )}
         </form>
         {isRecording && (
           <div className="voice-hint">

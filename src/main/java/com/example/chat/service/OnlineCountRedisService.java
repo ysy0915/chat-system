@@ -22,6 +22,7 @@ public class OnlineCountRedisService {
     private static final String PAGE_SET_KEY = "monitor:online:pages";
     private static final String HISTORY_PREFIX = "monitor:online:history:";
     private static final String VISIT_PREFIX = "monitor:visit:";
+    private static final String HOURLY_ACTIVE_KEY = "monitor:active:1h";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -99,6 +100,12 @@ public class OnlineCountRedisService {
         String visitKey = VISIT_PREFIX + pageKey + ":" + dateStr;
         redisTemplate.opsForValue().increment(visitKey, 1);
         redisTemplate.expire(visitKey, 10, TimeUnit.DAYS);
+
+        // 记录 1 小时内活跃页面访问（用 Sorted Set，score 为时间戳，1 小时前自动清理）
+        long now = System.currentTimeMillis();
+        redisTemplate.opsForZSet().add(HOURLY_ACTIVE_KEY, pageKey + ":" + now, now);
+        redisTemplate.opsForZSet().removeRangeByScore(HOURLY_ACTIVE_KEY, 0, now - 3600000);
+        redisTemplate.expire(HOURLY_ACTIVE_KEY, 2, TimeUnit.HOURS);
     }
 
     public Map<String, Integer> getDailyVisitCounts(LocalDateTime since) {
@@ -174,6 +181,15 @@ public class OnlineCountRedisService {
             }
         }
         return total;
+    }
+
+    /** 获取最近 1 小时内活跃访问次数（独立访问事件数） */
+    public int getHourlyActiveCount() {
+        long now = System.currentTimeMillis();
+        // 清理过期数据
+        redisTemplate.opsForZSet().removeRangeByScore(HOURLY_ACTIVE_KEY, 0, now - 3600000);
+        Long count = redisTemplate.opsForZSet().zCard(HOURLY_ACTIVE_KEY);
+        return count != null ? count.intValue() : 0;
     }
 
     private String normalizePage(String page) {

@@ -56,8 +56,8 @@ public class WebSocketSessionTracker {
             virtualPageCounts.put(page, new AtomicInteger(0));
             realPageCounts.put(page, new AtomicInteger(0));
         }
-        // 初始化随机总数
-        refreshVirtualCounts();
+        // 不在构造器中生成随机数，初始化为真实值（0），
+        // 等 60 秒后第一次定时任务再生成虚拟随机数
     }
 
     /**
@@ -243,6 +243,23 @@ public class WebSocketSessionTracker {
         return result;
     }
 
+    /** 获取各页面真实在线数（监控页面用） */
+    public Map<String, Integer> getAllRealCounts() {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        Set<String> pages = redisTemplate.opsForSet().members(KNOWN_PAGES_KEY);
+        if (pages != null) {
+            for (String page : pages) {
+                result.put(page, getRawCount(page));
+            }
+        }
+        return result;
+    }
+
+    /** 获取真实在线总数（监控页面用） */
+    public int getRealTotalCount() {
+        return getAllRealCounts().values().stream().mapToInt(Integer::intValue).sum();
+    }
+
     private void removeSessionFromPage(String sessionId, String pageKey) {
         redisTemplate.opsForSet().remove(SESSION_PAGE_PREFIX + pageKey, sessionId);
     }
@@ -255,7 +272,12 @@ public class WebSocketSessionTracker {
 
     private void broadcastAll() {
         broadcastService.broadcast("/topic/online-count/all",
-                Map.of("total", getTotalCount(), "pages", getAllCounts()));
+                Map.of(
+                        "total", getTotalCount(),           // 虚拟总数（首页展示用）
+                        "pages", getAllCounts(),             // 虚拟各页面数（展示用）
+                        "realTotal", getRealTotalCount(),    // 真实总数（监控用）
+                        "realPages", getAllRealCounts()      // 真实各页面数（监控用）
+                ));
     }
 
     private String normalizePage(String page) {

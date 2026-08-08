@@ -308,7 +308,7 @@ export default function KnowledgeGraph() {
       return
     }
     try {
-      const res = await axios.get('/api/v1/messages/search', { params: { q } })
+      const res = await axios.get('/api/v1/messages/search-all', { params: { q } })
       const remoteMatches = (res.data || []).filter(m => m.question).map(item => ({
         msgId: item.id,
         keyword: extractKeyword(item.question),

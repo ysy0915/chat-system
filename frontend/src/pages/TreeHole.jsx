@@ -7,6 +7,7 @@ import '../styles/treehole.css'
 import { formatAnswer } from '../utils/format'
 import { extractAnswer } from '../utils/format'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
 
 const MOODS = [
     { label: '😢 难过', value: '难过' },
@@ -39,6 +40,56 @@ const getAuthHeaders = () => {
 export default function TreeHole() {
     const authUser = useAuthUser()
     const [messages, setMessages] = useState([])   // { role: 'user'|'ai', text, mood, time }
+    const [searchKeyword, setSearchKeyword] = useState('')
+    const [searchResults, setSearchResults] = useState([])
+    const [showSearch, setShowSearch] = useState(false)
+    const [searching, setSearching] = useState(false)
+    const [selectedResult, setSelectedResult] = useState(null)
+    const [searchPage, setSearchPage] = useState(1)
+    const [searchTotal, setSearchTotal] = useState(0)
+    const [searchTotalPages, setSearchTotalPages] = useState(0)
+
+    const handleSearch = (page = 1) => {
+        if (!searchKeyword.trim()) return
+        setSearching(true)
+        setSelectedResult(null)
+        setSearchPage(page)
+        axios.get('/api/v1/treehole/search', { params: { keyword: searchKeyword, page, size: 5 }, headers: getAuthHeaders() })
+            .then(res => {
+                setSearchResults(res.data?.items || [])
+                setSearchTotal(res.data?.total || 0)
+                setSearchTotalPages(res.data?.totalPages || 0)
+                setShowSearch(true)
+            })
+            .catch(() => {})
+            .finally(() => setSearching(false))
+    }
+
+    const loadSearchResult = (item) => {
+        axios.get('/api/v1/treehole/context', { params: { msg_id: item.id }, headers: getAuthHeaders() })
+            .then(res => {
+                const context = (res.data || []).reverse()
+                if (context.length > 0) {
+                    const msgs = []
+                    context.forEach(m => {
+                        msgs.push({ role: 'user', text: m.question, time: m.createdAt, mood: m.mood })
+                        msgs.push({ role: 'ai', text: extractAnswer(m.answerJson), time: m.createdAt })
+                    })
+                    setSelectedResult({ item, messages: msgs })
+                } else {
+                    setSelectedResult({ item, messages: [
+                        { role: 'user', text: item.question, time: item.createdAt },
+                        { role: 'ai', text: extractAnswer(item.answerJson), time: item.createdAt }
+                    ]})
+                }
+            })
+            .catch(() => {
+                setSelectedResult({ item, messages: [
+                    { role: 'user', text: item.question, time: item.createdAt },
+                    { role: 'ai', text: extractAnswer(item.answerJson), time: item.createdAt }
+                ]})
+            })
+    }
     const [mood, setMood] = useState('')
     const [typing, setTyping] = useState(false)
     const [error, setError] = useState('')
@@ -47,11 +98,16 @@ export default function TreeHole() {
     const messagesEndRef = useRef(null)
     const textareaRef = useRef(null)
     const fileInputRef = useRef(null)
+    const { speakingId, speak: speakMessage, stop: stopSpeak } = useSpeechSynthesis()
+    const streamingReqIdRef = useRef(null)
+
+    // 卸载时停止朗读
+    useEffect(() => () => stopSpeak(), [stopSpeak])
 
     // 加载历史记录
     useEffect(() => {
         if (!authUser) return
-        axios.get('/api/v1/treehole/history', { headers: getAuthHeaders() })
+        axios.get('/api/v1/treehole/recent', { headers: getAuthHeaders() })
             .then(res => {
                 const history = (res.data || []).reverse()
                 const msgs = []
@@ -93,7 +149,8 @@ export default function TreeHole() {
                         const payload = JSON.parse(msg.body)
                         if (payload.type === 'stream_start') {
                             setTyping(false)
-                            setMessages(prev => [...prev, { role: 'ai', text: '', streaming: true, time: new Date().toISOString() }])
+                            streamingReqIdRef.current = payload.req_id
+                            setMessages(prev => [...prev, { role: 'ai', text: '', streaming: true, reqId: payload.req_id, time: new Date().toISOString() }])
                         } else if (payload.type === 'stream_token') {
                             setMessages(prev => {
                                 const updated = [...prev]
@@ -106,17 +163,44 @@ export default function TreeHole() {
                                 return updated
                             })
                         } else if (payload.type === 'done') {
+                            streamingReqIdRef.current = null
                             setMessages(prev => {
                                 const last = prev[prev.length - 1]
                                 if (last && last.role === 'ai' && last.streaming) {
                                     const answer = extractAnswer(payload.answer || '')
                                     const updated = [...prev]
-                                    updated[updated.length - 1] = { role: 'ai', text: answer || last.text, streaming: false, time: new Date().toISOString() }
+                                    updated[updated.length - 1] = {
+                                        role: 'ai', text: answer || last.text, streaming: false,
+                                        time: new Date().toISOString(),
+                                        latency: payload.latency, tokens: payload.tokens,
+                                        reqId: last.reqId
+                                    }
                                     return updated
                                 }
-                                return [...prev, { role: 'ai', text: extractAnswer(payload.answer || ''), time: new Date().toISOString() }]
+                                return [...prev, {
+                                    role: 'ai', text: extractAnswer(payload.answer || ''),
+                                    time: new Date().toISOString(),
+                                    latency: payload.latency, tokens: payload.tokens
+                                }]
+                            })
+                        } else if (payload.type === 'stopped') {
+                            streamingReqIdRef.current = null
+                            setMessages(prev => {
+                                const last = prev[prev.length - 1]
+                                if (last && last.role === 'ai' && last.streaming) {
+                                    const answer = extractAnswer(payload.answer || '')
+                                    const updated = [...prev]
+                                    updated[updated.length - 1] = {
+                                        role: 'ai', text: answer || last.text, streaming: false, stopped: true,
+                                        time: new Date().toISOString(),
+                                        reqId: last.reqId
+                                    }
+                                    return updated
+                                }
+                                return prev
                             })
                         } else if (payload.type === 'error') {
+                            streamingReqIdRef.current = null
                             setTyping(false)
                             setMessages(prev => {
                                 const last = prev[prev.length - 1]
@@ -215,6 +299,45 @@ export default function TreeHole() {
         }
     }
 
+    // 停止生成
+    const stopGeneration = async () => {
+        const reqId = streamingReqIdRef.current
+        if (!reqId) return
+        try {
+            await axios.post('/api/v1/treehole/stop', { req_id: reqId }, { headers: getAuthHeaders(), timeout: 5000 })
+        } catch (e) {
+            console.error('停止生成请求失败', e)
+        }
+        setTyping(false)
+        streamingReqIdRef.current = null
+        setMessages(prev => {
+            const updated = [...prev]
+            for (let i = updated.length - 1; i >= 0; i--) {
+                if (updated[i].role === 'ai' && updated[i].streaming) {
+                    updated[i] = { ...updated[i], streaming: false, stopped: true }
+                    break
+                }
+            }
+            return updated
+        })
+    }
+
+    // 重新生成
+    const regenerateAnswer = async (aiMessage) => {
+        if (!aiMessage?.reqId) return
+        setTyping(true)
+        try {
+            await axios.post('/api/v1/treehole/regenerate',
+                { req_id: aiMessage.reqId },
+                { headers: getAuthHeaders(), timeout: 30000 }
+            )
+        } catch (e) {
+            console.error('重新生成请求失败', e)
+            setTyping(false)
+            setError('重新生成失败，请重试')
+        }
+    }
+
     const openAuth = () => {
         window.dispatchEvent(new CustomEvent('open-auth-modal', { detail: { mode: 'login', redirect: '/treehole' } }))
     }
@@ -295,7 +418,43 @@ export default function TreeHole() {
                                             {formatAnswer(msg.text).map((line, i) => (
                                                 <p key={i}>{line}</p>
                                             ))}
-                                            <span className="ai-generated-tag">AI生成</span>
+                                            {msg.streaming && (
+                                                <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'var(--accent, #818cf8)'}}>▋</span>
+                                            )}
+                                            <span className="ai-generated-tag">
+                                                AI生成{msg.latency != null ? ` · ${(msg.latency / 1000).toFixed(1)}s` : ''}{msg.tokens != null ? ` · ${msg.tokens} tokens` : ''}{msg.stopped ? ' · 已停止' : ''}
+                                            </span>
+                                            {!msg.streaming && msg.text && (
+                                                <button
+                                                    type="button"
+                                                    className="speak-btn"
+                                                    onClick={() => speakMessage(idx, msg.text)}
+                                                    title={speakingId === idx ? '停止朗读' : '朗读'}
+                                                >
+                                                    {speakingId === idx ? '⏸' : '🔊'}
+                                                </button>
+                                            )}
+                                            {!msg.streaming && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => regenerateAnswer(msg)}
+                                                    style={{
+                                                        display: 'block',
+                                                        marginTop: 6,
+                                                        background: 'rgba(255,255,255,0.06)',
+                                                        color: 'var(--text-secondary, #94a3b8)',
+                                                        border: '1px solid rgba(255,255,255,0.1)',
+                                                        borderRadius: 6,
+                                                        padding: '3px 10px',
+                                                        cursor: 'pointer',
+                                                        fontSize: 11,
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                                                >
+                                                    ↻ 重新生成
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="treehole-msg-meta">{formatTime(msg.time)}</div>
                                     </>
@@ -316,6 +475,112 @@ export default function TreeHole() {
             </div>
 
             {/* 输入区 */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <input
+                    type="text"
+                    placeholder="搜索历史对话..."
+                    value={searchKeyword}
+                    onChange={e => setSearchKeyword(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                    style={{
+                        flex: 1,
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#e2e8f0',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        borderRadius: 20, padding: '6px 14px', fontSize: 13, outline: 'none',
+                    }}
+                />
+                <button onClick={() => handleSearch()} disabled={searching}
+                    style={{
+                        background: 'rgba(255,255,255,0.08)', color: '#94a3b8',
+                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 20,
+                        padding: '6px 14px', cursor: 'pointer', fontSize: 13,
+                    }}>🔍</button>
+            </div>
+            {showSearch && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.5)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }} onClick={() => { setShowSearch(false); setSelectedResult(null) }}>
+                    <div style={{
+                        background: '#1a1a2e', borderRadius: 12, maxWidth: 600, width: '90%',
+                        maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                    }} onClick={e => e.stopPropagation()}>
+                        {/* 弹窗头部 */}
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)',
+                        }}>
+                            <span style={{ fontSize: 15, color: '#f1f5f9', fontWeight: 600 }}>
+                                {selectedResult ? '对话详情' : `搜索结果（${searchResults.length}）`}
+                            </span>
+                            <button onClick={() => { setShowSearch(false); setSelectedResult(null) }}
+                                style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: 18 }}>✕</button>
+                        </div>
+
+                        {/* 弹窗内容 */}
+                        <div style={{ overflowY: 'auto', flex: 1, padding: 14 }}>
+                            {selectedResult ? (
+                                /* 详情视图 */
+                                <>
+                                    <button onClick={() => setSelectedResult(null)}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.08)', color: '#e2e8f0',
+                                            border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
+                                            padding: '6px 14px', cursor: 'pointer', fontSize: 13, marginBottom: 12,
+                                        }}>← 返回列表</button>
+                                    {selectedResult.messages.map((m, i) => (
+                                        <div key={i} style={{
+                                            marginBottom: 10,
+                                            display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
+                                        }}>
+                                            <div style={{
+                                                maxWidth: '80%', padding: '10px 14px', borderRadius: 12,
+                                                background: m.role === 'user'
+                                                    ? 'linear-gradient(135deg, #43e97b, #38f9d7)'
+                                                    : '#334155',
+                                                color: m.role === 'user' ? '#0f172a' : '#ffffff',
+                                                fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
+                                            }}>{m.text || m.content}</div>
+                                        </div>
+                                    ))}
+                                </>
+                            ) : (
+                                /* 列表视图 */
+                                searchResults.length === 0 ? (
+                                    <p style={{ fontSize: 14, color: '#cbd5e1', textAlign: 'center', padding: 20 }}>无匹配结果</p>
+                                ) : (
+                                    searchResults.map((item, i) => (
+                                        <div key={i} onClick={() => loadSearchResult(item)}
+                                            style={{
+                                                padding: '10px 14px', marginBottom: 6,
+                                                background: 'rgba(255,255,255,0.05)', borderRadius: 8, cursor: 'pointer',
+                                                border: '1px solid rgba(255,255,255,0.06)',
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.2)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}>
+                                            <div style={{ fontSize: 14, color: '#f1f5f9', fontWeight: 500 }}>{item.question}</div>
+                                        </div>
+                                    ))
+                                )
+                            )}
+                            {/* 分页 */}
+                            {!selectedResult && searchTotalPages > 1 && (
+                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, padding: '10px 0 4px' }}>
+                                    <button onClick={() => handleSearch(searchPage - 1)} disabled={searchPage <= 1}
+                                        style={{ background: 'rgba(255,255,255,0.08)', color: searchPage <= 1 ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage <= 1 ? 'default' : 'pointer', fontSize: 13 }}>上一页</button>
+                                    <span style={{ fontSize: 13, color: '#cbd5e1' }}>{searchPage} / {searchTotalPages}（共{searchTotal}条）</span>
+                                    <button onClick={() => handleSearch(searchPage + 1)} disabled={searchPage >= searchTotalPages}
+                                        style={{ background: 'rgba(255,255,255,0.08)', color: searchPage >= searchTotalPages ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage >= searchTotalPages ? 'default' : 'pointer', fontSize: 13 }}>下一页</button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="treehole-input-wrap">
                 <div className="treehole-input-box">
                     <input
@@ -356,16 +621,29 @@ export default function TreeHole() {
                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                         </svg>
                     </button>
-                    <button
-                        className="treehole-send-btn"
-                        onClick={handleSend}
-                        disabled={(!hasInput && !selectedFile) || typing}
-                        title="发送"
-                    >
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                        </svg>
-                    </button>
+                    {streamingReqIdRef.current || typing ? (
+                        <button
+                            type="button"
+                            className="treehole-send-btn stop-btn"
+                            onClick={stopGeneration}
+                            title="停止生成"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="6" y="6" width="12" height="12" rx="2"/>
+                            </svg>
+                        </button>
+                    ) : (
+                        <button
+                            className="treehole-send-btn"
+                            onClick={handleSend}
+                            disabled={(!hasInput && !selectedFile) || typing}
+                            title="发送"
+                        >
+                            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                            </svg>
+                        </button>
+                    )}
                 </div>
                 <div className="treehole-hint">按 Enter 发送 · Shift+Enter 换行 · 可上传文件由智谱解析 · 你的对话仅自己可见</div>
             </div>

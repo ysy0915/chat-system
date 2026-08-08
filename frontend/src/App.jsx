@@ -15,6 +15,7 @@ import Profile from './pages/Profile'
 import PersonalChat from './pages/PersonalChat'
 import Debate from './pages/Debate'
 import Monitor from './pages/Monitor'
+import KnowledgeBase from './pages/KnowledgeBase'
 import Games from './pages/game'
 import PingPong from './pages/pingpang'
 import SnakeKing from './pages/snakeking'
@@ -267,6 +268,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/profile', label: '个人信息' },
         { to: '/games', label: 'AI多人游戏' },
         { to: '/admin/models', label: '模型管理' },
+        { to: '/knowledge', label: '知识库' },
     ]
 
     const mobileNavLinks = [
@@ -282,6 +284,7 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
         { to: '/history', label: '问答列表' },
         { to: '/profile', label: '个人信息' },
         { to: '/admin/models', label: '模型管理' },
+        { to: '/knowledge', label: '知识库' },
     ]
 
     return (
@@ -352,19 +355,20 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                             onClick={() => setAnnouncementOpen(false)}
                             type="button"
                         >✕</button>
-                        <h3 className="announcement-title"> 系统公告</h3>
+                        <h3 className="announcement-title">📢 系统公告</h3>
                         <div className="announcement-content">
-                            <p><strong>🎉 博思AI智能体 v2.0 正式上线！</strong></p>
-                            <p>打破人机边界，融合真人社交与AI智慧，打造懂你、助你的全能数字伙伴。</p>
-                            <p><strong>🔥 核心功能：</strong></p>
-                            <p>️ <strong>观点辩论场</strong> — 三位AI专家为你展开辩论，在思想交锋中获得更全面的结论</p>
-                            <p>💬 <strong>AI伙伴群聊</strong> — 多AI角色实时互动，畅聊无限话题</p>
-                            <p>🎮 <strong>AI多人游戏</strong> — 乒乓球、蛇王争霸、城池争夺战，与AI同台竞技</p>
-                            <p>🧠 <strong>知识脉络图</strong> — 可视化知识图谱，探索问答关联</p>
-                            <p>🎨 <strong>图片与视频</strong> — AI多模态生成，创意无限</p>
-                            <p>🌳 <strong>情绪树洞</strong> — 有情绪无处安放？AI温柔倾听，陪你走过每一段情绪低谷</p>
-                            <p>🔒 <strong>个人对话空间</strong> — 私密模式，专属AI对话体验</p>
-                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月 · 博思AI团队</p>
+                            <p><strong>🎉 博思AI智能体 v2.1 更新上线！</strong></p>
+                            <p>本次更新带来 8 项全新功能，全面提升 AI 对话体验。</p>
+                            <p><strong>🆕 本次更新内容：</strong></p>
+                            <p>🧠 <strong>对话记忆持久化</strong> — AI 现在能记住你之前说过的话，短期记忆 24 小时，长期记忆永久保存，跨会话也能回忆相关历史</p>
+                            <p>📚 <strong>知识库管理（RAG）</strong> — 上传 PDF/Word/TXT 文档，AI 回答时自动检索知识库内容，回答更精准、有据可查</p>
+                            <p>🔁 <strong>重新生成</strong> — 对 AI 的回答不满意？点击"重新生成"按钮，AI 会重新作答</p>
+                            <p>⏹️ <strong>停止生成</strong> — 流式输出时可随时点击"停止"，不必等待完整回答</p>
+                            <p>📝 <strong>对话摘要</strong> — 每次对话自动生成 15 字摘要，历史列表一目了然</p>
+                            <p>🖱️ <strong>图片拖拽上传</strong> — 个人对话空间支持拖拽图片，AI 自动识别图片内容</p>
+                            <p>🎤 <strong>语音输入</strong> — 点击麦克风按钮，说出你的问题（iOS 需 HTTPS 访问）</p>
+                            <p>🔊 <strong>语音朗读</strong> — 点击 AI 回答旁的喇叭按钮，AI 朗读回答内容</p>
+                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月8日 · 博思AI团队</p>
                         </div>
                     </div>
                 </div>
@@ -562,6 +566,7 @@ const EPHEMERAL_ROUTES = [
     { path: '/games/snakeking', element: <SnakeKing/> },
     { path: '/games/castlesiege', element: <CastleSiege/> },
     { path: '/monitor', element: <Monitor/> },
+    { path: '/knowledge', element: <KnowledgeBase/> },
 ]
 
 function KeepAliveShell({ pathname }) {

@@ -39,6 +39,10 @@ class TreeHoleServiceTest {
         @Override public TreeHoleMessage findByReqId(String reqId) {
             return store.stream().filter(m -> reqId.equals(m.reqId)).findFirst().orElse(null);
         }
+        @Override public List<TreeHoleMessage> findRecentNByUserId(Long userId, int limit) { return recentResult; }
+        @Override public List<TreeHoleMessage> searchByKeyword(Long userId, String keyword, int offset, int limit) { return List.of(); }
+        @Override public int countSearchByKeyword(Long userId, String keyword) { return 0; }
+        @Override public List<TreeHoleMessage> findContextAround(Long userId, Long msgId) { return List.of(); }
     }
 
     // ── 手写 Stub：ModelConfigRepository ──

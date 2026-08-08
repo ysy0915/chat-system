@@ -58,19 +58,20 @@ public class KnowledgeController {
     @Value("${app.rag.upload.max-size:10485760}")  // 默认 10MB
     private long maxUploadSize;
 
-    /** 校验 token 并要求 admin 角色 */
-    private void requireAdmin(String authHeader) {
+    /** 校验 token 并要求 admin 角色，返回 null 表示通过，否则返回错误响应 */
+    private ResponseEntity<?> checkAdmin(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new RuntimeException("未登录");
+            return ResponseEntity.status(401).body(Map.of("error", "请先登录"));
         }
         String token = authHeader.substring(7);
         if (!jwtUtil.validateToken(token)) {
-            throw new RuntimeException("Token 无效");
+            return ResponseEntity.status(401).body(Map.of("error", "登录已过期，请重新登录"));
         }
         String role = jwtUtil.getRole(token);
         if (!"admin".equals(role)) {
-            throw new RuntimeException("需要管理员权限");
+            return ResponseEntity.status(403).body(Map.of("error", "仅管理员可操作知识库"));
         }
+        return null;
     }
 
     // ============ 知识库 CRUD ============
@@ -78,7 +79,8 @@ public class KnowledgeController {
     @PostMapping("/kb")
     public ResponseEntity<?> createKnowledgeBase(@RequestBody Map<String, String> body,
                                                   @RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
 
         KnowledgeBase kb = new KnowledgeBase();
         kb.name = body.get("name");
@@ -94,14 +96,16 @@ public class KnowledgeController {
 
     @GetMapping("/kb")
     public ResponseEntity<?> listKnowledgeBases(@RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
         return ResponseEntity.ok(ragRepository.findAllKnowledgeBases());
     }
 
     @DeleteMapping("/kb/{id}")
     public ResponseEntity<?> deleteKnowledgeBase(@PathVariable Long id,
                                                   @RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
 
         // 删除 Milvus 中的 Collection
         if (vectorStoreService != null) {
@@ -118,7 +122,8 @@ public class KnowledgeController {
     public ResponseEntity<?> uploadDocument(@PathVariable Long kbId,
                                              @RequestParam("file") MultipartFile file,
                                              @RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
 
         if (file.getSize() > maxUploadSize) {
             return ResponseEntity.badRequest().body(Map.of("error", "文件超过 " + maxUploadSize + " 字节限制"));
@@ -171,14 +176,16 @@ public class KnowledgeController {
     @GetMapping("/kb/{kbId}/documents")
     public ResponseEntity<?> listDocuments(@PathVariable Long kbId,
                                            @RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
         return ResponseEntity.ok(ragRepository.findDocumentsByKbId(kbId));
     }
 
     @DeleteMapping("/documents/{id}")
     public ResponseEntity<?> deleteDocument(@PathVariable Long id,
                                             @RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
         // 注意：Milvus 按 doc_id 删除向量需要额外实现 deleteEntities
         // 当前简化为只删除 MySQL 记录，向量残留可定期重建 Collection 清理
         ragRepository.deleteDocument(id);
@@ -191,7 +198,8 @@ public class KnowledgeController {
     @PostMapping("/search")
     public ResponseEntity<?> search(@RequestBody Map<String, Object> body,
                                     @RequestHeader("Authorization") String auth) {
-        requireAdmin(auth);
+        ResponseEntity<?> err = checkAdmin(auth);
+        if (err != null) return err;
 
         Long kbId = ((Number) body.get("knowledgeBaseId")).longValue();
         String query = (String) body.get("query");

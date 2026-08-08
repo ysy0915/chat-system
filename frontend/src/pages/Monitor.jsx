@@ -65,6 +65,7 @@ export default function Monitor() {
   const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()))
   const [loading, setLoading] = useState(true)
   const [hourlyTotal, setHourlyTotal] = useState(0)
+  const [hourlyActive, setHourlyActive] = useState(0)
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 400 })
@@ -89,7 +90,8 @@ export default function Monitor() {
         client.subscribe('/topic/online-count/all', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            setCurrent(payload.pages || {})
+            // 监控页面用真实数据（realPages），不用虚拟随机数
+            setCurrent(payload.realPages || payload.pages || {})
           } catch {}
         })
       }
@@ -117,6 +119,7 @@ export default function Monitor() {
       setCurrent(res.data.current || {})
       setDailyVisits(res.data.dailyVisits || {})
       setHourlyTotal(res.data.hourlyTotal || 0)
+      setHourlyActive(res.data.hourlyActive || 0)
       if (res.data.pageDailyVisits) {
         setPageDailyVisits(res.data.pageDailyVisits)
       }
@@ -509,8 +512,8 @@ export default function Monitor() {
           <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{hourlyTotal}</div>
         </div>
         <div className="monitor-stat-card">
-          <div className="monitor-stat-label">实时在线人数</div>
-          <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{totalCurrent}</div>
+          <div className="monitor-stat-label">1小时内在线人数</div>
+          <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{hourlyActive}</div>
         </div>
         <div className="monitor-stat-card">
           <div className="monitor-stat-label">环比前日 ({prevDate.slice(5)})</div>

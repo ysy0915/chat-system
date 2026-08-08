@@ -47,7 +47,16 @@ export default function History(){
           return (
               <div key={idx} className="history-item">
                 <div className="history-row">
-                  <div className="history-q">Q: {it.question}</div>
+                  <div className="history-q">
+                    {it.summary ? (
+                      <>
+                        <div className="history-summary">{it.summary}</div>
+                        <div className="history-subtitle">Q: {it.question}</div>
+                      </>
+                    ) : (
+                      <div>Q: {it.question}</div>
+                    )}
+                  </div>
                   <div className="history-meta">提问者</div>
                 </div>
                 <div className="history-a">

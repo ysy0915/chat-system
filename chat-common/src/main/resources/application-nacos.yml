@@ -1,0 +1,7 @@
+# Nacos 配置（仅当 Nacos 可用时通过 --spring.profiles.active=prod,nacos 激活）
+spring:
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:172.23.172.13:8848}
+        ip: ${NACOS_IP:}

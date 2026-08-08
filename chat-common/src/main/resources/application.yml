@@ -1,0 +1,155 @@
+spring:
+  application:
+    name: ${APP_NAME:chat-core}
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:YangSy@0915!}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+  mybatis:
+    mapper-locations: classpath:mybatis/mappers/*.xml
+    configuration:
+      map-underscore-to-camel-case: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: ${RABBIT_USERNAME:guest}
+    password: ${RABBIT_PASSWORD:guest}
+    virtual-host: /
+    connection-timeout: 5000ms
+    requested-heartbeat: 10s
+    listener:
+      simple:
+        auto-startup: false
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    database: 0
+    timeout: 5000ms
+  mvc:
+    async:
+      request-timeout: 120000
+
+server:
+  forward-headers-strategy: native
+  port: 8081
+  tomcat:
+    connection-timeout: 120000
+    keep-alive-timeout: 120000
+    max-http-form-post-size: 10MB
+    threads:
+      max: 200
+      min-spare: 10
+
+# JWT
+jwt:
+  secret: ${JWT_SECRET:k8Xp2mQ7vR3nF9wL5tY1bJ6cH4dA0eG8iS2uW7xZ}
+
+# SQL执行器
+sql-executor:
+  password: ${SQL_EXECUTOR_PASSWORD:LiYuHong@0929}
+
+# 在线人数监控
+monitor:
+  password: ${MONITOR_PASSWORD:19641025}
+
+# 阿里云内容安全
+content-safety:
+  enabled: true
+  access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:LTAI5t8ZiGMvwftuoPdCrTWA}
+  access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:ZvGkVGj081Yutq7oJHTRoDE1BsPmxL}
+  endpoint: green-cip.cn-beijing.aliyuncs.com
+  region-id: cn-beijing
+
+# 阿里云 OSS 对象存储
+oss:
+  enabled: true
+  endpoint: https://oss-cn-shanghai.aliyuncs.com
+  internal-endpoint: https://oss-cn-shanghai-internal.aliyuncs.com
+  access-key-id: LTAI5t6VEDZ1Pvp4cYGBZ5ok
+  access-key-secret: c39XjosK5Tf7iRHaurI4CQM17JAmv3
+  bucket-name: aichat-0915
+  public-domain: https://aichat-0915.oss-cn-shanghai.aliyuncs.com
+
+# 限制 actuator 端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+# RAG 知识库配置（默认关闭，需要时设置 app.rag.enabled=true 开启）
+app:
+  module:
+    core: true
+  rag:
+    enabled: false
+    milvus:
+      enabled: true
+      host: 127.0.0.1
+      port: 19530
+      collection-prefix: kb_
+      hnsw-m: 16
+      hnsw-ef-construction: 200
+      search-ef: 64
+    embedding:
+      provider: dashscope
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: text-embedding-v3
+      dimension: 1024
+    search:
+      top-k: 5
+      score-threshold: 0.3
+    context:
+      max-chars: 3000
+    upload:
+      max-size: 10485760
+  # 动态模型路由
+  router:
+    enabled: true  # 开启动态路由
+  # 任务分类器
+  classifier:
+    enabled: true  # 开启任务分类
+  # LangChain4j（高级 AI 编排框架，默认关闭）
+  langchain4j:
+    enabled: false
+    treehole:
+      enabled: false
+    personal:
+      enabled: false
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api-key: ${DASHSCOPE_API_KEY:}
+    model: qwen-plus
+    temperature: 0.85
+    timeout: 60
+  # LangGraph4j（图式工作流编排，默认关闭）
+  langgraph4j:
+    enabled: false
+    debate:
+      enabled: false
+      rounds: 3
+  # 可观测性模块（链路追踪、错误聚合、AI 自愈）
+  observability:
+    enabled: true
+    trace-retention: 1000  # 保留最近1000条链路
+    auto-heal: true        # 启用自动自愈
+  # AI Agent 工具调度层（默认关闭，设置 true 开启）
+  agent:
+    enabled: true
+    max-tool-calls: 3        # 单次对话最多调用工具次数
+    default-kb-id: 1          # 知识库搜索工具默认检索的知识库 ID

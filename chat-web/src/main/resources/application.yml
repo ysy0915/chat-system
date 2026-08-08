@@ -1,0 +1,55 @@
+# chat-web 配置（Web 接入层）
+server:
+  port: 8080
+
+spring:
+  application:
+    name: chat-web
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:yangsy}
+    password: ${DB_PASSWORD:YangSy@0915!}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# chat-core 内部 API 地址
+app:
+  core:
+    base-url: ${CORE_BASE_URL:http://127.0.0.1:9090}
+  # web 层需要内容安全检查，但不需 LLM 调用
+  module:
+    core: false
+  # web 层启用内容安全和限流
+  safety:
+    enabled: true
+  rag:
+    enabled: false
+    milvus:
+      enabled: false
+  langchain4j:
+    enabled: false
+  langgraph4j:
+    enabled: false
+  observability:
+    enabled: false
+  router:
+    enabled: false

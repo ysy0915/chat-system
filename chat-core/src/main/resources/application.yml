@@ -1,0 +1,65 @@
+# chat-core 独立配置（端口 9090）
+server:
+  port: 9090
+
+spring:
+  application:
+    name: chat-core
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:yangsy}
+    password: ${DB_PASSWORD:YangSy@0915!}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# AI 配置
+app:
+  module:
+    core: true
+  llm:
+    api-key: ${LLM_API_KEY:}
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    milvus:
+      enabled: ${MILVUS_ENABLED:false}
+      host: ${MILVUS_HOST:121.40.188.98}
+      port: 19530
+  langchain4j:
+    enabled: ${LANGCHAIN4J_ENABLED:false}
+    treehole:
+      enabled: ${LANGCHAIN4J_TREEHOLE_ENABLED:false}
+    personal:
+      enabled: ${LANGCHAIN4J_PERSONAL_ENABLED:false}
+  langgraph4j:
+    enabled: ${LANGGRAPH4J_ENABLED:true}
+    debate:
+      enabled: ${LANGGRAPH4J_DEBATE_ENABLED:true}
+      rounds: 3
+  observability:
+    enabled: ${OBSERVABILITY_ENABLED:true}
+  router:
+    enabled: ${ROUTER_ENABLED:true}
+
+# 内部 API 不需要 Security
+security:
+  internal:
+    enabled: false

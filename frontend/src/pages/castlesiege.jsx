@@ -1830,7 +1830,7 @@ export default function CastleSiege() {
 
     useEffect(() => {
         const context = getCurrentPlayerContext()
-        const sock = new SockJS(`/ws/chat?userId=${encodeURIComponent(context.playerKey)}`)
+        const sock = new SockJS(`/ws/games?userId=${encodeURIComponent(context.playerKey)}`)
         const client = new Client({
             webSocketFactory: () => sock,
             debug: () => {},

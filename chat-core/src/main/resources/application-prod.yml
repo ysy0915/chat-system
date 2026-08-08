@@ -1,0 +1,54 @@
+# chat-core 生产配置（部署到 Milvus 服务器）
+server:
+  port: 9090
+
+spring:
+  application:
+    name: chat-core
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        server-addr: 127.0.0.1:8848
+        ip: 172.23.172.13
+  datasource:
+    url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: yangsy
+    password: YangSy@0915!
+  data:
+    redis:
+      host: 172.18.160.222
+      port: 6379
+  rabbitmq:
+    host: 172.18.160.222
+    port: 5672
+    username: chatapp
+    password: chatapp2024
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+app:
+  module:
+    core: true
+  llm:
+    api-key: ${LLM_API_KEY:}
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    milvus:
+      enabled: ${MILVUS_ENABLED:false}
+      host: 127.0.0.1
+      port: 19530
+  langchain4j:
+    enabled: ${LANGCHAIN4J_ENABLED:false}
+  langgraph4j:
+    enabled: true
+    debate:
+      enabled: true
+      rounds: 3
+  observability:
+    enabled: true
+  router:
+    enabled: true

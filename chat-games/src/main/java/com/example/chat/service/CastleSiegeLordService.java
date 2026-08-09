@@ -76,7 +76,8 @@ public class CastleSiegeLordService {
 
         // 批量获取所有用户名（1次Redis请求替代N次循环查询）
         @SuppressWarnings("unchecked")
-        List<Object> hashKeys = new ArrayList<>(memberKeys);
+        List<Object> hashKeys = new ArrayList<>();
+        for (String mk : memberKeys) hashKeys.add(mk);
         List<Object> names = memberKeys.isEmpty()
                 ? Collections.emptyList()
                 : redisTemplate.opsForHash().multiGet(NAME_KEY, hashKeys);

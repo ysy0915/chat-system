@@ -42,8 +42,6 @@ public class WebSocketSessionTracker {
     private final AtomicInteger virtualTotal = new AtomicInteger(0);
     /** 各页面的虚拟在线数（key=page, value=分配后的人数） */
     private final ConcurrentHashMap<String, AtomicInteger> virtualPageCounts = new ConcurrentHashMap<>();
-    /** 各页面的真实连接数（用于按比例分配） */
-    private final ConcurrentHashMap<String, AtomicInteger> realPageCounts = new ConcurrentHashMap<>();
 
     public WebSocketSessionTracker(StringRedisTemplate redisTemplate,
                                    OnlineCountRedisService onlineCountRedisService,
@@ -54,7 +52,6 @@ public class WebSocketSessionTracker {
         for (String page : DEFAULT_PAGES) {
             redisTemplate.opsForSet().add(KNOWN_PAGES_KEY, page);
             virtualPageCounts.put(page, new AtomicInteger(0));
-            realPageCounts.put(page, new AtomicInteger(0));
         }
         // 不在构造器中生成随机数，初始化为真实值（0），
         // 等 60 秒后第一次定时任务再生成虚拟随机数

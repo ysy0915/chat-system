@@ -1,7 +1,6 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
-import com.example.chat.entity.Message;
 import com.example.chat.entity.User;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.ContentSafetyService;

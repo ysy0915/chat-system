@@ -19,6 +19,9 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.annotation.PreDestroy;
 
 /**
  * LangGraph4j 辩论图服务
@@ -48,6 +51,24 @@ public class DebateGraphService {
     private int maxRounds;
 
     private final ExecutorService parallelExecutor = Executors.newFixedThreadPool(3);
+
+    /**
+     * 应用关闭时清理线程池，防止线程泄漏
+     */
+    @PreDestroy
+    public void shutdown() {
+        log.info("[DebateGraph] 关闭线程池...");
+        parallelExecutor.shutdown();
+        try {
+            if (!parallelExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                parallelExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            parallelExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        log.info("[DebateGraph] 线程池已关闭");
+    }
 
     public DebateState execute(String reqId, Long userId, String topic) throws Exception {
         log.info("[DebateGraph] 开始辩论 reqId={} userId={} topic={}", reqId, userId, topic);

@@ -32,8 +32,11 @@ spring:
       max-lifetime: 600000
   data:
     redis:
-      host: 172.18.160.222
-      port: 6379
+      sentinel:
+        master: mymaster
+        nodes: 172.18.160.222:26379
+      database: 0
+      timeout: 5000ms
   rabbitmq:
     host: 172.18.160.222
     port: 5672

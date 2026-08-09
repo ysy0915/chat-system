@@ -5,7 +5,6 @@ import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +24,6 @@ public class ModelAutoChatService {
     private static final Logger log = LoggerFactory.getLogger(ModelAutoChatService.class);
 
     private final ModelConfigRepository modelConfigRepository;
-    private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final BroadcastService broadcastService;
@@ -44,11 +42,9 @@ public class ModelAutoChatService {
     );
 
     public ModelAutoChatService(ModelConfigRepository modelConfigRepository,
-                                SimpMessagingTemplate messagingTemplate,
                                 ObjectMapper objectMapper,
                                 BroadcastService broadcastService) {
         this.modelConfigRepository = modelConfigRepository;
-        this.messagingTemplate = messagingTemplate;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
         this.httpClient = HttpClient.newBuilder()

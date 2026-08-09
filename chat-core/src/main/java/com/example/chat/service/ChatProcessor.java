@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -41,7 +40,6 @@ public class ChatProcessor {
     private static final Logger log = LoggerFactory.getLogger(ChatProcessor.class);
     private final MessageRepository messageRepository;
     private final ModelConfigRepository modelConfigRepository;
-    private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
     private final ExecutorService modelExecutor;
@@ -103,7 +101,6 @@ public class ChatProcessor {
 
     public ChatProcessor(MessageRepository messageRepository,
                          ModelConfigRepository modelConfigRepository,
-                         SimpMessagingTemplate messagingTemplate,
                          RedisTemplate<String, String> redisTemplate,
                          ObjectMapper objectMapper,
                          BroadcastService broadcastService,
@@ -111,7 +108,6 @@ public class ChatProcessor {
                          LLMInvoker llmInvoker) {
         this.messageRepository = messageRepository;
         this.modelConfigRepository = modelConfigRepository;
-        this.messagingTemplate = messagingTemplate;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;

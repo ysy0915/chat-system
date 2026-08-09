@@ -3,14 +3,12 @@ package com.example.chat.service;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,48 +49,6 @@ public class OnlineCountRedisService {
         redisTemplate.expire(PAGE_SET_KEY, 30, TimeUnit.DAYS);
     }
 
-    public Map<String, List<Map<String, Object>>> getHistorySince(LocalDateTime since) {
-        Map<String, List<Map<String, Object>>> history = new LinkedHashMap<>();
-        if (since == null) {
-            return history;
-        }
-
-        long minScore = since.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-        long maxScore = System.currentTimeMillis();
-        Set<String> pages = redisTemplate.opsForSet().members(PAGE_SET_KEY);
-        if (pages == null || pages.isEmpty()) {
-            return history;
-        }
-
-        for (String rawPage : new LinkedHashSet<>(pages)) {
-            String page = normalizePage(rawPage);
-            Set<String> members = redisTemplate.opsForZSet().rangeByScore(HISTORY_PREFIX + page, minScore, maxScore);
-            if (members == null || members.isEmpty()) {
-                history.put(page, new ArrayList<>());
-                continue;
-            }
-
-            List<Map<String, Object>> points = new ArrayList<>();
-            for (String member : members) {
-                int separator = member.indexOf(':');
-                if (separator <= 0 || separator >= member.length() - 1) {
-                    continue;
-                }
-                try {
-                    long epochMillis = Long.parseLong(member.substring(0, separator));
-                    int count = Integer.parseInt(member.substring(separator + 1));
-                    String time = LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault())
-                            .format(DATE_TIME_FORMATTER);
-                    points.add(Map.of("time", time, "count", count));
-                } catch (NumberFormatException ignored) {
-                }
-            }
-            history.put(page, points);
-        }
-
-        return history;
-    }
-
     public void incrementVisitCount(String page, LocalDateTime recordedAt) {
         if (page == null || page.isBlank() || recordedAt == null) return;
         String pageKey = normalizePage(page);
@@ -123,11 +79,9 @@ public class OnlineCountRedisService {
             String dateStr = date.format(DATE_FORMATTER);
             // 批量获取所有页面当天的访问量（1次Redis mget替代N次get）
             List<String> visitKeys = new ArrayList<>();
-            List<String> pageOrder = new ArrayList<>();
             for (String rawPage : pages) {
                 String page = normalizePage(rawPage);
                 visitKeys.add(VISIT_PREFIX + page + ":" + dateStr);
-                pageOrder.add(page);
             }
             List<String> values = redisTemplate.opsForValue().multiGet(visitKeys);
             int dayTotal = 0;

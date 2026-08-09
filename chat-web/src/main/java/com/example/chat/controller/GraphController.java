@@ -4,8 +4,6 @@ import com.example.chat.client.CoreClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
-
 /**
  * 知识图谱 Controller
  */

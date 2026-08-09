@@ -13,7 +13,11 @@ import java.util.Map;
 @Component
 public class BaseUrlResolver {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+
+    public BaseUrlResolver(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 解析模型的 baseUrl

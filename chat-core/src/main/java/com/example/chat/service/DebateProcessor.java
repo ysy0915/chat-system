@@ -62,17 +62,6 @@ public class DebateProcessor {
         );
     }
 
-    private static String providerDisplayName(String provider) {
-        if (provider == null) return "未知";
-        return switch (provider.toLowerCase()) {
-            case "doubao" -> "豆包";
-            case "qwen" -> "千问";
-            case "deepseek" -> "DeepSeek";
-            case "zhipu" -> "智谱";
-            default -> provider;
-        };
-    }
-
     public void process(Map<String, Object> payload) {
         String reqId = (String) payload.get("req_id");
         Long userId = payload.get("user_id") == null ? 0L : Long.parseLong(payload.get("user_id").toString());
@@ -115,10 +104,10 @@ public class DebateProcessor {
         broadcastService.broadcast("/topic/debate." + userId,
                 WsMessage.of("start").withReqId(reqId)
                         .with("models", List.of(
-                                Map.of("id", 1, "name", providerDisplayName(modelMap.get(1L).provider)),
-                                Map.of("id", 2, "name", providerDisplayName(modelMap.get(2L).provider)),
-                                Map.of("id", 3, "name", providerDisplayName(modelMap.get(3L).provider)),
-                                Map.of("id", 4, "name", providerDisplayName(summaryModel.provider))
+                                Map.of("id", 1, "name", ModelRouter.toDisplayName(modelMap.get(1L).provider)),
+                                Map.of("id", 2, "name", ModelRouter.toDisplayName(modelMap.get(2L).provider)),
+                                Map.of("id", 3, "name", ModelRouter.toDisplayName(modelMap.get(3L).provider)),
+                                Map.of("id", 4, "name", ModelRouter.toDisplayName(summaryModel.provider))
                         )));
 
         // LangGraph4j 模式：图式工作流编排辩论
@@ -193,7 +182,7 @@ public class DebateProcessor {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (Long modelId : debateOrder) {
                 ModelConfig config = modelMap.get(modelId);
-                String displayName = providerDisplayName(config.provider);
+                String displayName = ModelRouter.toDisplayName(config.provider);
                 String prompt = buildDebatePrompt(question, allRounds, currentRound, displayName);
 
                 CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
@@ -235,9 +224,9 @@ public class DebateProcessor {
 
         broadcastService.broadcast("/topic/debate." + userId,
                 WsMessage.of("synthesizing").withReqId(reqId)
-                        .with("synthesizer", providerDisplayName(summaryModel.provider)).toMap());
+                        .with("synthesizer", ModelRouter.toDisplayName(summaryModel.provider)).toMap());
 
-        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, providerDisplayName(summaryModel.provider));
+        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, ModelRouter.toDisplayName(summaryModel.provider));
 
         try {
             String finalAnswer = llmInvoker.invokeStream(summaryModel,

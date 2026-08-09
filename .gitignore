@@ -40,3 +40,8 @@ build/
 
 logs/
 *.pid
+
+### Environment ###
+.env
+.env.local
+.env.production

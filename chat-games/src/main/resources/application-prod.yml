@@ -21,8 +21,8 @@ spring:
         ip: 172.23.172.13
   datasource:
     url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-    username: yangsy
-    password: YangSy@0915!
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 8

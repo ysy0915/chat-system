@@ -5,7 +5,6 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.Message;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.MessageRepository;
-import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +16,6 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -29,25 +27,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.xssf.usermodel.XSSFSheet;
-import org.apache.poi.xssf.usermodel.XSSFRow;
-import org.apache.poi.xssf.usermodel.XSSFCell;
-import org.apache.poi.xslf.usermodel.XMLSlideShow;
-import org.apache.poi.xslf.usermodel.XSLFSlide;
-import org.apache.poi.xslf.usermodel.XSLFTextShape;
-
 @Service
 public class ChatProcessor {
     private static final Logger log = LoggerFactory.getLogger(ChatProcessor.class);
     private final MessageRepository messageRepository;
-    private final ModelConfigRepository modelConfigRepository;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
     private final ExecutorService modelExecutor;
     private final BroadcastService broadcastService;
     private final LLMCallRecorder llmCallRecorder;
     private final LLMInvoker llmInvoker;
+    private final ChatHistoryBuilder chatHistoryBuilder;
+    private final ModelRouter modelRouter;
+    private final FileContentExtractor fileContentExtractor;
 
     /** 对话记忆服务（可选注入） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -68,10 +60,6 @@ public class ChatProcessor {
     /** 知识图谱服务（可选注入，失败不阻塞主流程） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private KnowledgeGraphService knowledgeGraphService;
-
-    /** 历史对话摘要服务（可选注入，压缩过长历史避免上下文溢出） */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private HistorySummaryService historySummaryService;
 
     /** 工具调度器（可选注入，仅在 app.agent.enabled=true 时存在） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -106,19 +94,23 @@ public class ChatProcessor {
     }
 
     public ChatProcessor(MessageRepository messageRepository,
-                         ModelConfigRepository modelConfigRepository,
                          RedisTemplate<String, String> redisTemplate,
                          ObjectMapper objectMapper,
                          BroadcastService broadcastService,
                          LLMCallRecorder llmCallRecorder,
-                         LLMInvoker llmInvoker) {
+                         LLMInvoker llmInvoker,
+                         ChatHistoryBuilder chatHistoryBuilder,
+                         ModelRouter modelRouter,
+                         FileContentExtractor fileContentExtractor) {
         this.messageRepository = messageRepository;
-        this.modelConfigRepository = modelConfigRepository;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
         this.llmCallRecorder = llmCallRecorder;
         this.llmInvoker = llmInvoker;
+        this.chatHistoryBuilder = chatHistoryBuilder;
+        this.modelRouter = modelRouter;
+        this.fileContentExtractor = fileContentExtractor;
         this.modelExecutor = new ThreadPoolExecutor(
                 5,
                 20,
@@ -141,23 +133,10 @@ public class ChatProcessor {
         boolean isPrivate = "true".equals(String.valueOf(payload.get("private")));
 
         try {
-            List<ModelConfig> allConfigs = modelConfigRepository.findAllEnabled().stream()
-                    .filter(c -> c.modelType == null || "chat".equalsIgnoreCase(c.modelType))
-                    .sorted(Comparator.comparingInt(config -> config.priority != null ? config.priority : 100))
-                    .toList();
-
-            if (allConfigs.isEmpty()) {
-                ModelConfig fallback = new ModelConfig();
-                fallback.provider = defaultProvider;
-                fallback.model = defaultModel;
-                fallback.apiKeyEncrypted = defaultApiKey;
-                fallback.priority = 100;
-                fallback.enabled = true;
-                allConfigs = List.of(fallback);
-            }
+            List<ModelConfig> allConfigs = modelRouter.loadChatModels(defaultProvider, defaultModel, defaultApiKey);
 
             if (isPrivate) {
-                String switchResult = trySwitchModel(userId, question, allConfigs);
+                String switchResult = modelRouter.trySwitch(userId, question, allConfigs);
                 if (switchResult != null) {
                     String displayText = switchResult;
                     try {
@@ -224,35 +203,7 @@ public class ChatProcessor {
                 }
             }
 
-            List<ModelConfig> configs;
-            Long boundModelId = getPersonalModelId(userId);
-            if (isPrivate && boundModelId == null) {
-                List<ModelConfig> deepseekConfigs = allConfigs.stream()
-                        .filter(c -> "deepseek".equalsIgnoreCase(c.provider))
-                        .toList();
-                configs = deepseekConfigs.isEmpty() ? allConfigs : deepseekConfigs;
-            } else if (boundModelId != null) {
-                configs = allConfigs.stream()
-                        .filter(c -> c.id != null && c.id.equals(boundModelId))
-                        .toList();
-                if (configs.isEmpty()) {
-                    configs = allConfigs.stream()
-                            .filter(c -> "deepseek".equalsIgnoreCase(c.provider))
-                            .toList();
-                    configs = configs.isEmpty() ? allConfigs : configs;
-                    log.warn("[WARN] 用户 {} 绑定的模型ID={} 不在可用chat模型中，回退到 {}", userId, boundModelId,
-                            configs.isEmpty() ? "无可用模型" : configs.get(0).provider);
-                }
-            } else {
-                String bestProvider = selectBestProvider(question);
-                List<ModelConfig> preferred = allConfigs.stream()
-                        .filter(c -> bestProvider.equalsIgnoreCase(c.provider))
-                        .toList();
-                configs = preferred.isEmpty() ? allConfigs : preferred;
-                log.info("[INFO] 群聊智能路由: question='{}' -> provider={}",
-                        question.length() > 30 ? question.substring(0, 30) + "..." : question,
-                        configs.get(0).provider);
-            }
+            List<ModelConfig> configs = modelRouter.selectForChat(isPrivate, userId, question, allConfigs);
 
             if (configs.isEmpty()) {
                 log.error("[ERROR] 用户 {} 没有可用的 chat 模型", userId);
@@ -263,10 +214,9 @@ public class ChatProcessor {
 
             final List<LLMMessage> historyMessages;
             if (isPrivate) {
-                historyMessages = buildHistoryMessages(userId, question);
+                historyMessages = chatHistoryBuilder.buildPersonal(userId, question);
             } else {
-                // 群聊也构建带记忆的上下文
-                historyMessages = buildGroupChatMessages(userId, question);
+                historyMessages = chatHistoryBuilder.buildGroup(userId, question);
             }
 
             // 个人对话空间：走流式输出
@@ -394,7 +344,7 @@ public class ChatProcessor {
                             log.info("[INFO] 抢到首发, reqId={}", reqId);
                             try {
                                 if (isPrivate) {
-                                    savePersonalModelId(userId, result.config.id);
+                                    modelRouter.savePersonalModelId(userId, result.config.id);
                                 }
                                 completeWithAnswer(reqId, userId, question, result.answer, result.config.provider, result.config.model, startTime);
                                 // 群聊额外保存记忆（completeWithAnswer 内默认存 personal）
@@ -485,36 +435,17 @@ public class ChatProcessor {
             if (isImage) {
                 fileBase64 = Base64.getEncoder().encodeToString(fileContent);
                 fileTextContent = null;
-            } else if (isExcel) {
-                fileBase64 = null;
-                String extracted = extractExcelContent(fileContent);
-                if (extracted.length() > 30000) extracted = extracted.substring(0, 30000) + "\n...[已截断]";
-                fileTextContent = extracted;
-            } else if (isPpt) {
-                fileBase64 = null;
-                String extracted = extractPptContent(fileContent);
-                if (extracted.length() > 30000) extracted = extracted.substring(0, 30000) + "\n...[已截断]";
-                fileTextContent = extracted;
             } else {
                 fileBase64 = null;
-                String raw = new String(fileContent, StandardCharsets.UTF_8);
-                if (raw.length() > 30000) raw = raw.substring(0, 30000) + "\n...[已截断]";
-                fileTextContent = raw;
+                String extracted = fileContentExtractor.extract(fileContent, fileName);
+                if (extracted.isEmpty()) {
+                    extracted = new String(fileContent, StandardCharsets.UTF_8);
+                }
+                if (extracted.length() > 30000) extracted = extracted.substring(0, 30000) + "\n...[已截断]";
+                fileTextContent = extracted;
             }
 
-            List<ModelConfig> allConfigs = modelConfigRepository.findAllEnabled().stream()
-                    .sorted(Comparator.comparingInt(config -> config.priority != null ? config.priority : 100))
-                    .toList();
-
-            if (allConfigs.isEmpty()) {
-                ModelConfig fallback = new ModelConfig();
-                fallback.provider = defaultProvider;
-                fallback.model = defaultModel;
-                fallback.apiKeyEncrypted = defaultApiKey;
-                fallback.priority = 100;
-                fallback.enabled = true;
-                allConfigs = List.of(fallback);
-            }
+            List<ModelConfig> allConfigs = modelRouter.loadChatModels(defaultProvider, defaultModel, defaultApiKey);
 
             List<ModelConfig> configs;
             if (isImage) {
@@ -539,7 +470,7 @@ public class ChatProcessor {
                 if (!textParse.isEmpty()) {
                     configs = textParse;
                 } else {
-                    Long boundModelId = getPersonalModelId(userId);
+                    Long boundModelId = modelRouter.getPersonalModelId(userId);
                     if (boundModelId != null) {
                         List<ModelConfig> bound = allConfigs.stream()
                                 .filter(c -> c.id != null && c.id.equals(boundModelId))
@@ -554,7 +485,8 @@ public class ChatProcessor {
                 }
             }
 
-            final List<LLMMessage> fileHistoryMessages = buildFileHistoryMessages(userId, question, fileName, fileTextContent, isImage, fileBase64, mimeType);
+            final List<LLMMessage> fileHistoryMessages = chatHistoryBuilder.buildFile(
+                    userId, question, fileName, fileTextContent, isImage, fileBase64, mimeType);
 
             List<CompletableFuture<?>> futures = new ArrayList<>();
             AtomicBoolean completed = new AtomicBoolean(false);
@@ -571,7 +503,7 @@ public class ChatProcessor {
                     }
                 }, modelExecutor).thenAccept(result -> {
                     if (result != null && completed.compareAndSet(false, true)) {
-                        savePersonalModelId(userId, result.config.id);
+                        modelRouter.savePersonalModelId(userId, result.config.id);
                         completeWithAnswer(reqId, userId, question, result.answer, result.config.provider, result.config.model, System.currentTimeMillis());
                     }
                 });
@@ -593,164 +525,7 @@ public class ChatProcessor {
         }
     }
 
-    private List<LLMMessage> buildHistoryMessages(Long userId, String currentQuestion) {
-        List<Message> recent = getRecentMessages(userId);
-        List<LLMMessage> historyMsgs = new ArrayList<>();
 
-        if (recent != null) {
-            for (Message m : recent) {
-                historyMsgs.add(LLMMessage.user(m.question));
-                historyMsgs.add(LLMMessage.assistant(extractAnswerText(m.answerJson)));
-            }
-        }
-
-        // 系统 prompt（含记忆上下文）
-        StringBuilder systemPrompt = new StringBuilder("你是用户的AI助手，请友好地回答问题。");
-        if (memoryService != null) {
-            String memory = memoryService.buildMemoryContext("personal", userId, currentQuestion);
-            if (memory != null && !memory.isBlank()) {
-                systemPrompt.append("\n\n").append(memory);
-            }
-        }
-
-        // 历史压缩：过长时用摘要替代早期消息
-        historyMsgs = compressHistory("personal", userId, historyMsgs, systemPrompt);
-
-        List<LLMMessage> messages = new ArrayList<>();
-        messages.add(LLMMessage.system(systemPrompt.toString()));
-        messages.addAll(historyMsgs);
-        messages.add(LLMMessage.user(currentQuestion));
-        return messages;
-    }
-
-    /** 历史消息压缩包装方法 */
-    private List<LLMMessage> compressHistory(String scene, Long userId,
-                                                       List<LLMMessage> historyMsgs,
-                                                       StringBuilder systemPrompt) {
-        if (historySummaryService != null && !historyMsgs.isEmpty()) {
-            try {
-                return historySummaryService.compress(scene, userId, historyMsgs, systemPrompt);
-            } catch (Exception e) {
-                log.warn("[HistorySummary] compress failed, fallback to full history: {}", e.getMessage());
-            }
-        }
-        return historyMsgs;
-    }
-
-    private List<Message> getRecentMessages(Long userId) {
-        try {
-            List<Message> recent = messageRepository.findRecentByUserId(userId);
-            if (recent != null && !recent.isEmpty()) {
-                return recent;
-            }
-        } catch (Exception ex) {
-            log.warn("[WARN] Failed to load recent messages: {}", ex.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * 构建群聊消息（带记忆上下文，但不带历史对话——群聊历史由前端展示）
-     */
-    private List<LLMMessage> buildGroupChatMessages(Long userId, String currentQuestion) {
-        List<LLMMessage> messages = new ArrayList<>();
-
-        // 系统 prompt（含记忆上下文）
-        StringBuilder systemPrompt = new StringBuilder("你是AI伙伴群聊中的AI角色，请友好、有趣地回答问题。");
-        if (memoryService != null) {
-            String memory = memoryService.buildMemoryContext("chat", userId, currentQuestion);
-            if (memory != null && !memory.isBlank()) {
-                systemPrompt.append("\n\n").append(memory);
-            }
-        }
-        messages.add(LLMMessage.system(systemPrompt.toString()));
-        messages.add(LLMMessage.user(currentQuestion));
-        return messages;
-    }
-
-    private List<LLMMessage> buildFileHistoryMessages(Long userId, String question, String fileName,
-                                                                String fileTextContent, boolean isImage,
-                                                                String fileBase64, String mimeType) {
-        List<Message> recent = getRecentMessages(userId);
-        List<LLMMessage> historyMsgs = new ArrayList<>();
-
-        if (recent != null) {
-            for (Message m : recent) {
-                historyMsgs.add(LLMMessage.user(m.question));
-                historyMsgs.add(LLMMessage.assistant(extractAnswerText(m.answerJson)));
-            }
-        }
-
-        // 文件场景的 system prompt
-        StringBuilder systemPrompt = new StringBuilder("请根据提供的文件内容和对话历史，友好地回答用户问题。");
-        historyMsgs = compressHistory("file", userId, historyMsgs, systemPrompt);
-
-        List<LLMMessage> messages = new ArrayList<>();
-        // 仅当有摘要时才加入 system 消息
-        if (systemPrompt.indexOf("历史对话摘要") >= 0) {
-            messages.add(LLMMessage.system(systemPrompt.toString()));
-        }
-        messages.addAll(historyMsgs);
-
-        if (isImage) {
-            String imageQuestion = (question == null || question.isBlank()) ? "请描述这张图片" : question;
-            messages.add(LLMMessage.userWithImage(imageQuestion, fileBase64, mimeType));
-        } else {
-            String content = question + "\n\n--- 以下是文件 [" + fileName + "] 的内容 ---\n" + fileTextContent + "\n--- 文件内容结束 ---";
-            messages.add(LLMMessage.user(content));
-        }
-
-        return messages;
-    }
-
-    private String extractExcelContent(byte[] fileContent) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        try (XSSFWorkbook workbook = new XSSFWorkbook(new java.io.ByteArrayInputStream(fileContent))) {
-            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
-                XSSFSheet sheet = workbook.getSheetAt(i);
-                sb.append("=== Sheet: ").append(sheet.getSheetName()).append(" ===\n");
-                for (int r = 0; r <= sheet.getLastRowNum(); r++) {
-                    XSSFRow row = sheet.getRow(r);
-                    if (row == null) { sb.append("\n"); continue; }
-                    List<String> cells = new ArrayList<>();
-                    for (int c = 0; c < row.getLastCellNum(); c++) {
-                        XSSFCell cell = row.getCell(c);
-                        cells.add(cell != null ? cell.toString().trim() : "");
-                    }
-                    sb.append(String.join("\t", cells)).append("\n");
-                }
-                sb.append("\n");
-            }
-        }
-        return sb.toString().trim();
-    }
-
-    /**
-     * 从 PPT 文件二进制内容中提取文本（按幻灯片 → 文本形状遍历）。
-     *
-     * @param fileContent PPT 文件二进制内容
-     * @return 提取的文本（每页以 === Slide N === 分隔）
-     */
-    private String extractPptContent(byte[] fileContent) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        try (XMLSlideShow ppt = new XMLSlideShow(new java.io.ByteArrayInputStream(fileContent))) {
-            List<XSLFSlide> slides = ppt.getSlides();
-            for (int i = 0; i < slides.size(); i++) {
-                XSLFSlide slide = slides.get(i);
-                sb.append("=== Slide ").append(i + 1).append(" ===\n");
-                for (var shape : slide.getShapes()) {
-                    if (shape instanceof XSLFTextShape textShape) {
-                        String text = textShape.getText().trim();
-                        if (!text.isEmpty()) {
-                            sb.append(text).append("\n");
-                        }
-                    }
-                }
-                sb.append("\n");
-            }
-        }
-        return sb.toString().trim();
-    }
 
     private void completeWithAnswer(String reqId, Long userId, String question, String answer, String provider, String model, long startTime) {
         long latency = System.currentTimeMillis() - startTime;
@@ -819,61 +594,6 @@ public class ChatProcessor {
     }
 
     /**
-     * 根据问题特征智能选择最优模型 provider
-     * - DeepSeek: 代码/算法/逻辑推理/数学/技术问题
-     * - 千问: 创意写作/诗歌/故事/角色扮演
-     * - 豆包: 日常对话/闲聊/通用问题（默认）
-     */
-    private String selectBestProvider(String question) {
-        if (question == null || question.isBlank()) return "doubao";
-        String q = question.toLowerCase();
-
-        String[] deepSeekKeywords = {"代码", "编程", "算法", "bug", "error", "java", "python", "javascript",
-                "sql", "逻辑", "推理", "数学", "计算", "技术", "架构", "接口", "函数", "正则", "复杂"};
-        for (String kw : deepSeekKeywords) {
-            if (q.contains(kw)) return "deepseek";
-        }
-
-        String[] qwenKeywords = {"写诗", "写一篇", "创作", "故事", "小说", "诗歌", "散文", "作文",
-                "角色扮演", "续写", "创意", "文案", "广告语", "标语", "对联"};
-        for (String kw : qwenKeywords) {
-            if (q.contains(kw)) return "qwen";
-        }
-
-        return "doubao";
-    }
-
-    /**
-     * 判断指定 provider 是否支持视觉（图片）输入。
-     *
-     * @param provider 模型 provider 名称
-     * @return true 表示支持图片输入
-     */
-    private boolean isVisionSupported(String provider) {
-        if (provider == null) return false;
-        switch (provider.toLowerCase()) {
-            case "qwen":
-            case "doubao":
-            case "openai":
-            case "azure":
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 判断指定模型配置是否为视觉模型（image_parse 类型或 provider 支持视觉）。
-     *
-     * @param config 模型配置
-     * @return true 表示该模型可处理图片
-     */
-    private boolean isVisionModel(ModelConfig config) {
-        if ("image_parse".equals(config.modelType)) return true;
-        return isVisionSupported(config.provider);
-    }
-
-    /**
      * 计算输入字符串的 SHA-256 哈希值（16 进制字符串）；计算失败时回退到 hashCode。
      *
      * @param input 输入字符串
@@ -914,90 +634,6 @@ public class ChatProcessor {
     }
 
     /**
-     * 从 Redis 读取用户绑定的个人模型 ID；读取失败或未绑定时返回 null。
-     *
-     * @param userId 用户 ID
-     * @return 绑定的模型 ID，或 null
-     */
-    private Long getPersonalModelId(Long userId) {
-        try {
-            String val = redisTemplate.opsForValue().get("personal_model:" + userId);
-            if (val != null && !val.isBlank()) {
-                return Long.parseLong(val);
-            }
-        } catch (Exception ex) {
-            log.warn("[WARN] Redis read personal_model failed: {}", ex.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * 将用户绑定的个人模型 ID 保存到 Redis（TTL 365 天）。
-     *
-     * @param userId  用户 ID
-     * @param modelId 模型 ID
-     */
-    private void savePersonalModelId(Long userId, Long modelId) {
-        try {
-            redisTemplate.opsForValue().set("personal_model:" + userId, String.valueOf(modelId), Duration.ofDays(365));
-        } catch (Exception ex) {
-            log.warn("[WARN] Redis write personal_model failed: {}", ex.getMessage());
-        }
-    }
-
-    /**
-     * 尝试根据用户输入的切换指令（如"切换到千问"）切换个人模型。
-     * <p>命中切换指令时：保存绑定关系并返回切换成功提示的 JSON；未命中返回 null。</p>
-     *
-     * @param userId     用户 ID
-     * @param question   用户问题（可能包含切换指令）
-     * @param allConfigs 全部可用模型配置
-     * @return 切换成功提示 JSON，或 null（未命中切换指令）
-     */
-    private String trySwitchModel(Long userId, String question, List<ModelConfig> allConfigs) {
-        String q = question.trim().toLowerCase();
-        if (!q.contains("切换") && !q.contains("换") && !q.contains("改用")) {
-            return null;
-        }
-
-        ModelConfig target = null;
-        for (ModelConfig config : allConfigs) {
-            String provider = config.provider != null ? config.provider.toLowerCase() : "";
-            switch (provider) {
-                case "doubao":
-                    if (q.contains("豆包") || q.contains("doubao")) target = config;
-                    break;
-                case "qwen":
-                    if (q.contains("千问") || q.contains("qwen") || q.contains("通义")) target = config;
-                    break;
-                case "deepseek":
-                    if (q.contains("deepseek") || q.contains("深度求索")) target = config;
-                    break;
-                case "zhipu":
-                    if (q.contains("智谱") || q.contains("zhipu") || q.contains("glm")) target = config;
-                    break;
-            }
-            if (target != null) break;
-        }
-
-        if (target != null) {
-            savePersonalModelId(userId, target.id);
-            String displayName;
-            switch (target.provider.toLowerCase()) {
-                case "doubao": displayName = "豆包"; break;
-                case "qwen": displayName = "千问"; break;
-                case "deepseek": displayName = "DeepSeek"; break;
-                case "zhipu": displayName = "智谱 GLM"; break;
-                default: displayName = target.provider; break;
-            }
-            String msg = "✅ 已成功切换为「" + displayName + "」模型，后续所有问题都将由该模型回答。";
-            return "{\"answer\":\"" + msg.replace("\"", "\\\"") + "\"}";
-        }
-
-        return null;
-    }
-
-    /**
      * LLM 调用结果封装（包含模型配置和生成的答案）。
      */
     private static class LLMResult {
@@ -1016,16 +652,4 @@ public class ChatProcessor {
         }
     }
 
-    /** 从 answerJson 中提取纯文本回答（避免把 JSON 格式传给 LLM 导致模仿） */
-    private String extractAnswerText(String answerJson) {
-        if (answerJson == null || answerJson.isBlank()) return "";
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(answerJson, Map.class);
-            Object answer = m.get("answer");
-            return answer != null ? answer.toString() : answerJson;
-        } catch (Exception e) {
-            return answerJson;
-        }
-    }
 }

@@ -2,8 +2,8 @@
 spring:
   datasource:
     url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-    username: yangsy
-    password: YangSy@0915!
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
 
 # RAG 知识库（生产环境开启）
 app:
@@ -18,7 +18,7 @@ app:
     embedding:
       provider: dashscope
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      api-key: sk-ws-H.EIMXHPP.2YAf.MEYCIQDjUR775CRWxkkPL0j8CVzPgRqMoTqn1o0tF3ckc4M1tgIhAOT2PTD-7liJ-ts5JBlk9NhQmuwY-rJJA91dLCOuSbRb
+      api-key: ${DASHSCOPE_API_KEY:}
       model: text-embedding-v3
       dimension: 1024
     search:
@@ -41,7 +41,7 @@ app:
     personal:
       enabled: true
     base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    api-key: sk-ws-H.EIMXHPP.2YAf.MEYCIQDjUR775CRWxkkPL0j8CVzPgRqMoTqn1o0tF3ckc4M1tgIhAOT2PTD-7liJ-ts5JBlk9NhQmuwY-rJJA91dLCOuSbRb
+    api-key: ${DASHSCOPE_API_KEY:}
     model: qwen-plus
     temperature: 0.85
     timeout: 60

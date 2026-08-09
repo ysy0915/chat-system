@@ -4,6 +4,7 @@ import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
+import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ public class ModelAutoChatService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final BroadcastService broadcastService;
+    private final BaseUrlResolver baseUrlResolver;
 
     /** LLM 统一调用入口 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -45,10 +47,12 @@ public class ModelAutoChatService {
 
     public ModelAutoChatService(ModelConfigRepository modelConfigRepository,
                                 ObjectMapper objectMapper,
-                                BroadcastService broadcastService) {
+                                BroadcastService broadcastService,
+                                BaseUrlResolver baseUrlResolver) {
         this.modelConfigRepository = modelConfigRepository;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
+        this.baseUrlResolver = baseUrlResolver;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(HTTP_TIMEOUT)
                 .build();
@@ -154,13 +158,13 @@ public class ModelAutoChatService {
     private String callLLM(ModelConfig config, String prompt) throws Exception {
         // 优先通过 LLMInvoker 统一调用（享受熔断、重试、自愈、统计能力）
         if (llmInvoker != null) {
-            String baseUrl = resolveBaseUrl(config);
+            String baseUrl = baseUrlResolver.resolve(config, null);
             String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                     ? config.apiKeyEncrypted : "";
             return llmInvoker.invoke(config, prompt, 0.9, "auto", baseUrl, apiKey);
         }
         // 降级：直接 HTTP 调用
-        String baseUrl = resolveBaseUrl(config);
+        String baseUrl = baseUrlResolver.resolve(config, null);
         String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
         String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                 ? config.apiKeyEncrypted : "";
@@ -198,20 +202,4 @@ public class ModelAutoChatService {
         return message != null ? message.get("content").toString().trim() : "No response";
     }
 
-    private String resolveBaseUrl(ModelConfig config) {
-        if (config.metaJson != null && !config.metaJson.isBlank()) {
-            try {
-                Map<String, Object> meta = objectMapper.readValue(config.metaJson, Map.class);
-                Object baseUrl = meta.get("base_url");
-                if (baseUrl != null) return baseUrl.toString();
-            } catch (Exception ignored) {}
-        }
-        switch (config.provider.toLowerCase()) {
-            case "deepseek": return "https://api.deepseek.com/v1";
-            case "qwen": return "https://dashscope.aliyuncs.com/compatible-mode/v1";
-            case "doubao": return "https://ark.cn-beijing.volces.com/api/v3";
-            case "zhipu": return "https://open.bigmodel.cn/api/paas/v4";
-            default: return "https://api.openai.com/v1";
-        }
-    }
 }

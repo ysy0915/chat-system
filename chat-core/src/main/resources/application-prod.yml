@@ -33,8 +33,8 @@ spring:
       connection-timeout: 10000
       idle-timeout: 300000
       max-lifetime: 600000
-    username: yangsy
-    password: YangSy@0915!
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
   data:
     redis:
       sentinel:
@@ -46,12 +46,12 @@ spring:
     host: 172.18.160.222
     port: 5672
     username: chatapp
-    password: chatapp2024
+    password: ${RABBITMQ_PASSWORD:}
   neo4j:
     uri: bolt://127.0.0.1:7687
     authentication:
       username: neo4j
-      password: neo4j123456
+      password: ${NEO4J_PASSWORD:}
 
 mybatis:
   mapper-locations: classpath:mybatis/mappers/*.xml
@@ -60,7 +60,7 @@ mybatis:
 
 # JWT（与 chat-web 保持一致）
 jwt:
-  secret: k8Xp2mQ7vR3nF9wL5tY1bJ6cH4dA0eG8iS2uW7xZ
+  secret: ${JWT_SECRET:}
   expiration: 3600000
 
 app:

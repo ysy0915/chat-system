@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,6 +50,7 @@ public class TreeHoleService {
     private final ObjectMapper objectMapper;
     private final BroadcastService broadcastService;
     private final LLMInvoker llmInvoker;
+    private final ChatHistoryBuilder chatHistoryBuilder;
 
     /** RAG 服务（可选注入，app.rag.enabled=false 时为 null） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -104,13 +104,15 @@ public class TreeHoleService {
                            RateLimitService rateLimitService,
                            ObjectMapper objectMapper,
                            BroadcastService broadcastService,
-                           LLMInvoker llmInvoker) {
+                           LLMInvoker llmInvoker,
+                           ChatHistoryBuilder chatHistoryBuilder) {
         this.treeHoleRepository = treeHoleRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.rateLimitService = rateLimitService;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
         this.llmInvoker = llmInvoker;
+        this.chatHistoryBuilder = chatHistoryBuilder;
     }
 
     /** 固定使用 model_configs 中 id=2 的千问模型配置（树洞主模型） */
@@ -345,7 +347,7 @@ public class TreeHoleService {
             TreeHoleMessage prev = recent.get(i);
             historyMsgs.add(LLMMessage.user(prev.question));
             if (prev.answerJson != null && !prev.answerJson.isBlank()) {
-                historyMsgs.add(LLMMessage.assistant(extractAnswerText(prev.answerJson)));
+                historyMsgs.add(LLMMessage.assistant(chatHistoryBuilder.extractAnswerText(prev.answerJson)));
             }
         }
 
@@ -528,7 +530,7 @@ public class TreeHoleService {
             TreeHoleMessage prev = recent.get(i);
             historyMsgs.add(LLMMessage.user(prev.question));
             if (prev.answerJson != null && !prev.answerJson.isBlank()) {
-                historyMsgs.add(LLMMessage.assistant(extractAnswerText(prev.answerJson)));
+                historyMsgs.add(LLMMessage.assistant(chatHistoryBuilder.extractAnswerText(prev.answerJson)));
             }
         }
 
@@ -600,20 +602,6 @@ public class TreeHoleService {
         }
 
         return m;
-    }
-
-    /** 从 answerJson 中提取纯文本回答（避免把 JSON 格式传给 LLM 导致模仿） */
-    private String extractAnswerText(String answerJson) {
-        if (answerJson == null || answerJson.isBlank()) return "";
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> m = objectMapper.readValue(answerJson, Map.class);
-            Object answer = m.get("answer");
-            return answer != null ? answer.toString() : answerJson;
-        } catch (Exception e) {
-            // 不是 JSON，直接返回原文
-            return answerJson;
-        }
     }
 
     /** 树洞历史压缩包装方法 */

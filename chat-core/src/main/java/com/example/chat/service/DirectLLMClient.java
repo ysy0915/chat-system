@@ -5,6 +5,7 @@ import com.example.chat.exception.LLMCallException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -21,6 +22,7 @@ import java.util.Map;
  *
  * 统一了 KnowledgeGraphService / ModelAutoChatService 中重复的降级 HTTP 逻辑。
  */
+@Service
 public class DirectLLMClient {
 
     private static final Logger log = LoggerFactory.getLogger(DirectLLMClient.class);

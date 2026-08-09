@@ -17,7 +17,7 @@ import java.util.List;
  *
  * 开关：app.router.enabled=true 开启
  */
-@Service
+@Service("taskTypeModelRouter")
 @ConditionalOnProperty(name = "app.router.enabled", havingValue = "true")
 public class ModelRouter {
 

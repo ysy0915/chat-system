@@ -71,89 +71,19 @@ public class DebateProcessor {
         Long debateRecordId = payload.get("debate_record_id") == null ? null : Long.parseLong(payload.get("debate_record_id").toString());
         String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
 
-        // 辩论固定使用三个 chat 模型：豆包、千问、DeepSeek（各自调用自家 chat 模型）
-        // 最终整合模型固定为千问 chat，全程不出现智谱
-        List<ModelConfig> chatModels = modelConfigRepository.findAllEnabledByType("chat");
-
-        ModelConfig doubaoModel = chatModels.stream()
-                .filter(m -> "doubao".equalsIgnoreCase(m.provider))
-                .findFirst()
-                .orElse(null);
-        ModelConfig qwenModel = chatModels.stream()
-                .filter(m -> "qwen".equalsIgnoreCase(m.provider))
-                .findFirst()
-                .orElse(null);
-        ModelConfig deepseekModel = chatModels.stream()
-                .filter(m -> "deepseek".equalsIgnoreCase(m.provider))
-                .findFirst()
-                .orElse(null);
-
-        if (doubaoModel == null || qwenModel == null || deepseekModel == null) {
+        Map<Long, ModelConfig> modelMap = resolveDebateModels(modelConfigRepository.findAllEnabledByType("chat"));
+        if (modelMap == null) {
             broadcastService.broadcast("/topic/debate." + userId,
                     WsMessage.error("需要豆包、千问、DeepSeek 三个 chat 模型均已启用").withReqId(reqId).toMap());
             return;
         }
+        final ModelConfig summaryModel = modelMap.get(2L); // 千问为整合模型
 
-        // 三个辩论模型：豆包、千问、DeepSeek
-        Map<Long, ModelConfig> modelMap = new LinkedHashMap<>();
-        modelMap.put(1L, doubaoModel);
-        modelMap.put(2L, qwenModel);
-        modelMap.put(3L, deepseekModel);
-
-        // 整合模型固定为千问 chat
-        final ModelConfig summaryModel = qwenModel;
-
-        broadcastService.broadcast("/topic/debate." + userId,
-                WsMessage.of("start").withReqId(reqId)
-                        .with("models", List.of(
-                                Map.of("id", 1, "name", ModelRouter.toDisplayName(modelMap.get(1L).provider)),
-                                Map.of("id", 2, "name", ModelRouter.toDisplayName(modelMap.get(2L).provider)),
-                                Map.of("id", 3, "name", ModelRouter.toDisplayName(modelMap.get(3L).provider)),
-                                Map.of("id", 4, "name", ModelRouter.toDisplayName(summaryModel.provider))
-                        )));
+        broadcastModelInfo(userId, reqId, modelMap, summaryModel);
 
         // LangGraph4j 模式：图式工作流编排辩论
-        // 节点内部已实时推送 round_start/stream_token/round_response/synthesizing/done 事件
         if (langGraph4jDebateEnabled && debateGraphService != null) {
-            debateExecutor.submit(() -> {
-                try {
-                    com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question);
-
-                    String summary = result.getSummary() != null ? result.getSummary() : "";
-
-                    // 保存辩论记录
-                    if (debateRecordId != null) {
-                        try {
-                            com.example.chat.entity.DebateRecord record = new com.example.chat.entity.DebateRecord();
-                            record.id = debateRecordId;
-                            record.finalAnswer = summary;
-                            record.status = "done";
-                            debateRecordRepository.updateAnswer(record);
-                        } catch (Exception ex) {
-                            log.warn("[LangGraph4j] 辩论记录保存失败: {}", ex.getMessage());
-                        }
-                    }
-
-                    // 更新消息记录
-                    try {
-                        String answerJson = objectMapper.writeValueAsString(Map.of("answer", summary));
-                        Message m = messageRepository.findByReqId(reqId);
-                        if (m != null) {
-                            m.answerJson = answerJson;
-                            m.status = "done";
-                            m.provider = summaryModel.provider;
-                            m.model = summaryModel.model;
-                            messageRepository.updateByReqId(m);
-                        }
-                    } catch (Exception ex) {
-                        log.warn("[LangGraph4j] 消息记录更新失败: {}", ex.getMessage());
-                    }
-                } catch (Exception e) {
-                    log.error("[LangGraph4j] 辩论图执行失败: {}", e.getMessage(), e);
-                    broadcastService.broadcast("/topic/debate." + userId,
-                            WsMessage.error("辩论图执行失败: " + e.getMessage()).withReqId(reqId).toMap());
-                }
-            });
+            runLangGraph4jDebate(reqId, userId, question, summaryModel, debateRecordId);
             return;
         }
 
@@ -164,6 +94,47 @@ public class DebateProcessor {
                 log.error("[ERROR] DebateProcessor: {}", e.getMessage(), e);
                 broadcastService.broadcast("/topic/debate." + userId,
                         WsMessage.error(e.getMessage()).withReqId(reqId).toMap());
+            }
+        });
+    }
+
+    /** 解析辩论模型：1=豆包, 2=千问, 3=DeepSeek。任一缺失返回 null */
+    private Map<Long, ModelConfig> resolveDebateModels(List<ModelConfig> chatModels) {
+        ModelConfig doubao = chatModels.stream().filter(m -> "doubao".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
+        ModelConfig qwen = chatModels.stream().filter(m -> "qwen".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
+        ModelConfig deepseek = chatModels.stream().filter(m -> "deepseek".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
+        if (doubao == null || qwen == null || deepseek == null) return null;
+
+        Map<Long, ModelConfig> map = new LinkedHashMap<>();
+        map.put(1L, doubao);
+        map.put(2L, qwen);
+        map.put(3L, deepseek);
+        return map;
+    }
+
+    private void broadcastModelInfo(Long userId, String reqId, Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
+        broadcastService.broadcast("/topic/debate." + userId,
+                WsMessage.of("start").withReqId(reqId)
+                        .with("models", List.of(
+                                Map.of("id", 1, "name", ModelRouter.toDisplayName(modelMap.get(1L).provider)),
+                                Map.of("id", 2, "name", ModelRouter.toDisplayName(modelMap.get(2L).provider)),
+                                Map.of("id", 3, "name", ModelRouter.toDisplayName(modelMap.get(3L).provider)),
+                                Map.of("id", 4, "name", ModelRouter.toDisplayName(summaryModel.provider))
+                        )));
+    }
+
+    /** LangGraph4j 编排模式 */
+    private void runLangGraph4jDebate(String reqId, Long userId, String question,
+                                       ModelConfig summaryModel, Long debateRecordId) {
+        debateExecutor.submit(() -> {
+            try {
+                com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question);
+                String summary = result.getSummary() != null ? result.getSummary() : "";
+                persistDebateResults(reqId, userId, question, summary, summaryModel, debateRecordId, null);
+            } catch (Exception e) {
+                log.error("[LangGraph4j] 辩论图执行失败: {}", e.getMessage(), e);
+                broadcastService.broadcast("/topic/debate." + userId,
+                        WsMessage.error("辩论图执行失败: " + e.getMessage()).withReqId(reqId).toMap());
             }
         });
     }
@@ -245,33 +216,7 @@ public class DebateProcessor {
             broadcastService.broadcast("/topic/debate." + userId,
                     WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", finalAnswer).toMap());
 
-            String answerJson = objectMapper.writeValueAsString(Map.of("answer", finalAnswer));
-
-            Message m = messageRepository.findByReqId(reqId);
-            if (m != null) {
-                m.answerJson = answerJson;
-                m.status = "done";
-                m.provider = summaryModel.provider;
-                m.model = summaryModel.model;
-                messageRepository.updateByReqId(m);
-            }
-
-            DebateRecord debateRecord = debateRecordRepository.findById(debateRecordId);
-            if (debateRecord != null) {
-                debateRecord.finalAnswer = finalAnswer;
-                debateRecord.userName = userName;
-                debateRecord.status = "completed";
-                debateRecordRepository.updateAnswer(debateRecord);
-            }
-
-            // 触发知识图谱抽取（异步，失败不阻塞主流程）
-            if (knowledgeGraphService != null && m != null && m.id != null) {
-                try {
-                    knowledgeGraphService.extractAndSaveAsync(m.id, question, finalAnswer, "debate");
-                } catch (Exception ex) {
-                    log.warn("[KnowledgeGraph] 辩论知识抽取失败 msgId={}: {}", m.id, ex.getMessage());
-                }
-            }
+            persistDebateResults(reqId, userId, question, finalAnswer, summaryModel, debateRecordId, userName);
         } catch (Exception e) {
             broadcastService.broadcast("/topic/debate." + userId,
                     WsMessage.error("最终整合失败: " + e.getMessage()).withReqId(reqId).toMap());
@@ -310,6 +255,37 @@ public class DebateProcessor {
 
         sb.append("\n请直接将返回结果限制在50个字以内，不要复述讨论过程。");
         return sb.toString();
+    }
+
+    /** 持久化辩论结果：更新 Message、DebateRecord，触发知识图谱抽取 */
+    private void persistDebateResults(String reqId, Long userId, String question, String finalAnswer,
+                                       ModelConfig summaryModel, Long debateRecordId, String userName) {
+        try {
+            String answerJson = objectMapper.writeValueAsString(Map.of("answer", finalAnswer));
+            Message m = messageRepository.findByReqId(reqId);
+            if (m != null) {
+                m.answerJson = answerJson;
+                m.status = "done";
+                m.provider = summaryModel.provider;
+                m.model = summaryModel.model;
+                messageRepository.updateByReqId(m);
+            }
+
+            DebateRecord debateRecord = debateRecordRepository.findById(debateRecordId);
+            if (debateRecord != null) {
+                debateRecord.finalAnswer = finalAnswer;
+                debateRecord.userName = userName;
+                debateRecord.status = "completed";
+                debateRecordRepository.updateAnswer(debateRecord);
+            }
+
+            // 触发知识图谱抽取
+            if (knowledgeGraphService != null && m != null && m.id != null) {
+                knowledgeGraphService.extractAndSaveAsync(m.id, question, finalAnswer, "debate");
+            }
+        } catch (Exception ex) {
+            log.warn("[Debate] 结果持久化失败: {}", ex.getMessage());
+        }
     }
 
     private String buildSynthesisPrompt(String question, List<List<Map<String, String>>> allRounds, String myName) {

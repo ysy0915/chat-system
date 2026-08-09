@@ -8,6 +8,8 @@ import com.example.chat.service.ContentSafetyService;
 import com.example.chat.service.RateLimitService;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+@Tag(name = "消息管理", description = "消息发送、查询、重新生成、流式停止（核心入口）")
 @RestController
 @RequestMapping("/api/v1/messages")
 public class MessageController {
@@ -50,6 +53,7 @@ public class MessageController {
         this.objectMapper = objectMapper;
     }
 
+    @Operation(summary = "发送消息", description = "创建新消息并触发 AI 回答（速率限制 + 内容安全检测）")
     @PostMapping
     public ResponseEntity<?> createMessage(@RequestBody Map<String, Object> body) {
         Object reqIdObj = body.get("req_id");
@@ -117,6 +121,7 @@ public class MessageController {
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "queued", "user_id", userId));
     }
 
+    @Operation(summary = "发送带文件消息", description = "上传文件并附带文本问题一起提问")
     @PostMapping("/with-file")
     public ResponseEntity<?> createMessageWithFile(
             @RequestParam("file") MultipartFile file,
@@ -185,16 +190,19 @@ public class MessageController {
         return objectMapper.convertValue(created, User.class);
     }
 
+    @Operation(summary = "消息列表（按用户）", description = "查询指定用户的消息历史")
     @GetMapping
     public ResponseEntity<?> listMessages(@RequestParam(value = "user_id", defaultValue = "0") Long userId) {
         return ResponseEntity.ok(coreClient.listMessages(userId));
     }
 
+    @Operation(summary = "最近私聊消息", description = "获取用户最近的私聊消息列表")
     @GetMapping("/recent")
     public ResponseEntity<?> listRecentPrivate(@RequestParam("user_id") Long userId) {
         return ResponseEntity.ok(coreClient.listRecentPrivate(userId));
     }
 
+    @Operation(summary = "搜索私聊消息", description = "按关键词搜索用户私聊消息，支持分页")
     @GetMapping("/search")
     public ResponseEntity<?> searchPrivateMessages(@RequestParam("user_id") Long userId,
                                                     @RequestParam("keyword") String keyword,
@@ -203,22 +211,26 @@ public class MessageController {
         return ResponseEntity.ok(coreClient.searchPrivateMessages(userId, keyword, page, size));
     }
 
+    @Operation(summary = "上下文消息", description = "获取某条消息的对话上下文")
     @GetMapping("/context")
     public ResponseEntity<?> getContextMessages(@RequestParam("user_id") Long userId,
                                                  @RequestParam("msg_id") Long msgId) {
         return ResponseEntity.ok(coreClient.getContextMessages(userId, msgId));
     }
 
+    @Operation(summary = "全部消息", description = "查询所有用户的全部消息")
     @GetMapping("/all")
     public ResponseEntity<?> listAllMessages() {
         return ResponseEntity.ok(coreClient.listAllMessages());
     }
 
+    @Operation(summary = "问题列表", description = "查询所有提问（不含 AI 回答）")
     @GetMapping("/questions")
     public ResponseEntity<?> listQuestionsOnly() {
         return ResponseEntity.ok(coreClient.listQuestionsOnly());
     }
 
+    @Operation(summary = "搜索问题", description = "按关键词全局搜索问题")
     @GetMapping("/search-all")
     public ResponseEntity<?> searchQuestions(@RequestParam("q") String keyword) {
         if (keyword == null || keyword.isBlank()) {
@@ -227,16 +239,19 @@ public class MessageController {
         return ResponseEntity.ok(coreClient.searchQuestions(keyword.trim()));
     }
 
+    @Operation(summary = "获取 AI 回答", description = "根据消息 ID 查询 AI 回答内容")
     @GetMapping("/{id}/answer")
     public ResponseEntity<?> getAnswerById(@PathVariable Long id) {
         return ResponseEntity.ok(coreClient.getAnswerById(id));
     }
 
+    @Operation(summary = "在线人数", description = "查询当前页面的在线用户数")
     @GetMapping("/online-count")
     public ResponseEntity<?> getOnlineCount(@RequestParam(value = "page", defaultValue = "global") String page) {
         return ResponseEntity.ok(Map.of("count", sessionTracker.getCount(page)));
     }
 
+    @Operation(summary = "重新生成回答", description = "根据 req_id 和 user_id 触发 AI 重新生成")
     @PostMapping("/regenerate")
     public ResponseEntity<?> regenerate(@RequestBody Map<String, Object> body) {
         String reqId = body.get("req_id") == null ? null : String.valueOf(body.get("req_id"));
@@ -258,6 +273,7 @@ public class MessageController {
         }
     }
 
+    @Operation(summary = "停止生成", description = "停止指定 req_id 的 AI 生成流程")
     @PostMapping("/stop")
     public ResponseEntity<?> stop(@RequestBody Map<String, Object> body) {
         String reqId = body.get("req_id") == null ? null : String.valueOf(body.get("req_id"));

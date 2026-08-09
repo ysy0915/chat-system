@@ -1,70 +1,46 @@
 package com.example.chat.repository;
 
 import com.example.chat.entity.MediaGenRecord;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.stereotype.Repository;
+import org.apache.ibatis.annotations.*;
 
 import java.util.List;
 
-@Repository
-public class MediaGenRecordRepository {
+@Mapper
+public interface MediaGenRecordRepository {
 
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+    @Insert("INSERT INTO media_gen_records (user_id, prompt, media_type, model, media_url, glb_url, obj_url, preview_url, status, error_msg) VALUES (#{r.userId}, #{r.prompt}, #{r.mediaType}, #{r.model}, #{r.mediaUrl}, #{r.glbUrl}, #{r.objUrl}, #{r.previewUrl}, #{r.status}, #{r.errorMsg})")
+    @Options(useGeneratedKeys = true, keyProperty = "r.id")
+    int insert(@Param("r") MediaGenRecord r);
 
-    private final RowMapper<MediaGenRecord> mapper = (rs, rowNum) -> {
-        MediaGenRecord r = new MediaGenRecord();
-        r.id = rs.getLong("id");
-        r.userId = rs.getLong("user_id");
-        r.prompt = rs.getString("prompt");
-        r.mediaType = rs.getString("media_type");
-        r.model = rs.getString("model");
-        r.mediaUrl = rs.getString("media_url");
-        r.glbUrl = rs.getString("glb_url");
-        r.objUrl = rs.getString("obj_url");
-        r.previewUrl = rs.getString("preview_url");
-        r.status = rs.getString("status");
-        r.errorMsg = rs.getString("error_msg");
-        r.createdAt = rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toInstant() : null;
-        return r;
-    };
+    @Update("UPDATE media_gen_records SET status='done', media_url=#{mediaUrl}, glb_url=#{glbUrl}, obj_url=#{objUrl}, preview_url=#{previewUrl} WHERE id=#{id}")
+    int updateToDone(@Param("id") Long id, @Param("mediaUrl") String mediaUrl,
+                     @Param("glbUrl") String glbUrl, @Param("objUrl") String objUrl,
+                     @Param("previewUrl") String previewUrl);
 
-    public long insert(MediaGenRecord r) {
-        String sql = "INSERT INTO media_gen_records (user_id, prompt, media_type, model, media_url, glb_url, obj_url, preview_url, status, error_msg) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        jdbcTemplate.update(sql, r.userId, r.prompt, r.mediaType, r.model, r.mediaUrl, r.glbUrl, r.objUrl, r.previewUrl, r.status, r.errorMsg);
-        return jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
-    }
+    @Update("UPDATE media_gen_records SET status='error', error_msg=#{errorMsg} WHERE id=#{id}")
+    int updateToError(@Param("id") Long id, @Param("errorMsg") String errorMsg);
 
-    public void updateToDone(Long id, String mediaUrl, String glbUrl, String objUrl, String previewUrl) {
-        String sql = "UPDATE media_gen_records SET status='done', media_url=?, glb_url=?, obj_url=?, preview_url=? WHERE id=?";
-        jdbcTemplate.update(sql, mediaUrl, glbUrl, objUrl, previewUrl, id);
-    }
+    @Select("SELECT id, user_id AS userId, prompt, media_type AS mediaType, model, media_url AS mediaUrl, glb_url AS glbUrl, obj_url AS objUrl, preview_url AS previewUrl, status, error_msg AS errorMsg, created_at AS createdAt FROM media_gen_records WHERE id = #{id}")
+    @Results({
+            @Result(property = "createdAt", column = "created_at", javaType = java.time.Instant.class)
+    })
+    MediaGenRecord findById(@Param("id") Long id);
 
-    public void updateToError(Long id, String errorMsg) {
-        String sql = "UPDATE media_gen_records SET status='error', error_msg=? WHERE id=?";
-        jdbcTemplate.update(sql, errorMsg, id);
-    }
+    @Select("SELECT id, user_id AS userId, prompt, media_type AS mediaType, model, media_url AS mediaUrl, glb_url AS glbUrl, obj_url AS objUrl, preview_url AS previewUrl, status, error_msg AS errorMsg, created_at AS createdAt FROM media_gen_records WHERE user_id = #{userId} AND status = 'running' ORDER BY created_at DESC")
+    @Results({
+            @Result(property = "createdAt", column = "created_at", javaType = java.time.Instant.class)
+    })
+    List<MediaGenRecord> findRunningByUserId(@Param("userId") Long userId);
 
-    public MediaGenRecord findById(Long id) {
-        String sql = "SELECT * FROM media_gen_records WHERE id = ?";
-        List<MediaGenRecord> list = jdbcTemplate.query(sql, mapper, id);
-        return list.isEmpty() ? null : list.get(0);
-    }
+    @Select("SELECT id, user_id AS userId, prompt, media_type AS mediaType, model, media_url AS mediaUrl, glb_url AS glbUrl, obj_url AS objUrl, preview_url AS previewUrl, status, error_msg AS errorMsg, created_at AS createdAt FROM media_gen_records WHERE user_id = #{userId} ORDER BY created_at DESC LIMIT #{limit}")
+    @Results({
+            @Result(property = "createdAt", column = "created_at", javaType = java.time.Instant.class)
+    })
+    List<MediaGenRecord> findByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId, @Param("limit") int limit);
 
-    public List<MediaGenRecord> findRunningByUserId(Long userId) {
-        String sql = "SELECT * FROM media_gen_records WHERE user_id = ? AND status = 'running' ORDER BY created_at DESC";
-        return jdbcTemplate.query(sql, mapper, userId);
-    }
-
-    public List<MediaGenRecord> findByUserIdOrderByCreatedAtDesc(Long userId, int limit) {
-        String sql = "SELECT * FROM media_gen_records WHERE user_id = ? ORDER BY created_at DESC LIMIT ?";
-        return jdbcTemplate.query(sql, mapper, userId, limit);
-    }
-
-    public List<MediaGenRecord> findByUserIdAndType(Long userId, String mediaType, int limit) {
-        String sql = "SELECT * FROM media_gen_records WHERE user_id = ? AND media_type = ? ORDER BY created_at DESC LIMIT ?";
-        return jdbcTemplate.query(sql, mapper, userId, mediaType, limit);
-    }
+    @Select("SELECT id, user_id AS userId, prompt, media_type AS mediaType, model, media_url AS mediaUrl, glb_url AS glbUrl, obj_url AS objUrl, preview_url AS previewUrl, status, error_msg AS errorMsg, created_at AS createdAt FROM media_gen_records WHERE user_id = #{userId} AND media_type = #{mediaType} ORDER BY created_at DESC LIMIT #{limit}")
+    @Results({
+            @Result(property = "createdAt", column = "created_at", javaType = java.time.Instant.class)
+    })
+    List<MediaGenRecord> findByUserIdAndType(@Param("userId") Long userId, @Param("mediaType") String mediaType, @Param("limit") int limit);
 }

@@ -27,6 +27,7 @@ public class InternalApiController {
 
     private final ChatProcessor chatProcessor;
     private final TreeHoleService treeHoleService;
+    private final TreeHoleQueryService treeHoleQueryService;
     private final DebateProcessor debateProcessor;
     private final MessageRepository messageRepository;
     private final TreeHoleRepository treeHoleRepository;
@@ -39,6 +40,7 @@ public class InternalApiController {
     public InternalApiController(
             ChatProcessor chatProcessor,
             TreeHoleService treeHoleService,
+            TreeHoleQueryService treeHoleQueryService,
             DebateProcessor debateProcessor,
             MessageRepository messageRepository,
             TreeHoleRepository treeHoleRepository,
@@ -49,6 +51,7 @@ public class InternalApiController {
             @Autowired(required = false) KnowledgeGraphService knowledgeGraphService) {
         this.chatProcessor = chatProcessor;
         this.treeHoleService = treeHoleService;
+        this.treeHoleQueryService = treeHoleQueryService;
         this.debateProcessor = debateProcessor;
         this.messageRepository = messageRepository;
         this.treeHoleRepository = treeHoleRepository;
@@ -230,12 +233,12 @@ public class InternalApiController {
 
     @GetMapping("/treehole/history")
     public ResponseEntity<?> treeHoleHistory(@RequestParam("user_id") Long userId) {
-        return ResponseEntity.ok(treeHoleService.getHistory(userId));
+        return ResponseEntity.ok(treeHoleQueryService.getHistory(userId));
     }
 
     @GetMapping("/treehole/recent")
     public ResponseEntity<?> treeHoleRecent(@RequestParam("user_id") Long userId) {
-        return ResponseEntity.ok(treeHoleService.getRecentHistory(userId, 5));
+        return ResponseEntity.ok(treeHoleQueryService.getRecentHistory(userId, 5));
     }
 
     @GetMapping("/treehole/search")
@@ -245,15 +248,15 @@ public class InternalApiController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "5") int size) {
         int offset = (page - 1) * size;
-        List<?> results = treeHoleService.searchHistory(userId, keyword, offset, size);
-        int total = treeHoleService.countSearchHistory(userId, keyword);
+        List<?> results = treeHoleQueryService.searchHistory(userId, keyword, offset, size);
+        int total = treeHoleQueryService.countSearchHistory(userId, keyword);
         int totalPages = (int) Math.ceil((double) total / size);
         return ResponseEntity.ok(Map.of("results", results, "total", total, "totalPages", totalPages, "page", page));
     }
 
     @GetMapping("/treehole/context")
     public ResponseEntity<?> treeHoleContext(@RequestParam("user_id") Long userId, @RequestParam("msg_id") Long msgId) {
-        return ResponseEntity.ok(treeHoleService.getContextAround(userId, msgId));
+        return ResponseEntity.ok(treeHoleQueryService.getContextAround(userId, msgId));
     }
 
     @PostMapping("/treehole/insert")

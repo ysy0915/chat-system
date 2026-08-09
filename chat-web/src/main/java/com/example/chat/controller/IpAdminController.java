@@ -2,6 +2,8 @@ package com.example.chat.controller;
 
 import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.security.IpRateLimitInterceptor;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +16,7 @@ import java.util.Set;
 /**
  * IP 限流管理接口（需管理员密码）
  */
+@Tag(name = "IP 管理", description = "IP 黑名单管理和请求统计（需 Admin 权限）")
 @RestController
 @RequestMapping("/api/v1/admin/ip")
 public class IpAdminController {
@@ -33,6 +36,7 @@ public class IpAdminController {
     }
 
     /** 查看当前所有被拉黑的 IP */
+    @Operation(summary = "查看 IP 黑名单", description = "列出所有被拉黑的 IP 及其封禁原因和剩余时间")
     @GetMapping("/blacklist")
     public ResponseEntity<?> listBlacklist(@RequestHeader("X-Admin-Password") String password) {
         if (!checkAuth(password)) return ResponseEntity.status(401).body(Map.of("error", "未授权"));
@@ -50,6 +54,7 @@ public class IpAdminController {
     }
 
     /** 手动拉黑 IP */
+    @Operation(summary = "手动拉黑 IP", description = "将指定 IP 加入黑名单，可设置封禁原因和时长（分钟）")
     @PostMapping("/blacklist/{ip}")
     public ResponseEntity<?> blacklist(@PathVariable String ip,
                                        @RequestHeader("X-Admin-Password") String password,
@@ -62,6 +67,7 @@ public class IpAdminController {
     }
 
     /** 解封 IP */
+    @Operation(summary = "解封 IP", description = "移除指定 IP 的黑名单状态")
     @DeleteMapping("/blacklist/{ip}")
     public ResponseEntity<?> unblacklist(@PathVariable String ip,
                                          @RequestHeader("X-Admin-Password") String password) {
@@ -71,6 +77,7 @@ public class IpAdminController {
     }
 
     /** 查看某 IP 的当前请求计数 */
+    @Operation(summary = "IP 请求统计", description = "查看某 IP 的请求计数、封禁状态、全局速率")
     @GetMapping("/stats/{ip}")
     public ResponseEntity<?> ipStats(@PathVariable String ip,
                                      @RequestHeader("X-Admin-Password") String password) {

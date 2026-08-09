@@ -1,0 +1,66 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ===== 编译 & 测试 =====
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+          cache: maven
+
+      - name: Compile
+        run: mvn compile -q -DskipTests
+
+      - name: Test
+        run: mvn test
+
+  # ===== 打包 & 发布镜像 =====
+  docker:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [core, web, games, media]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+          cache: maven
+
+      - name: Package
+        run: mvn package -DskipTests -q
+
+      - name: Build Docker image
+        run: docker build -f Dockerfile-${{ matrix.module }} -t chat-${{ matrix.module }}:latest .
+
+  # ===== 部署到生产（需配置 Secrets） =====
+  # deploy:
+  #   needs: docker
+  #   if: github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Deploy via SSH
+  #       uses: appleboy/ssh-action@v1
+  #       with:
+  #         host: ${{ secrets.DEPLOY_HOST }}
+  #         username: root
+  #         key: ${{ secrets.DEPLOY_KEY }}
+  #         script: |
+  #           cd /opt/app && docker compose pull && docker compose up -d

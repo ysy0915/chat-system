@@ -39,6 +39,12 @@
             <artifactId>green20220302</artifactId>
             <version>2.2.8</version>
         </dependency>
+
+        <!-- SpringDoc OpenAPI (Swagger UI: /swagger-ui.html) -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

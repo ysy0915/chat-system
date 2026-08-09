@@ -3,12 +3,15 @@ package com.example.chat.controller;
 import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.security.JwtUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+@Tag(name = "用户认证", description = "登录、注册与 JWT 令牌管理")
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
@@ -24,6 +27,7 @@ public class AuthController {
         this.jwtUtil = jwtUtil;
     }
 
+    @Operation(summary = "用户登录", description = "用户名 + 密码登录，返回 JWT Token 和用户信息")
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
         String username = body.get("username");
@@ -41,6 +45,7 @@ public class AuthController {
         )));
     }
 
+    @Operation(summary = "用户注册", description = "注册新用户（用户名/密码/昵称），返回 JWT Token")
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
         String username = payload.get("username");

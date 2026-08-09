@@ -1,0 +1,18 @@
+# chat-games Dockerfile - 游戏服务
+FROM maven:3-eclipse-temurin-17 AS builder
+WORKDIR /build
+COPY pom.xml .
+COPY chat-common/pom.xml chat-common/
+COPY chat-games/pom.xml chat-games/
+RUN mvn dependency:go-offline -pl chat-games -am -DskipTests || true
+COPY chat-common/src chat-common/src/
+COPY chat-games/src chat-games/src/
+RUN mvn package -pl chat-games -am -DskipTests -q
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=builder /build/chat-games/target/chat-games-*.jar app.jar
+RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
+USER app
+EXPOSE 8083
+ENTRYPOINT ["java", "-jar", "app.jar"]

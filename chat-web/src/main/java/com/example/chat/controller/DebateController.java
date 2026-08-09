@@ -3,6 +3,8 @@ package com.example.chat.controller;
 import com.example.chat.client.CoreClient;
 import com.example.chat.service.ContentSafetyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,6 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+@Tag(name = "AI 辩论", description = "多模型辩论赛：双方 AI 对同一个话题进行多轮辩论")
 @RestController
 @RequestMapping("/api/v1/debate")
 public class DebateController {
@@ -23,6 +26,7 @@ public class DebateController {
         this.objectMapper = objectMapper;
     }
 
+    @Operation(summary = "发起辩论", description = "创建新辩论：内容安全检测 → 插入记录 → 触发 AI 辩论")
     @PostMapping
     public ResponseEntity<?> startDebate(@RequestBody Map<String, Object> body) {
         String reqId = body.get("req_id") != null ? body.get("req_id").toString() : UUID.randomUUID().toString();

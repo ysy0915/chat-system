@@ -3,11 +3,14 @@ package com.example.chat.controller;
 import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.security.JwtUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+@Tag(name = "个人中心", description = "查看和修改个人资料（需 JWT 认证）")
 @RestController
 @RequestMapping("/api/v1/profile")
 public class ProfileController {
@@ -19,6 +22,7 @@ public class ProfileController {
         this.jwtUtil = jwtUtil;
     }
 
+    @Operation(summary = "获取个人资料", description = "返回当前登录用户的信息（需 JWT）")
     @GetMapping
     public ResponseEntity<?> getProfile(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         Long userId = extractUserId(authHeader);
@@ -39,6 +43,7 @@ public class ProfileController {
         ));
     }
 
+    @Operation(summary = "修改个人资料", description = "更新当前用户的昵称和用户名（需 JWT）")
     @PutMapping
     public ResponseEntity<?> updateProfile(@RequestHeader(value = "Authorization", required = false) String authHeader,
                                            @RequestBody Map<String, String> body) {

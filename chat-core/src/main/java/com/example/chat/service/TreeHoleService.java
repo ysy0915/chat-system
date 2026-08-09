@@ -1,5 +1,7 @@
 package com.example.chat.service;
 
+import com.example.chat.dto.LLMMessage;
+import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.TreeHoleMessage;
 import com.example.chat.repository.ModelConfigRepository;
@@ -57,6 +59,10 @@ public class TreeHoleService {
     /** 对话记忆服务（可选注入） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.rag.service.ConversationMemoryService memoryService;
+
+    /** 历史对话摘要服务（可选注入，压缩过长历史） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private HistorySummaryService historySummaryService;
 
     /** LangChain4j 树洞服务（可选注入，高级编排模式） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -238,14 +244,9 @@ public class TreeHoleService {
             imageQuestion = "[情绪：" + mood + "] " + imageQuestion;
         }
 
-        List<Map<String, Object>> contentParts = new ArrayList<>();
-        contentParts.add(Map.of("type", "text", "text", imageQuestion));
-        contentParts.add(Map.of("type", "image_url", "image_url",
-                Map.of("url", "data:" + mimeType + ";base64," + fileBase64)));
-
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT + "\n\n如果用户上传了图片，请结合图片内容给予温暖的情感陪伴与回应。"));
-        messages.add(Map.of("role", "user", "content", contentParts));
+        List<LLMMessage> messages = new ArrayList<>();
+        messages.add(LLMMessage.system(SYSTEM_PROMPT + "\n\n如果用户上传了图片，请结合图片内容给予温暖的情感陪伴与回应。"));
+        messages.add(LLMMessage.userWithImage(imageQuestion, fileBase64, mimeType));
 
         log.info("TreeHole 图片解析 model={}", config.model);
         return llmInvoker.invoke(config, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
@@ -289,9 +290,9 @@ public class TreeHoleService {
         if (!fileText.isBlank()) userContent += "\n\n【文件内容】\n" + fileText;
         if (mood != null && !mood.isBlank()) userContent = "[情绪：" + mood + "] " + userContent;
 
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", systemPrompt));
-        messages.add(Map.of("role", "user", "content", userContent));
+        List<LLMMessage> messages = new ArrayList<>();
+        messages.add(LLMMessage.system(systemPrompt));
+        messages.add(LLMMessage.user(userContent));
 
         return llmInvoker.invoke(zhipu, messages, 0.85, "treehole", defaultBaseUrl, defaultApiKey);
     }
@@ -331,34 +332,41 @@ public class TreeHoleService {
         if (!rateLimitService.isAllowed(userId)) {
             long retry = rateLimitService.getRemainingSeconds(userId);
             broadcastService.broadcast("/topic/treehole." + userId,
-                    Map.of("type", "error", "message", "发送太频繁，请 " + retry + " 秒后再试"));
+                    WsMessage.error("发送太频繁，请 " + retry + " 秒后再试").toMap());
             return;
         }
 
         // 构建历史上下文
         List<TreeHoleMessage> recent = treeHoleRepository.findRecentByUserId(userId);
-        List<Map<String, Object>> messages = new ArrayList<>();
+        // 历史消息（最多10轮，先独立构建再压缩）
+        int start = Math.max(0, recent.size() - 10);
+        List<LLMMessage> historyMsgs = new ArrayList<>();
+        for (int i = start; i < recent.size(); i++) {
+            TreeHoleMessage prev = recent.get(i);
+            historyMsgs.add(LLMMessage.user(prev.question));
+            if (prev.answerJson != null && !prev.answerJson.isBlank()) {
+                historyMsgs.add(LLMMessage.assistant(extractAnswerText(prev.answerJson)));
+            }
+        }
 
-        // 系统 prompt（含记忆上下文）
-        String systemPrompt = SYSTEM_PROMPT;
+        // 系统 prompt（含记忆上下文 + 历史摘要）
+        StringBuilder systemPrompt = new StringBuilder(SYSTEM_PROMPT);
         if (memoryService != null) {
             String memory = memoryService.buildMemoryContext("treehole", userId, question);
             if (memory != null && !memory.isBlank()) {
-                systemPrompt = systemPrompt + "\n\n" + memory;
+                systemPrompt.append("\n\n").append(memory);
             }
         }
-        messages.add(Map.of("role", "system", "content", systemPrompt));
-        int start = Math.max(0, recent.size() - 10);
-        for (int i = start; i < recent.size(); i++) {
-            TreeHoleMessage prev = recent.get(i);
-            messages.add(Map.of("role", "user", "content", prev.question));
-            if (prev.answerJson != null && !prev.answerJson.isBlank()) {
-                messages.add(Map.of("role", "assistant", "content", extractAnswerText(prev.answerJson)));
-            }
-        }
+        // 历史过长时压缩早期消息为摘要
+        historyMsgs = compressTreeHoleHistory(userId, historyMsgs, systemPrompt);
+
+        List<LLMMessage> messages = new ArrayList<>();
+        messages.add(LLMMessage.system(systemPrompt.toString()));
+        messages.addAll(historyMsgs);
+
         String fullQuestion = (mood != null && !mood.isBlank())
                 ? "[情绪：" + mood + "] " + question : question;
-        messages.add(Map.of("role", "user", "content", fullQuestion));
+        messages.add(LLMMessage.user(fullQuestion));
 
         // 保存记录
         TreeHoleMessage m = new TreeHoleMessage();
@@ -379,7 +387,7 @@ public class TreeHoleService {
         // 通知前端开始流式输出
         log.info("TreeHole 推送 stream_start, topic=/topic/treehole.{}", fUserId);
         broadcastService.broadcast("/topic/treehole." + fUserId,
-                Map.of("type", "stream_start", "req_id", reqId));
+                WsMessage.of(WsMessage.TYPE_STREAM_START).withReqId(reqId).toMap());
 
         // 异步调用流式 API（使用线程池，防止线程爆炸）
         final long startTime = System.currentTimeMillis();
@@ -394,7 +402,7 @@ public class TreeHoleService {
                                     return;
                                 }
                                 broadcastService.broadcast("/topic/treehole." + fUserId,
-                                        Map.of("type", "stream_token", "req_id", reqId, "token", token));
+                                        WsMessage.streamToken(token).withReqId(reqId).toMap());
                             });
                 } else {
                     answer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
@@ -404,7 +412,7 @@ public class TreeHoleService {
                                     return;
                                 }
                                 broadcastService.broadcast("/topic/treehole." + fUserId,
-                                        Map.of("type", "stream_token", "req_id", reqId, "token", token));
+                                        WsMessage.streamToken(token).withReqId(reqId).toMap());
                             });
                 }
 
@@ -421,11 +429,12 @@ public class TreeHoleService {
 
                 if (isStopped(reqId)) {
                     broadcastService.broadcast("/topic/treehole." + fUserId,
-                            Map.of("type", "stopped", "req_id", reqId, "answer", answer));
+                            WsMessage.stopped(answer).withReqId(reqId).toMap());
                 } else {
                     broadcastService.broadcast("/topic/treehole." + fUserId,
-                            Map.of("type", "done", "req_id", reqId, "answer", answer,
-                                    "latency", latency, "tokens", estimatedTokens));
+                            WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId)
+                                    .with("answer", answer).with("latency", latency)
+                                    .with("tokens", estimatedTokens).toMap());
 
                     // 保存对话记忆
                     if (memoryService != null) {
@@ -442,7 +451,7 @@ public class TreeHoleService {
                 m.status = "error";
                 treeHoleRepository.updateByReqId(m);
                 broadcastService.broadcast("/topic/treehole." + fUserId,
-                        Map.of("type", "error", "req_id", reqId, "message", "生成失败: " + e.getMessage()));
+                        WsMessage.error("生成失败: " + e.getMessage()).withReqId(reqId).toMap());
             } finally {
                 stopFlags.remove(reqId);
             }
@@ -456,12 +465,12 @@ public class TreeHoleService {
         TreeHoleMessage original = treeHoleRepository.findByReqId(oldReqId);
         if (original == null) {
             broadcastService.broadcast("/topic/treehole." + userId,
-                    Map.of("type", "error", "message", "原始消息不存在，无法重新生成"));
+                    WsMessage.error("原始消息不存在，无法重新生成").toMap());
             return;
         }
         if (original.question == null || original.question.isBlank()) {
             broadcastService.broadcast("/topic/treehole." + userId,
-                    Map.of("type", "error", "message", "原始问题为空，无法重新生成"));
+                    WsMessage.error("原始问题为空，无法重新生成").toMap());
             return;
         }
         log.info("[INFO] TreeHole regenerate oldReqId={} userId={}", oldReqId, userId);
@@ -510,35 +519,39 @@ public class TreeHoleService {
             }
         }
 
-        // 构建历史上下文（最近10分钟，最多10轮）
+        // 构建历史上下文（最近10分钟）
         List<TreeHoleMessage> recent = treeHoleRepository.findRecentByUserId(userId);
-        List<Map<String, Object>> messages = new ArrayList<>();
+        // 历史消息（最多10轮，先独立构建再压缩）
+        int start = Math.max(0, recent.size() - 10);
+        List<LLMMessage> historyMsgs = new ArrayList<>();
+        for (int i = start; i < recent.size(); i++) {
+            TreeHoleMessage prev = recent.get(i);
+            historyMsgs.add(LLMMessage.user(prev.question));
+            if (prev.answerJson != null && !prev.answerJson.isBlank()) {
+                historyMsgs.add(LLMMessage.assistant(extractAnswerText(prev.answerJson)));
+            }
+        }
 
-        // 系统 prompt（含记忆上下文）
-        String systemPrompt = SYSTEM_PROMPT;
+        // 系统 prompt（含记忆上下文 + 历史摘要）
+        StringBuilder systemPrompt = new StringBuilder(SYSTEM_PROMPT);
         if (memoryService != null) {
             String memory = memoryService.buildMemoryContext("treehole", userId, question);
             if (memory != null && !memory.isBlank()) {
-                systemPrompt = systemPrompt + "\n\n" + memory;
+                systemPrompt.append("\n\n").append(memory);
             }
         }
-        messages.add(Map.of("role", "system", "content", systemPrompt));
+        // 历史过长时压缩早期消息为摘要
+        historyMsgs = compressTreeHoleHistory(userId, historyMsgs, systemPrompt);
 
-        // 历史轮次（最多10条）
-        int start = Math.max(0, recent.size() - 10);
-        for (int i = start; i < recent.size(); i++) {
-            TreeHoleMessage prev = recent.get(i);
-            messages.add(Map.of("role", "user", "content", prev.question));
-            if (prev.answerJson != null && !prev.answerJson.isBlank()) {
-                messages.add(Map.of("role", "assistant", "content", extractAnswerText(prev.answerJson)));
-            }
-        }
+        List<LLMMessage> messages = new ArrayList<>();
+        messages.add(LLMMessage.system(systemPrompt.toString()));
+        messages.addAll(historyMsgs);
 
         // 当前问题（附带情绪标签）
         String fullQuestion = (mood != null && !mood.isBlank())
                 ? "[情绪：" + mood + "] " + question
                 : question;
-        messages.add(Map.of("role", "user", "content", fullQuestion));
+        messages.add(LLMMessage.user(fullQuestion));
 
         // 保存记录（status=pending）
         TreeHoleMessage m = new TreeHoleMessage();
@@ -601,5 +614,19 @@ public class TreeHoleService {
             // 不是 JSON，直接返回原文
             return answerJson;
         }
+    }
+
+    /** 树洞历史压缩包装方法 */
+    private List<LLMMessage> compressTreeHoleHistory(Long userId,
+                                                               List<LLMMessage> historyMsgs,
+                                                               StringBuilder systemPrompt) {
+        if (historySummaryService != null && !historyMsgs.isEmpty()) {
+            try {
+                return historySummaryService.compress("treehole", userId, historyMsgs, systemPrompt);
+            } catch (Exception e) {
+                log.warn("[HistorySummary] treehole compress failed, fallback: {}", e.getMessage());
+            }
+        }
+        return historyMsgs;
     }
 }

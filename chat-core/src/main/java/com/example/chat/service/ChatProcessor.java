@@ -1,5 +1,7 @@
 package com.example.chat.service;
 
+import com.example.chat.dto.LLMMessage;
+import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.Message;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.MessageRepository;
@@ -66,6 +68,10 @@ public class ChatProcessor {
     /** 知识图谱服务（可选注入，失败不阻塞主流程） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private KnowledgeGraphService knowledgeGraphService;
+
+    /** 历史对话摘要服务（可选注入，压缩过长历史避免上下文溢出） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private HistorySummaryService historySummaryService;
 
     /** 工具调度器（可选注入，仅在 app.agent.enabled=true 时存在） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -165,7 +171,7 @@ public class ChatProcessor {
                         messageRepository.updateByReqId(m);
                     }
                     broadcastService.broadcast("/topic/user." + userId,
-                            Map.of("type", "done", "req_id", reqId, "answer", displayText));
+                            WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", displayText).toMap());
                     return;
                 }
             }
@@ -179,7 +185,7 @@ public class ChatProcessor {
 
             if (cached != null) {
                 broadcastService.broadcast("/topic/user." + userId,
-                        Map.of("type", "done", "req_id", reqId, "answer", cached));
+                        WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", cached).toMap());
                 Message m = messageRepository.findByReqId(reqId);
                 if (m != null) {
                     try {
@@ -251,11 +257,11 @@ public class ChatProcessor {
             if (configs.isEmpty()) {
                 log.error("[ERROR] 用户 {} 没有可用的 chat 模型", userId);
                 broadcastService.broadcast("/topic/user." + userId,
-                        Map.of("type", "error", "req_id", reqId, "message", "没有可用的对话模型"));
+                        WsMessage.error("没有可用的对话模型").withReqId(reqId).toMap());
                 return;
             }
 
-            final List<Map<String, Object>> historyMessages;
+            final List<LLMMessage> historyMessages;
             if (isPrivate) {
                 historyMessages = buildHistoryMessages(userId, question);
             } else {
@@ -266,7 +272,7 @@ public class ChatProcessor {
             // 个人对话空间：走流式输出
             if (isPrivate && historyMessages != null) {
                 final ModelConfig fConfig = configs.get(0);
-                final List<Map<String, Object>> fHistory = historyMessages;
+                final List<LLMMessage> fHistory = historyMessages;
                 final String fReqId = reqId;
                 final Long fUserId = userId;
                 final String fQuestion = question;
@@ -275,7 +281,7 @@ public class ChatProcessor {
                 CompletableFuture.runAsync(() -> {
                     try {
                         broadcastService.broadcast("/topic/user." + fUserId,
-                                Map.of("type", "stream_start", "req_id", fReqId, "model", fConfig.model));
+                                WsMessage.of(WsMessage.TYPE_STREAM_START).withReqId(fReqId).with("model", fConfig.model).toMap());
 
                         // 先尝试工具调度：如果命中工具，用工具增强后的回答（非流式一次性推送）
                         if (toolDispatcher != null) {
@@ -284,10 +290,10 @@ public class ChatProcessor {
                                         0.7, "personal", defaultBaseUrl, defaultApiKey);
                                 if (toolAnswer != null && !toolAnswer.isBlank()) {
                                     broadcastService.broadcast("/topic/user." + fUserId,
-                                            Map.of("type", "stream_token", "req_id", fReqId, "token", toolAnswer));
+                                            WsMessage.streamToken(toolAnswer).withReqId(fReqId).toMap());
                                     if (isStopped(fReqId)) {
                                         broadcastService.broadcast("/topic/user." + fUserId,
-                                                Map.of("type", "stopped", "req_id", fReqId, "answer", toolAnswer));
+                                                WsMessage.stopped(toolAnswer).withReqId(fReqId).toMap());
                                         Message stoppedMsg = messageRepository.findByReqId(fReqId);
                                         if (stoppedMsg != null) {
                                             try {
@@ -316,13 +322,13 @@ public class ChatProcessor {
                                         return;
                                     }
                                     broadcastService.broadcast("/topic/user." + fUserId,
-                                            Map.of("type", "stream_token", "req_id", fReqId, "token", token));
+                                            WsMessage.streamToken(token).withReqId(fReqId).toMap());
                                 });
 
                         if (isStopped(fReqId)) {
                             // 已停止：推送 stopped 消息，不更新 answer（保留前端已渲染的内容）
                             broadcastService.broadcast("/topic/user." + fUserId,
-                                    Map.of("type", "stopped", "req_id", fReqId, "answer", fullAnswer));
+                                    WsMessage.stopped(fullAnswer).withReqId(fReqId).toMap());
                             // 更新消息状态为 stopped
                             Message stoppedMsg = messageRepository.findByReqId(fReqId);
                             if (stoppedMsg != null) {
@@ -340,7 +346,7 @@ public class ChatProcessor {
                     } catch (Exception ex) {
                         log.error("[ERROR] 流式调用失败: {}", ex.getMessage(), ex);
                         broadcastService.broadcast("/topic/user." + fUserId,
-                                Map.of("type", "error", "req_id", fReqId, "message", "生成失败: " + ex.getMessage()));
+                                WsMessage.error("生成失败: " + ex.getMessage()).withReqId(fReqId).toMap());
                     } finally {
                         // 清理停止标记
                         stopFlags.remove(fReqId);
@@ -408,7 +414,7 @@ public class ChatProcessor {
                     if (finished == totalModels && !completed.get()) {
                         log.warn("[WARN] 所有 {} 个模型都失败了, reqId={}", totalModels, reqId);
                         broadcastService.broadcast("/topic/user." + userId,
-                                Map.of("type", "error", "req_id", reqId, "message", "所有模型调用均失败"));
+                                WsMessage.error("所有模型调用均失败").withReqId(reqId).toMap());
                     }
 
                     return null;
@@ -419,7 +425,7 @@ public class ChatProcessor {
         } catch (Exception ex) {
             log.error("[ERROR] ChatProcessor: {}", ex.getMessage(), ex);
             broadcastService.broadcast("/topic/user." + userId,
-                    Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
+                    WsMessage.error(ex.getMessage()).withReqId(reqId).toMap());
         }
     }
 
@@ -431,12 +437,12 @@ public class ChatProcessor {
         Message original = messageRepository.findByReqId(oldReqId);
         if (original == null) {
             broadcastService.broadcast("/topic/user." + userId,
-                    Map.of("type", "error", "req_id", oldReqId, "message", "原始消息不存在，无法重新生成"));
+                    WsMessage.error("原始消息不存在，无法重新生成").withReqId(oldReqId).toMap());
             return;
         }
         if (original.question == null || original.question.isBlank()) {
             broadcastService.broadcast("/topic/user." + userId,
-                    Map.of("type", "error", "req_id", oldReqId, "message", "原始问题为空，无法重新生成"));
+                    WsMessage.error("原始问题为空，无法重新生成").withReqId(oldReqId).toMap());
             return;
         }
 
@@ -548,7 +554,7 @@ public class ChatProcessor {
                 }
             }
 
-            final List<Map<String, Object>> fileHistoryMessages = buildFileHistoryMessages(userId, question, fileName, fileTextContent, isImage, fileBase64, mimeType);
+            final List<LLMMessage> fileHistoryMessages = buildFileHistoryMessages(userId, question, fileName, fileTextContent, isImage, fileBase64, mimeType);
 
             List<CompletableFuture<?>> futures = new ArrayList<>();
             AtomicBoolean completed = new AtomicBoolean(false);
@@ -576,20 +582,27 @@ public class ChatProcessor {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((unused, ex) -> {
                 if (!completed.get()) {
                     broadcastService.broadcast("/topic/user." + userId,
-                            Map.of("type", "error", "req_id", reqId, "message", "所有模型调用均失败"));
+                            WsMessage.error("所有模型调用均失败").withReqId(reqId).toMap());
                 }
             });
 
         } catch (Exception ex) {
             log.error("[ERROR] ChatProcessor processWithFile: {}", ex.getMessage());
             broadcastService.broadcast("/topic/user." + userId,
-                    Map.of("type", "error", "req_id", reqId, "message", ex.getMessage()));
+                    WsMessage.error(ex.getMessage()).withReqId(reqId).toMap());
         }
     }
 
-    private List<Map<String, Object>> buildHistoryMessages(Long userId, String currentQuestion) {
+    private List<LLMMessage> buildHistoryMessages(Long userId, String currentQuestion) {
         List<Message> recent = getRecentMessages(userId);
-        List<Map<String, Object>> messages = new ArrayList<>();
+        List<LLMMessage> historyMsgs = new ArrayList<>();
+
+        if (recent != null) {
+            for (Message m : recent) {
+                historyMsgs.add(LLMMessage.user(m.question));
+                historyMsgs.add(LLMMessage.assistant(extractAnswerText(m.answerJson)));
+            }
+        }
 
         // 系统 prompt（含记忆上下文）
         StringBuilder systemPrompt = new StringBuilder("你是用户的AI助手，请友好地回答问题。");
@@ -599,16 +612,29 @@ public class ChatProcessor {
                 systemPrompt.append("\n\n").append(memory);
             }
         }
-        messages.add(Map.of("role", "system", "content", systemPrompt.toString()));
 
-        if (recent != null) {
-            for (Message m : recent) {
-                messages.add(Map.of("role", "user", "content", m.question));
-                messages.add(Map.of("role", "assistant", "content", extractAnswerText(m.answerJson)));
+        // 历史压缩：过长时用摘要替代早期消息
+        historyMsgs = compressHistory("personal", userId, historyMsgs, systemPrompt);
+
+        List<LLMMessage> messages = new ArrayList<>();
+        messages.add(LLMMessage.system(systemPrompt.toString()));
+        messages.addAll(historyMsgs);
+        messages.add(LLMMessage.user(currentQuestion));
+        return messages;
+    }
+
+    /** 历史消息压缩包装方法 */
+    private List<LLMMessage> compressHistory(String scene, Long userId,
+                                                       List<LLMMessage> historyMsgs,
+                                                       StringBuilder systemPrompt) {
+        if (historySummaryService != null && !historyMsgs.isEmpty()) {
+            try {
+                return historySummaryService.compress(scene, userId, historyMsgs, systemPrompt);
+            } catch (Exception e) {
+                log.warn("[HistorySummary] compress failed, fallback to full history: {}", e.getMessage());
             }
         }
-        messages.add(Map.of("role", "user", "content", currentQuestion));
-        return messages;
+        return historyMsgs;
     }
 
     private List<Message> getRecentMessages(Long userId) {
@@ -626,8 +652,8 @@ public class ChatProcessor {
     /**
      * 构建群聊消息（带记忆上下文，但不带历史对话——群聊历史由前端展示）
      */
-    private List<Map<String, Object>> buildGroupChatMessages(Long userId, String currentQuestion) {
-        List<Map<String, Object>> messages = new ArrayList<>();
+    private List<LLMMessage> buildGroupChatMessages(Long userId, String currentQuestion) {
+        List<LLMMessage> messages = new ArrayList<>();
 
         // 系统 prompt（含记忆上下文）
         StringBuilder systemPrompt = new StringBuilder("你是AI伙伴群聊中的AI角色，请友好、有趣地回答问题。");
@@ -637,34 +663,41 @@ public class ChatProcessor {
                 systemPrompt.append("\n\n").append(memory);
             }
         }
-        messages.add(Map.of("role", "system", "content", systemPrompt.toString()));
-        messages.add(Map.of("role", "user", "content", currentQuestion));
+        messages.add(LLMMessage.system(systemPrompt.toString()));
+        messages.add(LLMMessage.user(currentQuestion));
         return messages;
     }
 
-    private List<Map<String, Object>> buildFileHistoryMessages(Long userId, String question, String fileName,
+    private List<LLMMessage> buildFileHistoryMessages(Long userId, String question, String fileName,
                                                                 String fileTextContent, boolean isImage,
                                                                 String fileBase64, String mimeType) {
         List<Message> recent = getRecentMessages(userId);
-        List<Map<String, Object>> messages = new ArrayList<>();
+        List<LLMMessage> historyMsgs = new ArrayList<>();
 
         if (recent != null) {
             for (Message m : recent) {
-                messages.add(Map.of("role", "user", "content", m.question));
-                messages.add(Map.of("role", "assistant", "content", extractAnswerText(m.answerJson)));
+                historyMsgs.add(LLMMessage.user(m.question));
+                historyMsgs.add(LLMMessage.assistant(extractAnswerText(m.answerJson)));
             }
         }
 
+        // 文件场景的 system prompt
+        StringBuilder systemPrompt = new StringBuilder("请根据提供的文件内容和对话历史，友好地回答用户问题。");
+        historyMsgs = compressHistory("file", userId, historyMsgs, systemPrompt);
+
+        List<LLMMessage> messages = new ArrayList<>();
+        // 仅当有摘要时才加入 system 消息
+        if (systemPrompt.indexOf("历史对话摘要") >= 0) {
+            messages.add(LLMMessage.system(systemPrompt.toString()));
+        }
+        messages.addAll(historyMsgs);
+
         if (isImage) {
             String imageQuestion = (question == null || question.isBlank()) ? "请描述这张图片" : question;
-            List<Map<String, Object>> contentParts = new ArrayList<>();
-            contentParts.add(Map.of("type", "text", "text", imageQuestion));
-            contentParts.add(Map.of("type", "image_url", "image_url",
-                    Map.of("url", "data:" + mimeType + ";base64," + fileBase64)));
-            messages.add(Map.of("role", "user", "content", contentParts));
+            messages.add(LLMMessage.userWithImage(imageQuestion, fileBase64, mimeType));
         } else {
             String content = question + "\n\n--- 以下是文件 [" + fileName + "] 的内容 ---\n" + fileTextContent + "\n--- 文件内容结束 ---";
-            messages.add(Map.of("role", "user", "content", content));
+            messages.add(LLMMessage.user(content));
         }
 
         return messages;
@@ -728,11 +761,13 @@ public class ChatProcessor {
         log.info("[STATS] provider={} model={} latency={}ms answerLen={} tokens~{}", provider, model, latency, answerLen, estimatedTokens);
 
         broadcastService.broadcast("/topic/user." + userId,
-                Map.of("type", "done", "req_id", reqId, "answer", answer,
-                        "latency", latency, "tokens", estimatedTokens, "model", model));
+                WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId)
+                        .with("answer", answer).with("latency", latency)
+                        .with("tokens", estimatedTokens).with("model", model).toMap());
 
         broadcastService.broadcast("/topic/public-questions",
-                Map.of("type", "answer", "req_id", reqId, "user_id", userId, "answer", answer));
+                WsMessage.of(WsMessage.TYPE_ANSWER).withReqId(reqId)
+                        .with("user_id", userId).with("answer", answer).toMap());
 
         String cacheKey = buildCacheKey(question, provider, model);
         try {

@@ -1,5 +1,6 @@
 package com.example.chat.rag.service;
 
+import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -54,7 +55,7 @@ public class RAGUsageExample {
      * 否则降级为普通 LLM 调用
      */
     public String treeHoleAskWithRAG(ModelConfig config, String userQuestion,
-                                      List<Map<String, Object>> messages,
+                                      List<LLMMessage> messages,
                                       String defaultBaseUrl, String defaultApiKey) throws Exception {
 
         if (ragService != null) {
@@ -72,7 +73,7 @@ public class RAGUsageExample {
      * 示例：流式调用接入 RAG
      */
     public String treeHoleAskWithRAGStream(ModelConfig config, String userQuestion,
-                                            List<Map<String, Object>> messages,
+                                            List<LLMMessage> messages,
                                             String defaultBaseUrl, String defaultApiKey,
                                             java.util.function.Consumer<String> callback) throws Exception {
 

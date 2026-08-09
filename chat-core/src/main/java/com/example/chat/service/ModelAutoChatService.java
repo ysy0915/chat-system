@@ -1,5 +1,7 @@
 package com.example.chat.service;
 
+import com.example.chat.dto.LLMMessage;
+import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -100,9 +102,9 @@ public class ModelAutoChatService {
             final String q = question;
 
             broadcastService.broadcast("/topic/public-questions",
-                    Map.of("type", "auto_question", "req_id", broadcastReqId,
-                            "question", q, "user_name", askerName,
-                            "auto_chat", true));
+                    WsMessage.of("auto_question").withReqId(broadcastReqId)
+                            .with("question", q).with("user_name", askerName)
+                            .with("auto_chat", true).toMap());
 
             String answerPrompt = "请简短回答以下问题，不超过20个字，只输出答案本身：\n" + q;
 
@@ -126,16 +128,16 @@ public class ModelAutoChatService {
                     String answer1 = answer1Future.get();
                     if (answer1.length() > 20) answer1 = answer1.substring(0, 20);
                     broadcastService.broadcast("/topic/public-questions",
-                            Map.of("type", "auto_answer", "req_id", broadcastReqId + "-1",
-                                    "answer", answer1, "user_name", answerer1Name,
-                                    "auto_chat", true));
+                            WsMessage.of("auto_answer").withReqId(broadcastReqId + "-1")
+                                    .with("answer", answer1).with("user_name", answerer1Name)
+                                    .with("auto_chat", true).toMap());
 
                     String answer2 = answer2Future.get();
                     if (answer2.length() > 20) answer2 = answer2.substring(0, 20);
                     broadcastService.broadcast("/topic/public-questions",
-                            Map.of("type", "auto_answer", "req_id", broadcastReqId + "-2",
-                                    "answer", answer2, "user_name", answerer2Name,
-                                    "auto_chat", true));
+                            WsMessage.of("auto_answer").withReqId(broadcastReqId + "-2")
+                                    .with("answer", answer2).with("user_name", answerer2Name)
+                                    .with("auto_chat", true).toMap());
 
                     log.info("[AutoChat] {}问: {} | {}答: {} | {}答: {}",
                             askerName, q, answerer1Name, answer1, answerer2Name, answer2);
@@ -165,7 +167,7 @@ public class ModelAutoChatService {
 
         Map<String, Object> requestBody = Map.of(
                 "model", config.model,
-                "messages", List.of(Map.of("role", "user", "content", prompt)),
+                "messages", LLMMessage.toMapList(List.of(LLMMessage.user(prompt))),
                 "temperature", 0.9,
                 "max_tokens", 50
         );

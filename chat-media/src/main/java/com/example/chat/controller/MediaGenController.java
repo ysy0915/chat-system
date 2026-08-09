@@ -1,5 +1,6 @@
 package com.example.chat.controller;
 
+import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.MediaGenRecord;
 import com.example.chat.repository.ModelConfigRepository;
@@ -269,7 +270,7 @@ public class MediaGenController {
                 "model", model,
                 "input", Map.of(
                         "messages", List.of(
-                                Map.of("role", "user", "content", List.of(Map.of("text", prompt)))
+                                LLMMessage.user(prompt).toMap()
                         )
                 ),
                 "parameters", Map.of(

@@ -1,5 +1,6 @@
 package com.example.chat.observability;
 
+import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.service.LLMInvoker;
@@ -11,7 +12,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * AI 错误自愈服务
@@ -49,7 +49,7 @@ public class SelfHealingService {
      * @param lastError 上次失败的异常
      * @return 重试成功的回答；无法自愈时抛出原异常
      */
-    public String healAndRetry(ModelConfig failedConfig, List<Map<String, Object>> messages,
+    public String healAndRetry(ModelConfig failedConfig, List<LLMMessage> messages,
                                double temp, String scene,
                                String defaultBaseUrl, String defaultApiKey,
                                Exception lastError) throws Exception {
@@ -87,7 +87,7 @@ public class SelfHealingService {
     /**
      * 策略 a：换一个同 provider 的其他模型重试
      */
-    private String retryWithAlternateModel(ModelConfig failedConfig, List<Map<String, Object>> messages,
+    private String retryWithAlternateModel(ModelConfig failedConfig, List<LLMMessage> messages,
                                            double temp, String scene,
                                            String defaultBaseUrl, String defaultApiKey,
                                            Exception lastError, String reason) throws Exception {
@@ -119,7 +119,7 @@ public class SelfHealingService {
     /**
      * 策略 b：跳过失败模型，用默认模型（优先级最高）重试
      */
-    private String retryWithDefaultModel(ModelConfig failedConfig, List<Map<String, Object>> messages,
+    private String retryWithDefaultModel(ModelConfig failedConfig, List<LLMMessage> messages,
                                          double temp, String scene,
                                          String defaultBaseUrl, String defaultApiKey,
                                          Exception lastError, String reason) throws Exception {
@@ -148,7 +148,7 @@ public class SelfHealingService {
     /**
      * 策略 c：等待 1 秒后重试一次
      */
-    private String retryAfterDelay(ModelConfig failedConfig, List<Map<String, Object>> messages,
+    private String retryAfterDelay(ModelConfig failedConfig, List<LLMMessage> messages,
                                    double temp, String scene,
                                    String defaultBaseUrl, String defaultApiKey,
                                    Exception lastError) throws Exception {
@@ -173,7 +173,7 @@ public class SelfHealingService {
     /**
      * 策略 d：降低 temperature 到 0.3 重试
      */
-    private String retryWithLowerTemp(ModelConfig failedConfig, List<Map<String, Object>> messages,
+    private String retryWithLowerTemp(ModelConfig failedConfig, List<LLMMessage> messages,
                                       String scene,
                                       String defaultBaseUrl, String defaultApiKey,
                                       Exception lastError, double originalTemp) throws Exception {

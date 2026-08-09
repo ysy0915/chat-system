@@ -1,5 +1,6 @@
 package com.example.chat.strategy;
 
+import com.example.chat.dto.LLMMessage;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -29,12 +30,12 @@ public class OpenAICompatStrategy implements LLMStrategy {
 
     @Override
     public String invoke(String baseUrl, String apiKey, String model,
-                         List<Map<String, Object>> messages, double temperature) throws Exception {
+                         List<LLMMessage> messages, double temperature) throws Exception {
         String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
 
         LinkedHashMap<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("model", model);
-        requestBody.put("messages", messages);
+        requestBody.put("messages", LLMMessage.toMapList(messages));
         requestBody.put("temperature", temperature);
 
         String jsonBody = objectMapper.writeValueAsString(requestBody);
@@ -66,13 +67,13 @@ public class OpenAICompatStrategy implements LLMStrategy {
 
     @Override
     public String invokeStream(String baseUrl, String apiKey, String model,
-                               List<Map<String, Object>> messages, double temperature,
+                               List<LLMMessage> messages, double temperature,
                                Consumer<String> callback) throws Exception {
         String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
 
         LinkedHashMap<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("model", model);
-        requestBody.put("messages", messages);
+        requestBody.put("messages", LLMMessage.toMapList(messages));
         requestBody.put("temperature", temperature);
         requestBody.put("stream", true);
 

@@ -1,5 +1,6 @@
 package com.example.chat.service;
 
+import com.example.chat.dto.LLMMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.neo4j.driver.*;
 import org.slf4j.Logger;
@@ -314,10 +315,10 @@ public class KnowledgeGraphService {
 
         Map<String, Object> reqBody = Map.of(
                 "model", model,
-                "messages", List.of(
-                        Map.of("role", "system", "content", "你是知识抽取助手，只返回JSON。"),
-                        Map.of("role", "user", "content", prompt)
-                ),
+                "messages", LLMMessage.toMapList(List.of(
+                        LLMMessage.system("你是知识抽取助手，只返回JSON。"),
+                        LLMMessage.user(prompt)
+                )),
                 "temperature", 0.1
         );
 

@@ -1,5 +1,6 @@
 package com.example.chat.rag.service;
 
+import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.service.LLMInvoker;
 import org.slf4j.Logger;
@@ -66,17 +67,17 @@ public class RAGService {
      * @param defaultApiKey   默认 API Key
      */
     public String invokeWithRAG(ModelConfig config, Long knowledgeBaseId,
-                                 String userQuestion, List<Map<String, Object>> messages,
+                                 String userQuestion, List<LLMMessage> messages,
                                  double temperature, String scene,
                                  String defaultBaseUrl, String defaultApiKey) throws Exception {
         // 1. 检索相关文档
         String context = retrieveContext(knowledgeBaseId, userQuestion);
 
         // 2. 把 context 插入 messages 最前面（作为 system 消息）
-        List<Map<String, Object>> ragMessages = new ArrayList<>(messages);
+        List<LLMMessage> ragMessages = new ArrayList<>(messages);
         if (context != null && !context.isBlank()) {
             String systemPrompt = buildRAGSystemPrompt(context);
-            ragMessages.add(0, Map.of("role", "system", "content", systemPrompt));
+            ragMessages.add(0, LLMMessage.system(systemPrompt));
             log.info("[RAG] kb={} 检索到 context，拼入 prompt，长度={}", knowledgeBaseId, context.length());
         } else {
             log.info("[RAG] kb={} 无相关文档，直接调用 LLM", knowledgeBaseId);
@@ -92,16 +93,16 @@ public class RAGService {
      * @param callback token 回调（同 LLMInvoker.invokeStream 的 callback）
      */
     public String invokeWithRAGStream(ModelConfig config, Long knowledgeBaseId,
-                                      String userQuestion, List<Map<String, Object>> messages,
+                                      String userQuestion, List<LLMMessage> messages,
                                       double temperature, String scene,
                                       String defaultBaseUrl, String defaultApiKey,
                                       java.util.function.Consumer<String> callback) throws Exception {
         String context = retrieveContext(knowledgeBaseId, userQuestion);
 
-        List<Map<String, Object>> ragMessages = new ArrayList<>(messages);
+        List<LLMMessage> ragMessages = new ArrayList<>(messages);
         if (context != null && !context.isBlank()) {
             String systemPrompt = buildRAGSystemPrompt(context);
-            ragMessages.add(0, Map.of("role", "system", "content", systemPrompt));
+            ragMessages.add(0, LLMMessage.system(systemPrompt));
         }
 
         return llmInvoker.invokeStream(config, ragMessages, temperature, scene + ":rag",

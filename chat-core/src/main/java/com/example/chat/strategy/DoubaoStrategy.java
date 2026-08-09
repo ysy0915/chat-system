@@ -1,5 +1,6 @@
 package com.example.chat.strategy;
 
+import com.example.chat.dto.LLMMessage;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -30,14 +31,15 @@ public class DoubaoStrategy implements LLMStrategy {
 
     @Override
     public String invoke(String baseUrl, String apiKey, String model,
-                         List<Map<String, Object>> messages, double temperature) throws Exception {
+                         List<LLMMessage> messages, double temperature) throws Exception {
         String url = baseUrl.replaceAll("/+$", "") + "/responses";
 
         // 提取最后一条 user 消息作为 prompt
         String prompt = "";
         for (int i = messages.size() - 1; i >= 0; i--) {
-            if ("user".equals(messages.get(i).get("role"))) {
-                prompt = messages.get(i).get("content").toString();
+            LLMMessage msg = messages.get(i);
+            if ("user".equals(msg.getRole())) {
+                prompt = msg.getTextContent() != null ? msg.getTextContent() : "";
                 break;
             }
         }
@@ -98,7 +100,7 @@ public class DoubaoStrategy implements LLMStrategy {
      */
     @Override
     public String invokeStream(String baseUrl, String apiKey, String model,
-                               List<Map<String, Object>> messages, double temperature,
+                               List<LLMMessage> messages, double temperature,
                                Consumer<String> callback) throws Exception {
         String answer = invoke(baseUrl, apiKey, model, messages, temperature);
         if (callback != null && !answer.isEmpty()) {

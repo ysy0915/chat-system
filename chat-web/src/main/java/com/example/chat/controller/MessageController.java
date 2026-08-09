@@ -1,6 +1,7 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
+import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.User;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.ContentSafetyService;
@@ -148,7 +149,7 @@ public class MessageController {
         } catch (Exception ex) {
             log.error("processWithFile failed: {}", ex.getMessage());
             broadcastService.broadcast("/topic/user." + userId,
-                    Map.of("type", "error", "req_id", reqId, "message", "文件处理失败: " + ex.getMessage()));
+                    WsMessage.error("文件处理失败: " + ex.getMessage()).withReqId(reqId).toMap());
         }
 
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "queued", "user_id", userId));

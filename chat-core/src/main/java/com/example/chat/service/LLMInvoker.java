@@ -1,5 +1,6 @@
 package com.example.chat.service;
 
+import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.factory.LLMStrategyFactory;
 import com.example.chat.observability.CallTrace;
@@ -22,7 +23,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -82,7 +82,7 @@ public class LLMInvoker {
      * @param defaultApiKey 默认 API Key
      * @return 完整回答
      */
-    public String invoke(ModelConfig config, List<Map<String, Object>> messages,
+    public String invoke(ModelConfig config, List<LLMMessage> messages,
                          double temperature, String scene,
                          String defaultBaseUrl, String defaultApiKey) throws Exception {
         // 熔断检查：provider连续失败5次后快速失败，不发起LLM调用
@@ -160,7 +160,7 @@ public class LLMInvoker {
      * 处理调用失败：熔断器记录失败、调用统计、错误聚合、链路追踪、自愈重试。
      * @return 自愈成功则返回自愈结果，否则抛出原异常
      */
-    private String handleFailure(ModelConfig config, List<Map<String, Object>> messages,
+    private String handleFailure(ModelConfig config, List<LLMMessage> messages,
                                  double temperature, String scene, String defaultBaseUrl,
                                  String defaultApiKey, long startTime, TraceHolder trace,
                                  Exception e) throws Exception {
@@ -181,7 +181,7 @@ public class LLMInvoker {
     /**
      * 尝试自愈重试：自愈组件未启用时直接抛出原异常。
      */
-    private String attemptSelfHealing(ModelConfig config, List<Map<String, Object>> messages,
+    private String attemptSelfHealing(ModelConfig config, List<LLMMessage> messages,
                                       double temperature, String scene, String defaultBaseUrl,
                                       String defaultApiKey, ErrorType errorType,
                                       Exception e) throws Exception {
@@ -230,7 +230,7 @@ public class LLMInvoker {
      * @param callback 流式回调（每收到一段文本触发）
      * @return 完整回答
      */
-    public String invokeStream(ModelConfig config, List<Map<String, Object>> messages,
+    public String invokeStream(ModelConfig config, List<LLMMessage> messages,
                                double temperature, String scene,
                                String defaultBaseUrl, String defaultApiKey,
                                Consumer<String> callback) throws Exception {
@@ -273,7 +273,7 @@ public class LLMInvoker {
      * 处理流式调用失败：熔断器记录失败、调用统计、错误聚合、链路追踪、自愈重试。
      * @return 自愈成功则返回自愈结果，否则抛出原异常
      */
-    private String handleStreamFailure(ModelConfig config, List<Map<String, Object>> messages,
+    private String handleStreamFailure(ModelConfig config, List<LLMMessage> messages,
                                        double temperature, String scene, String defaultBaseUrl,
                                        String defaultApiKey, long startTime, TraceHolder trace,
                                        Exception e) throws Exception {
@@ -294,7 +294,7 @@ public class LLMInvoker {
     /**
      * 尝试流式自愈重试：自愈组件未启用时直接抛出原异常。
      */
-    private String attemptStreamSelfHealing(ModelConfig config, List<Map<String, Object>> messages,
+    private String attemptStreamSelfHealing(ModelConfig config, List<LLMMessage> messages,
                                             double temperature, String scene, String defaultBaseUrl,
                                             String defaultApiKey, ErrorType errorType,
                                             Exception e) throws Exception {
@@ -317,8 +317,8 @@ public class LLMInvoker {
     public String invoke(ModelConfig config, String prompt,
                          double temperature, String scene,
                          String defaultBaseUrl, String defaultApiKey) throws Exception {
-        List<Map<String, Object>> messages = List.of(
-                Map.of("role", "user", "content", prompt)
+        List<LLMMessage> messages = List.of(
+                LLMMessage.user(prompt)
         );
         return invoke(config, messages, temperature, scene, defaultBaseUrl, defaultApiKey);
     }
@@ -344,7 +344,7 @@ public class LLMInvoker {
      * @return 完整回答
      */
     public String invokeWithRouting(String userInput, String scene, Long preferredModelId,
-                                    List<Map<String, Object>> messages, double temperature,
+                                    List<LLMMessage> messages, double temperature,
                                     String defaultBaseUrl, String defaultApiKey) throws Exception {
         // 路由组件未启用：直接抛出明确异常，避免误调用
         if (taskClassifier == null || modelRouter == null) {

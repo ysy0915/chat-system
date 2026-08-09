@@ -1,5 +1,7 @@
 package com.example.chat.langgraph4j;
 
+import com.example.chat.dto.LLMMessage;
+import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.LLMInvoker;
@@ -75,7 +77,7 @@ public class DebateNodes {
             // 推送轮次开始
             if (userId != 0) {
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_start", "req_id", reqId, "round", round));
+                    WsMessage.of("round_start").withReqId(reqId).with("round", round).toMap());
             }
 
             // 正方 prompt
@@ -103,14 +105,14 @@ public class DebateNodes {
             CompletableFuture<Void> proFuture = CompletableFuture.runAsync(() -> {
                 try {
                     llmInvoker.invokeStream(proModel,
-                        List.of(Map.of("role", "user", "content", proPrompt)),
+                        List.of(LLMMessage.user( proPrompt)),
                         0.7, "debate:pro", null, defaultApiKey,
                         token -> {
                             proBuilder.append(token);
                             if (userId != 0) {
                                 broadcastService.broadcast("/topic/debate." + userId,
-                                    Map.of("type", "stream_token", "req_id", reqId,
-                                           "model_id", 1, "token", token));
+                                    WsMessage.streamToken(token)
+                                        .withReqId(reqId).with("model_id", 1).toMap());
                             }
                         });
                 } catch (Exception e) {
@@ -122,14 +124,14 @@ public class DebateNodes {
             CompletableFuture<Void> conFuture = CompletableFuture.runAsync(() -> {
                 try {
                     llmInvoker.invokeStream(conModel,
-                        List.of(Map.of("role", "user", "content", conPrompt)),
+                        List.of(LLMMessage.user( conPrompt)),
                         0.7, "debate:con", null, defaultApiKey,
                         token -> {
                             conBuilder.append(token);
                             if (userId != 0) {
                                 broadcastService.broadcast("/topic/debate." + userId,
-                                    Map.of("type", "stream_token", "req_id", reqId,
-                                           "model_id", 3, "token", token));
+                                    WsMessage.streamToken(token)
+                                        .withReqId(reqId).with("model_id", 3).toMap());
                             }
                         });
                 } catch (Exception e) {
@@ -141,14 +143,14 @@ public class DebateNodes {
             CompletableFuture<Void> neutralFuture = CompletableFuture.runAsync(() -> {
                 try {
                     llmInvoker.invokeStream(summaryModel,
-                        List.of(Map.of("role", "user", "content", neutralPrompt)),
+                        List.of(LLMMessage.user( neutralPrompt)),
                         0.7, "debate:neutral", null, defaultApiKey,
                         token -> {
                             neutralBuilder.append(token);
                             if (userId != 0) {
                                 broadcastService.broadcast("/topic/debate." + userId,
-                                    Map.of("type", "stream_token", "req_id", reqId,
-                                           "model_id", 2, "token", token));
+                                    WsMessage.streamToken(token)
+                                        .withReqId(reqId).with("model_id", 2).toMap());
                             }
                         });
                 } catch (Exception e) {
@@ -167,19 +169,19 @@ public class DebateNodes {
             // 推送完整回答（标记各方流式结束）
             if (userId != 0) {
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_response", "req_id", reqId,
-                           "round", round, "model_id", 1,
-                           "provider", providerName(proModel), "answer", proAnswer));
+                    WsMessage.of("round_response").withReqId(reqId)
+                        .with("round", round).with("model_id", 1)
+                        .with("provider", providerName(proModel)).with("answer", proAnswer).toMap());
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_response", "req_id", reqId,
-                           "round", round, "model_id", 3,
-                           "provider", providerName(conModel), "answer", conAnswer));
+                    WsMessage.of("round_response").withReqId(reqId)
+                        .with("round", round).with("model_id", 3)
+                        .with("provider", providerName(conModel)).with("answer", conAnswer).toMap());
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_response", "req_id", reqId,
-                           "round", round, "model_id", 2,
-                           "provider", providerName(summaryModel), "answer", neutralAnswer));
+                    WsMessage.of("round_response").withReqId(reqId)
+                        .with("round", round).with("model_id", 2)
+                        .with("provider", providerName(summaryModel)).with("answer", neutralAnswer).toMap());
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_end", "req_id", reqId, "round", round));
+                    WsMessage.of("round_end").withReqId(reqId).with("round", round).toMap());
             }
 
             List<String> newPro = new ArrayList<>(prevPro);
@@ -247,22 +249,22 @@ public class DebateNodes {
             // 推送整合阶段开始
             if (userId != 0) {
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "synthesizing", "req_id", reqId,
-                           "synthesizer", providerName(summaryModel)));
+                    WsMessage.of("synthesizing").withReqId(reqId)
+                        .with("synthesizer", providerName(summaryModel)).toMap());
             }
 
             // 流式调用，实时推送整合 token
             final StringBuilder summaryBuilder = new StringBuilder();
             try {
                 llmInvoker.invokeStream(summaryModel,
-                    List.of(Map.of("role", "user", "content", prompt.toString())),
+                    List.of(LLMMessage.user( prompt.toString())),
                     0.5, "debate:summary", null, defaultApiKey,
                     token -> {
                         summaryBuilder.append(token);
                         if (userId != 0) {
                             broadcastService.broadcast("/topic/debate." + userId,
-                                Map.of("type", "stream_token", "req_id", reqId,
-                                       "model_id", 4, "token", token));
+                                WsMessage.streamToken(token)
+                                    .withReqId(reqId).with("model_id", 4).toMap());
                         }
                     });
             } catch (Exception e) {
@@ -275,7 +277,7 @@ public class DebateNodes {
             // 推送完成
             if (userId != 0) {
                 broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "done", "req_id", reqId, "answer", summary));
+                    WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", summary).toMap());
             }
 
             return Map.of(DebateState.SUMMARY, summary);

@@ -1,5 +1,6 @@
 package com.example.chat.agent.tool;
 
+import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.service.LLMInvoker;
 import com.example.chat.util.BaseUrlResolver;
@@ -72,7 +73,7 @@ public class ToolDispatcher {
      * @return 最终回答（如果触发了工具，则是工具增强后的回答）
      */
     public String dispatch(String userInput, ModelConfig config,
-                           List<Map<String, Object>> messages,
+                           List<LLMMessage> messages,
                            double temperature, String scene,
                            String defaultBaseUrl, String defaultApiKey) throws Exception {
         // 没有注册工具：直接走普通 LLM 调用，保持原行为
@@ -83,8 +84,8 @@ public class ToolDispatcher {
 
         List<Map<String, Object>> toolsSchema = toolRegistry.getToolsSchema();
 
-        // 使用消息的副本进行多轮工具调用，避免污染调用方的 messages
-        List<Map<String, Object>> workingMessages = new ArrayList<>(messages);
+        // 使用消息的副本进行多轮工具调用 (转为 Map 给底层 API)
+        List<Map<String, Object>> workingMessages = new ArrayList<>(LLMMessage.toMapList(messages));
 
         String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
         String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
@@ -134,14 +135,23 @@ public class ToolDispatcher {
                     callCount, toolCalls.size(), scene);
 
             // 调用 LLM 生成最终回答（仍带 tools，允许 LLM 继续调用工具直到 maxToolCalls）
-            String finalAnswer = llmInvoker.invoke(config, workingMessages, temperature, scene,
+            String finalAnswer = llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
                     defaultBaseUrl, defaultApiKey);
             return finalAnswer;
         }
 
         log.warn("[ToolDispatcher] 达到最大工具调用次数 {}，停止 (scene={})", maxToolCalls, scene);
         // 超过上限：用最后一条消息直接调 LLM（不带工具，强制输出文本）
-        return llmInvoker.invoke(config, workingMessages, temperature, scene, defaultBaseUrl, defaultApiKey);
+        return llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene, defaultBaseUrl, defaultApiKey);
+    }
+
+    /** 将 Map 消息列表转回 LLMMessage */
+    private List<LLMMessage> fromMapList(List<Map<String, Object>> maps) {
+        List<LLMMessage> result = new ArrayList<>();
+        for (Map<String, Object> m : maps) {
+            result.add(LLMMessage.fromMap(m));
+        }
+        return result;
     }
 
     /**

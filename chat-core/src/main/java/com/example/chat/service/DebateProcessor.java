@@ -1,5 +1,7 @@
 package com.example.chat.service;
 
+import com.example.chat.dto.LLMMessage;
+import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.DebateRecord;
 import com.example.chat.entity.Message;
 import com.example.chat.entity.ModelConfig;
@@ -97,8 +99,7 @@ public class DebateProcessor {
 
         if (doubaoModel == null || qwenModel == null || deepseekModel == null) {
             broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "error", "req_id", reqId,
-                            "message", "需要豆包、千问、DeepSeek 三个 chat 模型均已启用"));
+                    WsMessage.error("需要豆包、千问、DeepSeek 三个 chat 模型均已启用").withReqId(reqId).toMap());
             return;
         }
 
@@ -112,8 +113,8 @@ public class DebateProcessor {
         final ModelConfig summaryModel = qwenModel;
 
         broadcastService.broadcast("/topic/debate." + userId,
-                Map.of("type", "start", "req_id", reqId,
-                        "models", List.of(
+                WsMessage.of("start").withReqId(reqId)
+                        .with("models", List.of(
                                 Map.of("id", 1, "name", providerDisplayName(modelMap.get(1L).provider)),
                                 Map.of("id", 2, "name", providerDisplayName(modelMap.get(2L).provider)),
                                 Map.of("id", 3, "name", providerDisplayName(modelMap.get(3L).provider)),
@@ -159,7 +160,7 @@ public class DebateProcessor {
                 } catch (Exception e) {
                     log.error("[LangGraph4j] 辩论图执行失败: {}", e.getMessage(), e);
                     broadcastService.broadcast("/topic/debate." + userId,
-                            Map.of("type", "error", "req_id", reqId, "message", "辩论图执行失败: " + e.getMessage()));
+                            WsMessage.error("辩论图执行失败: " + e.getMessage()).withReqId(reqId).toMap());
                 }
             });
             return;
@@ -171,7 +172,7 @@ public class DebateProcessor {
             } catch (Exception e) {
                 log.error("[ERROR] DebateProcessor: {}", e.getMessage(), e);
                 broadcastService.broadcast("/topic/debate." + userId,
-                        Map.of("type", "error", "req_id", reqId, "message", e.getMessage()));
+                        WsMessage.error(e.getMessage()).withReqId(reqId).toMap());
             }
         });
     }
@@ -187,7 +188,7 @@ public class DebateProcessor {
             allRounds.add(roundResponses);
 
             broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_start", "req_id", reqId, "round", round));
+                    WsMessage.of("round_start").withReqId(reqId).with("round", round).toMap());
 
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (Long modelId : debateOrder) {
@@ -198,13 +199,13 @@ public class DebateProcessor {
                 CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
                     try {
                         String answer = llmInvoker.invokeStream(config,
-                                List.of(Map.of("role", "user", "content", prompt)),
+                                List.of(LLMMessage.user(prompt)),
                                 0.7, "debate", null, defaultApiKey,
                                 token -> {
                                     if (userId != null && reqId != null) {
                                         broadcastService.broadcast("/topic/debate." + userId,
-                                                Map.of("type", "stream_token", "req_id", reqId,
-                                                        "model_id", modelId, "token", token));
+                                                WsMessage.streamToken(token)
+                                                        .withReqId(reqId).with("model_id", modelId).toMap());
                                     }
                                 });
                         return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", answer);
@@ -215,9 +216,10 @@ public class DebateProcessor {
                     roundResponses.add(result);
                     try {
                         broadcastService.broadcast("/topic/debate." + userId,
-                                Map.of("type", "round_response", "req_id", reqId,
-                                        "round", currentRound, "model_id", modelId,
-                                        "provider", result.get("provider"), "answer", result.get("answer")));
+                                WsMessage.of("round_response").withReqId(reqId)
+                                        .with("round", currentRound).with("model_id", modelId)
+                                        .with("provider", result.get("provider"))
+                                        .with("answer", result.get("answer")).toMap());
                     } catch (Exception ex) {
                         log.warn("[WARN] WS send failed: {}", ex.getMessage());
                     }
@@ -228,29 +230,29 @@ public class DebateProcessor {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
             broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "round_end", "req_id", reqId, "round", currentRound));
+                    WsMessage.of("round_end").withReqId(reqId).with("round", currentRound).toMap());
         }
 
         broadcastService.broadcast("/topic/debate." + userId,
-                Map.of("type", "synthesizing", "req_id", reqId,
-                        "synthesizer", providerDisplayName(summaryModel.provider)));
+                WsMessage.of("synthesizing").withReqId(reqId)
+                        .with("synthesizer", providerDisplayName(summaryModel.provider)).toMap());
 
         String synthesisPrompt = buildSynthesisPrompt(question, allRounds, providerDisplayName(summaryModel.provider));
 
         try {
             String finalAnswer = llmInvoker.invokeStream(summaryModel,
-                    List.of(Map.of("role", "user", "content", synthesisPrompt)),
+                    List.of(LLMMessage.user(synthesisPrompt)),
                     0.7, "debate", null, defaultApiKey,
                     token -> {
                         if (userId != null && reqId != null) {
                             broadcastService.broadcast("/topic/debate." + userId,
-                                    Map.of("type", "stream_token", "req_id", reqId,
-                                            "model_id", 4, "token", token));
+                                            WsMessage.streamToken(token)
+                                                    .withReqId(reqId).with("model_id", 4).toMap());
                         }
                     });
 
             broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "done", "req_id", reqId, "answer", finalAnswer));
+                    WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", finalAnswer).toMap());
 
             String answerJson = objectMapper.writeValueAsString(Map.of("answer", finalAnswer));
 
@@ -281,7 +283,7 @@ public class DebateProcessor {
             }
         } catch (Exception e) {
             broadcastService.broadcast("/topic/debate." + userId,
-                    Map.of("type", "error", "req_id", reqId, "message", "最终整合失败: " + e.getMessage()));
+                    WsMessage.error("最终整合失败: " + e.getMessage()).withReqId(reqId).toMap());
         }
     }
 

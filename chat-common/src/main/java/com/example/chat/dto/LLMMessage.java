@@ -9,6 +9,7 @@ import java.util.*;
  */
 public class LLMMessage {
 
+
     private String role;
     private Object content;  // String 或 List<ContentPart>
     private String name;     // 可选：函数调用时用

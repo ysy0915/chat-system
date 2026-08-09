@@ -67,73 +67,101 @@ public class WebSocketSessionTracker {
     @Scheduled(fixedRate = 60000)
     public void refreshVirtualCounts() {
         // 1. 收集各页面真实连接数
-        Map<String, Integer> realCounts = new LinkedHashMap<>();
         Set<String> pages = redisTemplate.opsForSet().members(KNOWN_PAGES_KEY);
         if (pages == null) pages = DEFAULT_PAGES;
+        Map<String, Integer> realCounts = collectRealCounts(pages);
 
-        int realTotal = 0;
-        for (String page : pages) {
-            int cnt = getRawCount(page);
-            realCounts.put(page, cnt);
-            realTotal += cnt;
-        }
-
-        // 2. 生成随机总数（0-300）
+        // 2. 计算并更新虚拟在线数
         int newTotal = new Random().nextInt(RANDOM_TOTAL_MAX);
-
-        // 3. 按真实连接数比例分配
+        int realTotal = realCounts.values().stream().mapToInt(Integer::intValue).sum();
         if (realTotal > 0) {
-            int allocated = 0;
-            List<String> pageList = new ArrayList<>(realCounts.keySet());
-            for (int i = 0; i < pageList.size(); i++) {
-                String page = pageList.get(i);
-                int realCnt = realCounts.get(page);
-                if (i == pageList.size() - 1) {
-                    // 最后一个页面分配剩余，保证总和精确
-                    int v = newTotal - allocated;
-                    setVirtualCount(page, v);
-                } else {
-                    int v = (int) ((long) newTotal * realCnt / realTotal);
-                    allocated += v;
-                    setVirtualCount(page, v);
-                }
-            }
+            allocateByRealCount(realCounts, newTotal, realTotal);
         } else {
-            // 没有真实连接时，随机分配到几个热门页面
-            String[] hotPages = {"chat", "personal", "debate", "games", "landing"};
-            int allocated = 0;
-            for (int i = 0; i < hotPages.length; i++) {
-                if (i == hotPages.length - 1) {
-                    setVirtualCount(hotPages[i], newTotal - allocated);
-                } else {
-                    int v = newTotal / hotPages.length;
-                    allocated += v;
-                    setVirtualCount(hotPages[i], v);
-                }
-            }
-            // 其他页面置 0
-            for (String page : pages) {
-                if (!Arrays.asList(hotPages).contains(page)) {
-                    setVirtualCount(page, 0);
-                }
-            }
+            allocateToHotPages(pages, newTotal);
         }
-
         virtualTotal.set(newTotal);
         log.info("[OnlineCount] 刷新虚拟在线数 total={} pages={}", newTotal, virtualPageCounts);
 
-        // 4. 广播新的在线数
+        // 3. 广播新的在线数
         broadcastAll();
         for (String page : pages) {
             broadcastPage(page);
         }
     }
 
+    /**
+     * 收集各页面真实连接数。
+     * @param pages 待查询的页面集合
+     * @return page -> 真实连接数 映射（保持插入顺序）
+     */
+    private Map<String, Integer> collectRealCounts(Set<String> pages) {
+        Map<String, Integer> realCounts = new LinkedHashMap<>();
+        for (String page : pages) {
+            realCounts.put(page, getRawCount(page));
+        }
+        return realCounts;
+    }
+
+    /**
+     * 按真实连接数比例分配虚拟总数。最后一个页面分配剩余值，保证总和精确。
+     * @param realCounts 各页面真实连接数
+     * @param newTotal 虚拟总目标数
+     * @param realTotal 真实连接总数
+     */
+    private void allocateByRealCount(Map<String, Integer> realCounts, int newTotal, int realTotal) {
+        List<String> pageList = new ArrayList<>(realCounts.keySet());
+        int allocated = 0;
+        for (int i = 0; i < pageList.size(); i++) {
+            String page = pageList.get(i);
+            int realCnt = realCounts.get(page);
+            if (i == pageList.size() - 1) {
+                setVirtualCount(page, newTotal - allocated);
+            } else {
+                int v = (int) ((long) newTotal * realCnt / realTotal);
+                allocated += v;
+                setVirtualCount(page, v);
+            }
+        }
+    }
+
+    /**
+     * 无真实连接时，将虚拟总数随机分配到几个热门页面，其余页面置 0。
+     * @param pages 全部已知页面集合（非热门页面将被置 0）
+     * @param newTotal 虚拟总目标数
+     */
+    private void allocateToHotPages(Set<String> pages, int newTotal) {
+        String[] hotPages = {"chat", "personal", "debate", "games", "landing"};
+        int allocated = 0;
+        for (int i = 0; i < hotPages.length; i++) {
+            if (i == hotPages.length - 1) {
+                setVirtualCount(hotPages[i], newTotal - allocated);
+            } else {
+                int v = newTotal / hotPages.length;
+                allocated += v;
+                setVirtualCount(hotPages[i], v);
+            }
+        }
+        // 其他页面置 0
+        for (String page : pages) {
+            if (!Arrays.asList(hotPages).contains(page)) {
+                setVirtualCount(page, 0);
+            }
+        }
+    }
+
+    /**
+     * 设置指定页面的虚拟在线数（负值会被截断为 0）。
+     * @param page 页面标识
+     * @param count 虚拟在线数
+     */
     private void setVirtualCount(String page, int count) {
         virtualPageCounts.computeIfAbsent(page, k -> new AtomicInteger(0)).set(Math.max(0, count));
     }
 
-    /** 记录 session 心跳时间（在 register 和心跳时调用） */
+    /**
+     * 记录 session 心跳时间（在 register 和心跳时调用）。
+     * @param sessionId 会话 ID（空值直接返回）
+     */
     public void touchSession(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) return;
         redisTemplate.opsForValue().set(SESSION_HEARTBEAT_PREFIX + sessionId,
@@ -141,7 +169,10 @@ public class WebSocketSessionTracker {
                 10, java.util.concurrent.TimeUnit.MINUTES);
     }
 
-    /** 定时清理超时 session（由 @Scheduled 调用） */
+    /**
+     * 定时清理超时 session（由 @Scheduled 调用）。
+     * 遍历所有已知页面，对超过 {@link #IDLE_TIMEOUT_MS} 未活动的会话执行注销并删除心跳。
+     */
     public void cleanupIdleSessions() {
         Set<String> knownPages = redisTemplate.opsForSet().members(KNOWN_PAGES_KEY);
         if (knownPages == null) return;
@@ -161,6 +192,22 @@ public class WebSocketSessionTracker {
         }
     }
 
+    /**
+     * 注册用户会话到指定页面。
+     * <p>流程：
+     * <ol>
+     *   <li>规范化页面标识，并将其加入已知页面集合</li>
+     *   <li>清理该 sessionId 在其他页面的残留（防止 unregister 消息丢失导致只增不减）</li>
+     *   <li>记录本地会话与 Redis 集合，并刷新心跳</li>
+     *   <li>若是新访问，则累加页面访问计数</li>
+     * </ol>
+     * 注：不在每次连接时广播，等定时任务统一刷新（避免频繁广播）。
+     *
+     * @param sessionId 会话 ID（空值直接返回）
+     * @param userId 用户 ID
+     * @param name 用户名称
+     * @param page 页面标识（为空时规范化为 "global"）
+     */
     public void registerUser(String sessionId, String userId, String name, String page) {
         if (sessionId == null || sessionId.isBlank()) return;
         String pageKey = normalizePage(page);
@@ -195,6 +242,13 @@ public class WebSocketSessionTracker {
         // 不在每次连接时广播，等定时任务统一刷新（避免频繁广播）
     }
 
+    /**
+     * 注销用户会话。
+     * <p>从本地会话表与 Redis 心跳/页面集合中移除该 sessionId。
+     * 不在断开时广播，等定时任务统一刷新。
+     * @param sessionId 会话 ID（空值直接返回）
+     * @param page 页面标识（为空时从本地会话表推断）
+     */
     public void unregisterUser(String sessionId, String page) {
         if (sessionId == null || sessionId.isBlank()) return;
         String pageKey = (page != null && !page.isBlank()) ? normalizePage(page) : localSessions.get(sessionId);
@@ -206,6 +260,10 @@ public class WebSocketSessionTracker {
         // 不在断开时广播，等定时任务统一刷新
     }
 
+    /**
+     * 处理 WebSocket 断开事件：清理对应会话。
+     * @param event 断开事件（为 null 时直接返回）
+     */
     @EventListener
     public void handleDisconnect(SessionDisconnectEvent event) {
         if (event == null) return;
@@ -260,16 +318,25 @@ public class WebSocketSessionTracker {
         return getAllRealCounts().values().stream().mapToInt(Integer::intValue).sum();
     }
 
+    /**
+     * 从指定页面的会话集合中移除 sessionId。
+     */
     private void removeSessionFromPage(String sessionId, String pageKey) {
         redisTemplate.opsForSet().remove(SESSION_PAGE_PREFIX + pageKey, sessionId);
     }
 
+    /**
+     * 广播单个页面的虚拟在线数到对应 topic。
+     */
     private void broadcastPage(String pageKey) {
         int count = getCount(pageKey);
         broadcastService.broadcast("/topic/online-count/" + pageKey,
                 Map.of("count", count, "page", pageKey));
     }
 
+    /**
+     * 广播全局在线数（虚拟总数/各页面数 + 真实总数/各页面数）到总 topic。
+     */
     private void broadcastAll() {
         broadcastService.broadcast("/topic/online-count/all",
                 Map.of(
@@ -280,6 +347,9 @@ public class WebSocketSessionTracker {
                 ));
     }
 
+    /**
+     * 规范化页面标识：null/空白返回 "global"，否则去除首尾空白。
+     */
     private String normalizePage(String page) {
         return page == null || page.isBlank() ? "global" : page.trim();
     }

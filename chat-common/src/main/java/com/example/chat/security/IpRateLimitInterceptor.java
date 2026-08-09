@@ -58,66 +58,89 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         this.redis = redis;
     }
 
+    /**
+     * 拦截入口：依次执行黑名单检查、UA 过滤、自动拉黑检查、敏感接口限流、全局限流。
+     * @param request HTTP 请求
+     * @param response HTTP 响应
+     * @param handler 处理器
+     * @return true 放行；false 拦截（已写入错误响应）
+     */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String ip = getClientIp(request);
         String uri = request.getRequestURI();
 
-        // 1. 检查黑名单
+        // 1. 黑名单检查
         if (isBlacklisted(ip)) {
-            response.setStatus(429);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"error\":\"您的IP已被临时封禁，请稍后再试\"}");
-            return false;
+            return reject(response, 429, "您的IP已被临时封禁，请稍后再试");
         }
 
         // 2. UA 过滤（仅对 API 请求生效，放行静态资源和搜索引擎）
-        if (uri.startsWith("/api/")) {
-            String ua = request.getHeader("User-Agent");
-            if (isBlockedUA(ua)) {
-                response.setStatus(403);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"error\":\"访问被拒绝\"}");
-                return false;
-            }
+        if (uri.startsWith("/api/") && isBlockedUA(request.getHeader("User-Agent"))) {
+            return reject(response, 403, "访问被拒绝");
         }
 
-        // 3. 请求计数（用于自动拉黑判断）
-        String countKey = KEY_REQUEST_COUNT + ip;
-        Long count = redis.opsForValue().increment(countKey);
-        if (count != null && count == 1) {
-            redis.expire(countKey, Duration.ofSeconds(60));
-        }
-        // 超过阈值自动拉黑
-        if (count != null && count > BLACKLIST_THRESHOLD) {
-            blacklist(ip, "请求频率异常: 60秒内" + count + "次");
-            response.setStatus(429);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"error\":\"请求频率异常，IP已被临时封禁10分钟\"}");
+        // 3. 请求计数 + 自动拉黑检查
+        if (exceedsBlacklistThreshold(ip, response)) {
             return false;
         }
 
         // 4. 敏感接口限流（登录/注册）
-        if (isSensitiveEndpoint(uri)) {
-            if (!checkRate(KEY_SENSITIVE + ip, SENSITIVE_PER_MINUTE, Duration.ofMinutes(1))) {
-                response.setStatus(429);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"error\":\"操作过于频繁，请1分钟后再试\"}");
-                return false;
-            }
+        if (isSensitiveEndpoint(uri)
+                && !checkRate(KEY_SENSITIVE + ip, SENSITIVE_PER_MINUTE, Duration.ofMinutes(1))) {
+            return reject(response, 429, "操作过于频繁，请1分钟后再试");
         }
 
         // 5. 全局限流
         if (!checkRate(KEY_GLOBAL + ip, GLOBAL_PER_MINUTE, Duration.ofMinutes(1))) {
-            response.setStatus(429);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"error\":\"请求过于频繁，请稍后再试\"}");
-            return false;
+            return reject(response, 429, "请求过于频繁，请稍后再试");
         }
 
         return true;
     }
 
+    /**
+     * 写入拦截响应并返回 false。
+     * @param response HTTP 响应
+     * @param status HTTP 状态码
+     * @param message 错误消息（写入 JSON body 的 error 字段）
+     * @return 固定返回 false（拦截请求）
+     */
+    private boolean reject(HttpServletResponse response, int status, String message) throws Exception {
+        response.setStatus(status);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"error\":\"" + message + "\"}");
+        return false;
+    }
+
+    /**
+     * 请求计数并判断是否超过自动拉黑阈值；超过则拉黑并写入响应。
+     * @param ip 客户端 IP
+     * @param response HTTP 响应（用于写入拉黑提示）
+     * @return true 表示已超过阈值并已拉黑（调用方应返回 false）；false 表示未超过
+     */
+    private boolean exceedsBlacklistThreshold(String ip, HttpServletResponse response) throws Exception {
+        String countKey = KEY_REQUEST_COUNT + ip;
+        Long count = redis.opsForValue().increment(countKey);
+        if (count != null && count == 1) {
+            redis.expire(countKey, Duration.ofSeconds(60));
+        }
+        if (count != null && count > BLACKLIST_THRESHOLD) {
+            blacklist(ip, "请求频率异常: 60秒内" + count + "次");
+            reject(response, 429, "请求频率异常，IP已被临时封禁10分钟");
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 限流计数检查：首次访问设置过期时间，超过限额返回 false。
+     * Redis 异常时放行（fail-open）。
+     * @param key Redis 计数 key
+     * @param limit 限流上限
+     * @param ttl 计数窗口时长
+     * @return true 允许访问；false 已超限
+     */
     private boolean checkRate(String key, int limit, Duration ttl) {
         try {
             Long current = redis.opsForValue().increment(key);
@@ -131,6 +154,9 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         }
     }
 
+    /**
+     * 检查 IP 是否在黑名单中。Redis 异常时视为未拉黑（fail-open）。
+     */
     private boolean isBlacklisted(String ip) {
         try {
             return Boolean.TRUE.equals(redis.hasKey(KEY_BLACKLIST + ip));
@@ -139,6 +165,11 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         }
     }
 
+    /**
+     * 将 IP 加入黑名单并记录日志。
+     * @param ip 客户端 IP
+     * @param reason 拉黑原因（写入 Redis value）
+     */
     private void blacklist(String ip, String reason) {
         try {
             redis.opsForValue().set(KEY_BLACKLIST + ip, reason, BLACKLIST_TTL);
@@ -148,6 +179,11 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         }
     }
 
+    /**
+     * 判断 UA 是否被拦截。无 UA 直接拦截；白名单优先放行搜索引擎。
+     * @param ua User-Agent 头（可为 null）
+     * @return true 表示应拦截；false 表示放行
+     */
     private boolean isBlockedUA(String ua) {
         if (ua == null || ua.isBlank()) return true;
         String lower = ua.toLowerCase();
@@ -161,6 +197,9 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         return false;
     }
 
+    /**
+     * 判断 URI 是否为敏感接口（登录/注册）。
+     */
     private boolean isSensitiveEndpoint(String uri) {
         return uri.startsWith("/api/v1/auth/login")
                 || uri.startsWith("/api/v1/auth/register")
@@ -168,6 +207,9 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
                 || uri.startsWith("/api/v1/monitor/login");
     }
 
+    /**
+     * 获取客户端真实 IP：依次取 X-Forwarded-For 首段、X-Real-IP，最后回退到 RemoteAddr。
+     */
     private String getClientIp(HttpServletRequest request) {
         String ip = request.getHeader("X-Forwarded-For");
         if (ip != null && !ip.isBlank() && !"unknown".equalsIgnoreCase(ip)) {

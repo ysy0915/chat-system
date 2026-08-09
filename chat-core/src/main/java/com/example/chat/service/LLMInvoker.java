@@ -86,11 +86,42 @@ public class LLMInvoker {
                          double temperature, String scene,
                          String defaultBaseUrl, String defaultApiKey) throws Exception {
         // 熔断检查：provider连续失败5次后快速失败，不发起LLM调用
+        checkCircuitBreaker(config);
+
+        long startTime = System.currentTimeMillis();
+        TraceHolder trace = startTrace();
+        LLMStrategy strategy = strategyFactory.getStrategy(config.provider);
+        String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
+        String apiKey = resolveApiKey(config, defaultApiKey);
+
+        try {
+            String answer = strategy.invoke(baseUrl, apiKey, config.model, messages, temperature);
+            recordSuccess(scene, config, startTime, answer, trace);
+            return answer;
+        } catch (Exception e) {
+            return handleFailure(config, messages, temperature, scene, defaultBaseUrl,
+                    defaultApiKey, startTime, trace, e);
+        } finally {
+            clearTraceIfNeeded(trace);
+        }
+    }
+
+    /**
+     * 熔断检查：provider 连续失败达到阈值后快速失败，不发起 LLM 调用。
+     * @param config 模型配置（取 provider 字段）
+     * @throws RuntimeException 当 provider 已被熔断时抛出
+     */
+    private void checkCircuitBreaker(ModelConfig config) {
         if (circuitBreaker != null && !circuitBreaker.allowRequest(config.provider)) {
             throw new RuntimeException("LLM provider=" + config.provider + " 已熔断，请稍后重试");
         }
-        long startTime = System.currentTimeMillis();
-        // 生成 traceId（若当前线程未开启）
+    }
+
+    /**
+     * 启动或复用当前线程的 traceId。
+     * @return 持有 traceId 与是否由本方法启动的上下文对象
+     */
+    private TraceHolder startTrace() {
         boolean traceStarted = false;
         String traceId = null;
         if (traceContext != null) {
@@ -100,115 +131,183 @@ public class LLMInvoker {
                 traceStarted = true;
             }
         }
-        LLMStrategy strategy = strategyFactory.getStrategy(config.provider);
-        String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
-        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : defaultApiKey;
+        return new TraceHolder(traceId, traceStarted);
+    }
 
-        try {
-            String answer = strategy.invoke(baseUrl, apiKey, config.model, messages, temperature);
-            long latency = System.currentTimeMillis() - startTime;
-            if (circuitBreaker != null) circuitBreaker.recordSuccess(config.provider);
-            callRecorder.record(config.provider, config.model, scene, true, latency,
-                    answer != null ? answer.length() : 0);
-            log.info("[LLMInvoker] {} provider={} model={} latency={}ms answerLen={}",
-                    scene, config.provider, config.model, latency, answer != null ? answer.length() : 0);
-            recordTrace(traceId, scene, config, startTime, latency, "SUCCESS", null);
-            return answer;
-        } catch (Exception e) {
-            long latency = System.currentTimeMillis() - startTime;
-            if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
-            callRecorder.record(config.provider, config.model, scene, false, latency, 0);
-            log.error("[LLMInvoker] {} 调用失败 provider={} model={} latency={}ms error={}",
-                    scene, config.provider, config.model, latency, e.getMessage());
-            ErrorType errorType = ErrorType.fromException(e);
-            recordTrace(traceId, scene, config, startTime, latency, "FAIL", e.getMessage());
-            if (errorAggregator != null) {
-                errorAggregator.recordError(scene, config.provider, config.model, errorType, e.getMessage());
-            }
-            // 尝试自愈重试
-            if (selfHealingService != null) {
-                try {
-                    log.info("[LLMInvoker] 触发自愈重试 scene={} errorType={}", scene, errorType);
-                    String healed = selfHealingService.healAndRetry(config, messages, temperature, scene,
-                            defaultBaseUrl, defaultApiKey, e);
-                    return healed;
-                } catch (Exception healEx) {
-                    log.warn("[LLMInvoker] 自愈重试失败 scene={} error={}", scene, healEx.getMessage());
-                    throw healEx;
-                }
-            }
+    /**
+     * 解析 API Key：config 显式配置优先，否则使用默认值。
+     */
+    private String resolveApiKey(ModelConfig config, String defaultApiKey) {
+        return (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
+                ? config.apiKeyEncrypted : defaultApiKey;
+    }
+
+    /**
+     * 记录成功调用：熔断器记录成功、调用统计、日志、链路追踪。
+     */
+    private void recordSuccess(String scene, ModelConfig config, long startTime,
+                               String answer, TraceHolder trace) {
+        long latency = System.currentTimeMillis() - startTime;
+        if (circuitBreaker != null) circuitBreaker.recordSuccess(config.provider);
+        callRecorder.record(config.provider, config.model, scene, true, latency,
+                answer != null ? answer.length() : 0);
+        log.info("[LLMInvoker] {} provider={} model={} latency={}ms answerLen={}",
+                scene, config.provider, config.model, latency, answer != null ? answer.length() : 0);
+        recordTrace(trace.traceId, scene, config, startTime, latency, "SUCCESS", null);
+    }
+
+    /**
+     * 处理调用失败：熔断器记录失败、调用统计、错误聚合、链路追踪、自愈重试。
+     * @return 自愈成功则返回自愈结果，否则抛出原异常
+     */
+    private String handleFailure(ModelConfig config, List<Map<String, Object>> messages,
+                                 double temperature, String scene, String defaultBaseUrl,
+                                 String defaultApiKey, long startTime, TraceHolder trace,
+                                 Exception e) throws Exception {
+        long latency = System.currentTimeMillis() - startTime;
+        if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
+        callRecorder.record(config.provider, config.model, scene, false, latency, 0);
+        log.error("[LLMInvoker] {} 调用失败 provider={} model={} latency={}ms error={}",
+                scene, config.provider, config.model, latency, e.getMessage());
+        ErrorType errorType = ErrorType.fromException(e);
+        recordTrace(trace.traceId, scene, config, startTime, latency, "FAIL", e.getMessage());
+        if (errorAggregator != null) {
+            errorAggregator.recordError(scene, config.provider, config.model, errorType, e.getMessage());
+        }
+        return attemptSelfHealing(config, messages, temperature, scene,
+                defaultBaseUrl, defaultApiKey, errorType, e);
+    }
+
+    /**
+     * 尝试自愈重试：自愈组件未启用时直接抛出原异常。
+     */
+    private String attemptSelfHealing(ModelConfig config, List<Map<String, Object>> messages,
+                                      double temperature, String scene, String defaultBaseUrl,
+                                      String defaultApiKey, ErrorType errorType,
+                                      Exception e) throws Exception {
+        if (selfHealingService == null) {
             throw e;
-        } finally {
-            if (traceStarted && traceContext != null) {
-                traceContext.clear();
-            }
+        }
+        try {
+            log.info("[LLMInvoker] 触发自愈重试 scene={} errorType={}", scene, errorType);
+            return selfHealingService.healAndRetry(config, messages, temperature, scene,
+                    defaultBaseUrl, defaultApiKey, e);
+        } catch (Exception healEx) {
+            log.warn("[LLMInvoker] 自愈重试失败 scene={} error={}", scene, healEx.getMessage());
+            throw healEx;
+        }
+    }
+
+    /**
+     * 清理本次启动的 trace 上下文。
+     */
+    private void clearTraceIfNeeded(TraceHolder trace) {
+        if (trace.traceStarted && traceContext != null) {
+            traceContext.clear();
+        }
+    }
+
+    /**
+     * trace 上下文持有者：封装 traceId 与是否由本次调用启动。
+     */
+    private static final class TraceHolder {
+        final String traceId;
+        final boolean traceStarted;
+        TraceHolder(String traceId, boolean traceStarted) {
+            this.traceId = traceId;
+            this.traceStarted = traceStarted;
         }
     }
 
     /**
      * 流式调用
+     * @param config 模型配置
+     * @param messages 消息列表
+     * @param temperature 温度
+     * @param scene 调用场景
+     * @param defaultBaseUrl 默认 baseUrl（config 中无 meta 时使用）
+     * @param defaultApiKey 默认 API Key
+     * @param callback 流式回调（每收到一段文本触发）
+     * @return 完整回答
      */
     public String invokeStream(ModelConfig config, List<Map<String, Object>> messages,
                                double temperature, String scene,
                                String defaultBaseUrl, String defaultApiKey,
                                Consumer<String> callback) throws Exception {
         // 熔断检查
-        if (circuitBreaker != null && !circuitBreaker.allowRequest(config.provider)) {
-            throw new RuntimeException("LLM provider=" + config.provider + " 已熔断，请稍后重试");
-        }
+        checkCircuitBreaker(config);
+
         long startTime = System.currentTimeMillis();
-        boolean traceStarted = false;
-        String traceId = null;
-        if (traceContext != null) {
-            traceId = traceContext.get();
-            if (traceId == null) {
-                traceId = traceContext.start();
-                traceStarted = true;
-            }
-        }
+        TraceHolder trace = startTrace();
         LLMStrategy strategy = strategyFactory.getStrategy(config.provider);
         String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
-        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : defaultApiKey;
+        String apiKey = resolveApiKey(config, defaultApiKey);
 
         try {
             String answer = strategy.invokeStream(baseUrl, apiKey, config.model, messages, temperature, callback);
-            long latency = System.currentTimeMillis() - startTime;
-            if (circuitBreaker != null) circuitBreaker.recordSuccess(config.provider);
-            callRecorder.record(config.provider, config.model, scene, true, latency,
-                    answer != null ? answer.length() : 0);
-            log.info("[LLMInvoker] stream:{} provider={} model={} latency={}ms answerLen={}",
-                    scene, config.provider, config.model, latency, answer != null ? answer.length() : 0);
-            recordTrace(traceId, scene, config, startTime, latency, "SUCCESS", null);
+            recordStreamSuccess(scene, config, startTime, answer, trace);
             return answer;
         } catch (Exception e) {
-            long latency = System.currentTimeMillis() - startTime;
-            if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
-            callRecorder.record(config.provider, config.model, scene, false, latency, 0);
-            log.error("[LLMInvoker] stream:{} 调用失败 provider={} model={} latency={}ms error={}",
-                    scene, config.provider, config.model, latency, e.getMessage());
-            ErrorType errorType = ErrorType.fromException(e);
-            recordTrace(traceId, scene, config, startTime, latency, "FAIL", e.getMessage());
-            if (errorAggregator != null) {
-                errorAggregator.recordError(scene, config.provider, config.model, errorType, e.getMessage());
-            }
-            if (selfHealingService != null) {
-                try {
-                    log.info("[LLMInvoker] stream 触发自愈重试 scene={} errorType={}", scene, errorType);
-                    String healed = selfHealingService.healAndRetry(config, messages, temperature, scene,
-                            defaultBaseUrl, defaultApiKey, e);
-                    return healed;
-                } catch (Exception healEx) {
-                    log.warn("[LLMInvoker] stream 自愈重试失败 scene={} error={}", scene, healEx.getMessage());
-                    throw healEx;
-                }
-            }
-            throw e;
+            return handleStreamFailure(config, messages, temperature, scene, defaultBaseUrl,
+                    defaultApiKey, startTime, trace, e);
         } finally {
-            if (traceStarted && traceContext != null) {
-                traceContext.clear();
-            }
+            clearTraceIfNeeded(trace);
+        }
+    }
+
+    /**
+     * 记录流式调用成功：熔断器记录成功、调用统计、日志、链路追踪。
+     */
+    private void recordStreamSuccess(String scene, ModelConfig config, long startTime,
+                                     String answer, TraceHolder trace) {
+        long latency = System.currentTimeMillis() - startTime;
+        if (circuitBreaker != null) circuitBreaker.recordSuccess(config.provider);
+        callRecorder.record(config.provider, config.model, scene, true, latency,
+                answer != null ? answer.length() : 0);
+        log.info("[LLMInvoker] stream:{} provider={} model={} latency={}ms answerLen={}",
+                scene, config.provider, config.model, latency, answer != null ? answer.length() : 0);
+        recordTrace(trace.traceId, scene, config, startTime, latency, "SUCCESS", null);
+    }
+
+    /**
+     * 处理流式调用失败：熔断器记录失败、调用统计、错误聚合、链路追踪、自愈重试。
+     * @return 自愈成功则返回自愈结果，否则抛出原异常
+     */
+    private String handleStreamFailure(ModelConfig config, List<Map<String, Object>> messages,
+                                       double temperature, String scene, String defaultBaseUrl,
+                                       String defaultApiKey, long startTime, TraceHolder trace,
+                                       Exception e) throws Exception {
+        long latency = System.currentTimeMillis() - startTime;
+        if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
+        callRecorder.record(config.provider, config.model, scene, false, latency, 0);
+        log.error("[LLMInvoker] stream:{} 调用失败 provider={} model={} latency={}ms error={}",
+                scene, config.provider, config.model, latency, e.getMessage());
+        ErrorType errorType = ErrorType.fromException(e);
+        recordTrace(trace.traceId, scene, config, startTime, latency, "FAIL", e.getMessage());
+        if (errorAggregator != null) {
+            errorAggregator.recordError(scene, config.provider, config.model, errorType, e.getMessage());
+        }
+        return attemptStreamSelfHealing(config, messages, temperature, scene,
+                defaultBaseUrl, defaultApiKey, errorType, e);
+    }
+
+    /**
+     * 尝试流式自愈重试：自愈组件未启用时直接抛出原异常。
+     */
+    private String attemptStreamSelfHealing(ModelConfig config, List<Map<String, Object>> messages,
+                                            double temperature, String scene, String defaultBaseUrl,
+                                            String defaultApiKey, ErrorType errorType,
+                                            Exception e) throws Exception {
+        if (selfHealingService == null) {
+            throw e;
+        }
+        try {
+            log.info("[LLMInvoker] stream 触发自愈重试 scene={} errorType={}", scene, errorType);
+            return selfHealingService.healAndRetry(config, messages, temperature, scene,
+                    defaultBaseUrl, defaultApiKey, e);
+        } catch (Exception healEx) {
+            log.warn("[LLMInvoker] stream 自愈重试失败 scene={} error={}", scene, healEx.getMessage());
+            throw healEx;
         }
     }
 
@@ -272,7 +371,14 @@ public class LLMInvoker {
     }
 
     /**
-     * 记录调用链路（可观测性组件未启用时跳过）
+     * 记录调用链路（可观测性组件未启用时跳过）。
+     * @param traceId 链路 ID（为 null 时使用空串）
+     * @param scene 调用场景
+     * @param config 模型配置
+     * @param startTime 调用起始时间戳（ms）
+     * @param latency 调用耗时（ms）
+     * @param status 调用状态（SUCCESS / FAIL）
+     * @param errorMessage 失败时的错误信息（成功时为 null）
      */
     private void recordTrace(String traceId, String scene, ModelConfig config,
                              long startTime, long latency, String status, String errorMessage) {

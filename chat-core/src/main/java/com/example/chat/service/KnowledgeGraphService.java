@@ -385,8 +385,11 @@ public class KnowledgeGraphService {
     }
 
     /**
-     * 查询图谱数据（用于前端可视化）
-     * 返回所有节点和边（限制数量）
+     * 查询图谱数据（用于前端可视化）。
+     * 返回所有节点和边（按关系数量排序限制数量）。
+     *
+     * @param limit 返回节点数量上限
+     * @return 包含nodes（节点列表）和edges（边列表）的Map，Neo4j不可用时返回空列表
      */
     public Map<String, Object> getGraph(int limit) {
         if (neo4jDriver == null) return Map.of("nodes", List.of(), "edges", List.of());

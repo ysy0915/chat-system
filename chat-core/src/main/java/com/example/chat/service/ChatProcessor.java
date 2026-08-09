@@ -696,6 +696,12 @@ public class ChatProcessor {
         return sb.toString().trim();
     }
 
+    /**
+     * 从 PPT 文件二进制内容中提取文本（按幻灯片 → 文本形状遍历）。
+     *
+     * @param fileContent PPT 文件二进制内容
+     * @return 提取的文本（每页以 === Slide N === 分隔）
+     */
     private String extractPptContent(byte[] fileContent) throws Exception {
         StringBuilder sb = new StringBuilder();
         try (XMLSlideShow ppt = new XMLSlideShow(new java.io.ByteArrayInputStream(fileContent))) {
@@ -806,6 +812,12 @@ public class ChatProcessor {
         return "doubao";
     }
 
+    /**
+     * 判断指定 provider 是否支持视觉（图片）输入。
+     *
+     * @param provider 模型 provider 名称
+     * @return true 表示支持图片输入
+     */
     private boolean isVisionSupported(String provider) {
         if (provider == null) return false;
         switch (provider.toLowerCase()) {
@@ -819,11 +831,23 @@ public class ChatProcessor {
         }
     }
 
+    /**
+     * 判断指定模型配置是否为视觉模型（image_parse 类型或 provider 支持视觉）。
+     *
+     * @param config 模型配置
+     * @return true 表示该模型可处理图片
+     */
     private boolean isVisionModel(ModelConfig config) {
         if ("image_parse".equals(config.modelType)) return true;
         return isVisionSupported(config.provider);
     }
 
+    /**
+     * 计算输入字符串的 SHA-256 哈希值（16 进制字符串）；计算失败时回退到 hashCode。
+     *
+     * @param input 输入字符串
+     * @return 哈希值
+     */
     private static String sha256(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -836,14 +860,34 @@ public class ChatProcessor {
         }
     }
 
+    /**
+     * 构建问题级缓存 key（不区分 provider/model，命中即所有模型共用）。
+     *
+     * @param question 问题文本
+     * @return Redis 缓存 key
+     */
     private String buildCacheKey(String question) {
         return "question:" + sha256(question + "::model-pool");
     }
 
+    /**
+     * 构建问题+模型级缓存 key（区分 provider/model）。
+     *
+     * @param question 问题文本
+     * @param provider 模型 provider
+     * @param model    模型名称
+     * @return Redis 缓存 key
+     */
     private String buildCacheKey(String question, String provider, String model) {
         return "question:" + sha256(question + "::" + (provider == null ? "" : provider) + "::" + (model == null ? "" : model));
     }
 
+    /**
+     * 从 Redis 读取用户绑定的个人模型 ID；读取失败或未绑定时返回 null。
+     *
+     * @param userId 用户 ID
+     * @return 绑定的模型 ID，或 null
+     */
     private Long getPersonalModelId(Long userId) {
         try {
             String val = redisTemplate.opsForValue().get("personal_model:" + userId);
@@ -856,6 +900,12 @@ public class ChatProcessor {
         return null;
     }
 
+    /**
+     * 将用户绑定的个人模型 ID 保存到 Redis（TTL 365 天）。
+     *
+     * @param userId  用户 ID
+     * @param modelId 模型 ID
+     */
     private void savePersonalModelId(Long userId, Long modelId) {
         try {
             redisTemplate.opsForValue().set("personal_model:" + userId, String.valueOf(modelId), Duration.ofDays(365));
@@ -864,6 +914,15 @@ public class ChatProcessor {
         }
     }
 
+    /**
+     * 尝试根据用户输入的切换指令（如"切换到千问"）切换个人模型。
+     * <p>命中切换指令时：保存绑定关系并返回切换成功提示的 JSON；未命中返回 null。</p>
+     *
+     * @param userId     用户 ID
+     * @param question   用户问题（可能包含切换指令）
+     * @param allConfigs 全部可用模型配置
+     * @return 切换成功提示 JSON，或 null（未命中切换指令）
+     */
     private String trySwitchModel(Long userId, String question, List<ModelConfig> allConfigs) {
         String q = question.trim().toLowerCase();
         if (!q.contains("切换") && !q.contains("换") && !q.contains("改用")) {
@@ -907,10 +966,19 @@ public class ChatProcessor {
         return null;
     }
 
+    /**
+     * LLM 调用结果封装（包含模型配置和生成的答案）。
+     */
     private static class LLMResult {
         private final ModelConfig config;
         private final String answer;
 
+        /**
+         * 构造 LLM 调用结果。
+         *
+         * @param config 调用使用的模型配置
+         * @param answer LLM 生成的答案
+         */
         private LLMResult(ModelConfig config, String answer) {
             this.config = config;
             this.answer = answer;

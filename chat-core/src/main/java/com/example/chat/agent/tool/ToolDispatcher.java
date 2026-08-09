@@ -2,6 +2,7 @@ package com.example.chat.agent.tool;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
+import com.example.chat.exception.LLMCallException;
 import com.example.chat.service.LLMInvoker;
 import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,7 +44,7 @@ public class ToolDispatcher {
     private final ToolRegistry toolRegistry;
     private final LLMInvoker llmInvoker;
     private final BaseUrlResolver baseUrlResolver;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
             .build();
@@ -54,10 +55,12 @@ public class ToolDispatcher {
     @Autowired
     public ToolDispatcher(ToolRegistry toolRegistry,
                           LLMInvoker llmInvoker,
-                          BaseUrlResolver baseUrlResolver) {
+                          BaseUrlResolver baseUrlResolver,
+                          ObjectMapper objectMapper) {
         this.toolRegistry = toolRegistry;
         this.llmInvoker = llmInvoker;
         this.baseUrlResolver = baseUrlResolver;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -183,8 +186,7 @@ public class ToolDispatcher {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            throw new RuntimeException("ToolDispatcher LLM API returned status "
-                    + response.statusCode() + ": " + response.body());
+            throw new LLMCallException(response.statusCode(), "ToolDispatcher LLM API returned status " + response.statusCode());
         }
 
         return objectMapper.readValue(response.body(), Map.class);

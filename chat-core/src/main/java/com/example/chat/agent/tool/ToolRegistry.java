@@ -23,9 +23,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ToolRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(ToolRegistry.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     private final Map<String, Tool> tools = new ConcurrentHashMap<>();
+
+    public ToolRegistry(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * Spring 启动时自动注入所有 Tool 实现（容器中所有 Tool 类型的 bean）

@@ -12,7 +12,7 @@ import org.apache.flink.streaming.connectors.elasticsearch7.ElasticsearchSink;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.http.HttpHost;
 
-import java.util.*;
+import java.util.Collections;
 
 /**
  * Flink 实时日志分析作业
@@ -114,7 +114,9 @@ public class LogAnalysisJob {
                                         new org.elasticsearch.action.index.IndexRequest("app-stats")
                                                 .source(element, json)
                                 );
-                            } catch (Exception ignored) {}
+                            } catch (Exception ignored) {
+                                // ES 索引写入失败不阻塞主流程
+                            }
                         }
                 ).build()).name("ES Sink - Stats");
 
@@ -154,9 +156,12 @@ public class LogAnalysisJob {
                 closeWriter();
                 java.io.File dir = new java.io.File(ARCHIVE_DIR + "/" + service);
                 if (!dir.exists() && !dir.mkdirs()) {
-                    // mkdirs 失败可能是权限问题，尝试用绝对路径
+                    // mkdirs 失败尝试 /tmp 回退目录
                     dir = new java.io.File("/tmp/archive/" + service);
-                    dir.mkdirs();
+                    if (!dir.mkdirs() && !dir.exists()) {
+                        LOG.error("归档目录创建失败: {}，日志归档将跳过", dir.getAbsolutePath());
+                        return;
+                    }
                 }
                 java.io.File file = new java.io.File(dir, date + ".log");
                 writer = new java.io.FileWriter(file, true); // 追加模式
@@ -198,7 +203,9 @@ public class LogAnalysisJob {
                 try {
                     writer.flush();
                     writer.close();
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                    // 关闭 Writer 失败不影响主流程
+                }
                 writer = null;
             }
         }

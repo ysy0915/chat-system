@@ -8,7 +8,12 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.*;
+import com.example.chat.exception.ChatServiceException;
+
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * chat-core 内部 API 客户端
@@ -315,7 +320,8 @@ public class CoreClient {
             }
         }
         log.error("[CoreClient] GET {} 所有 Core 实例均失败", path);
-        throw new RuntimeException("调用核心服务失败: " + (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
+        throw new ChatServiceException("core", "ALL_INSTANCES_FAILED", "调用核心服务失败: " +
+                (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
     }
 
     private Object post(String path, Map<String, Object> payload) {
@@ -336,6 +342,7 @@ public class CoreClient {
             }
         }
         log.error("[CoreClient] POST {} 所有 Core 实例均失败", path);
-        throw new RuntimeException("调用核心服务失败: " + (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
+        throw new ChatServiceException("core", "ALL_INSTANCES_FAILED", "调用核心服务失败: " +
+                (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
     }
 }

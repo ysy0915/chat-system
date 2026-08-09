@@ -1,6 +1,7 @@
 package com.example.chat.strategy;
 
 import com.example.chat.dto.LLMMessage;
+import com.example.chat.exception.LLMCallException;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -36,7 +37,7 @@ public interface LLMStrategy {
             try {
                 return invoke(baseUrl, apiKey, model, messages, temperature);
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                throw new LLMCallException("LLM 异步调用失败", e);
             }
         });
     }
@@ -52,7 +53,7 @@ public interface LLMStrategy {
             try {
                 return invokeStream(baseUrl, apiKey, model, messages, temperature, callback);
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                throw new LLMCallException("LLM 异步调用失败", e);
             }
         });
     }

@@ -1,6 +1,10 @@
 package com.example.chat.dto;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * LLM 对话消息 — 替代散落的 Map.of("role", ..., "content", ...)

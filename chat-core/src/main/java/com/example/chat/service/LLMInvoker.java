@@ -2,6 +2,7 @@ package com.example.chat.service;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
+import com.example.chat.exception.LLMCallException;
 import com.example.chat.factory.LLMStrategyFactory;
 import com.example.chat.observability.CallTrace;
 import com.example.chat.observability.CircuitBreaker;
@@ -113,7 +114,7 @@ public class LLMInvoker {
      */
     private void checkCircuitBreaker(ModelConfig config) {
         if (circuitBreaker != null && !circuitBreaker.allowRequest(config.provider)) {
-            throw new RuntimeException("LLM provider=" + config.provider + " 已熔断，请稍后重试");
+            throw new LLMCallException("LLM provider=" + config.provider + " 已熔断，请稍后重试");
         }
     }
 

@@ -52,14 +52,14 @@ public class OssService {
     @PostConstruct
     public void init() {
         if (!enabled) {
-            log.warn("[OSS] 未启用 OSS 存储");
+            log.warn("OSS 未启用 OSS 存储");
             return;
         }
         try {
             ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
-            log.info("[OSS] 初始化成功, bucket={}, endpoint={}", bucketName, endpoint);
+            log.info("OSS 初始化成功, bucket={}, endpoint={}", bucketName, endpoint);
         } catch (Exception e) {
-            log.error("[OSS] 初始化失败: {}", e.getMessage());
+            log.error("OSS 初始化失败", e);
         }
     }
 
@@ -89,7 +89,7 @@ public class OssService {
                     .build();
             HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() != 200) {
-                log.warn("[OSS] 下载失败 status={} url={}", response.statusCode(), sourceUrl);
+                log.warn("OSS 下载失败 status={} url={}", response.statusCode(), sourceUrl);
                 return sourceUrl;
             }
             byte[] data = response.body();
@@ -110,10 +110,10 @@ public class OssService {
             // 生成签名 URL（有效期 7 天），确保即使 Bucket 私有也能访问
             java.util.Date expiration = new java.util.Date(System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000);
             String signedUrl = ossClient.generatePresignedUrl(bucketName, objectKey, expiration).toString();
-            log.info("[OSS] 转存成功 {} -> {} ({}KB)", mediaType, signedUrl, data.length / 1024);
+            log.info("OSS 转存成功 {} -> {} ({}KB)", mediaType, signedUrl, data.length / 1024);
             return signedUrl;
         } catch (Exception e) {
-            log.warn("[OSS] 转存失败, 保留原URL: {} - {}", sourceUrl, e.getMessage());
+            log.warn("OSS 转存失败, 保留原URL: {} - {}", sourceUrl, e.getMessage());
             return sourceUrl;
         }
     }
@@ -139,7 +139,7 @@ public class OssService {
             java.util.Date expiration = new java.util.Date(System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000);
             return ossClient.generatePresignedUrl(bucketName, objectKey, expiration).toString();
         } catch (Exception e) {
-            log.warn("[OSS] 刷新签名URL失败: {} - {}", storedUrl, e.getMessage());
+            log.warn("OSS 刷新签名URL失败: {} - {}", storedUrl, e.getMessage());
             return storedUrl;
         }
     }

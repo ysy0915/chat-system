@@ -10,8 +10,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
@@ -69,7 +75,7 @@ public class WebSocketSessionTracker {
         Map<String, Integer> realCounts = collectRealCounts(pages);
 
         // 2. 计算并更新虚拟在线数
-        int newTotal = new Random().nextInt(RANDOM_TOTAL_MAX);
+        int newTotal = ThreadLocalRandom.current().nextInt(RANDOM_TOTAL_MAX);
         int realTotal = realCounts.values().stream().mapToInt(Integer::intValue).sum();
         if (realTotal > 0) {
             allocateByRealCount(realCounts, newTotal, realTotal);

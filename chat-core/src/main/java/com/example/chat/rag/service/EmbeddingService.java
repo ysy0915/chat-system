@@ -1,5 +1,6 @@
 package com.example.chat.rag.service;
 
+import com.example.chat.exception.LLMCallException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,10 +44,14 @@ public class EmbeddingService {
     @Value("${app.rag.embedding.dimension:1024}")
     private int dimension;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
             .build();
+
+    public EmbeddingService(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 将单条文本转为向量
@@ -82,7 +87,7 @@ public class EmbeddingService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                throw new RuntimeException("Embedding API 失败 status=" + response.statusCode() + " body=" + response.body());
+                throw new LLMCallException(response.statusCode(), "Embedding API 失败 status=" + response.statusCode());
             }
 
             @SuppressWarnings("unchecked")
@@ -103,7 +108,7 @@ public class EmbeddingService {
                     .toList();
         } catch (Exception e) {
             log.error("[Embedding] 转向量失败 provider={} model={} error={}", provider, model, e.getMessage());
-            throw new RuntimeException("Embedding 失败: " + e.getMessage(), e);
+            throw new LLMCallException("Embedding 失败", e);
         }
     }
 

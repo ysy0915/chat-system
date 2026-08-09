@@ -47,7 +47,12 @@ public class RAGUsageExample {
     @Value("${app.rag.treehole.kb-id:1}")
     private Long treeholeKbId;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    public void setObjectMapper(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 示例：情绪树洞接入 RAG

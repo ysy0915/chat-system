@@ -3,9 +3,11 @@ package com.example.chat.controller;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.MediaGenRecord;
+import com.example.chat.exception.LLMCallException;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.repository.MediaGenRecordRepository;
 import com.example.chat.service.OssService;
+import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +46,7 @@ public class MediaGenController {
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final BaseUrlResolver baseUrlResolver;
 
     private static final long IMAGE_MODEL_ID = 4L;
     private static final long VIDEO_MODEL_ID = 5L;
@@ -57,9 +60,11 @@ public class MediaGenController {
     // 3D 模型生成白名单用户（用户名）
     private static final Set<String> MODEL3D_WHITELIST = new HashSet<>(Arrays.asList("雪梨", "ysy0929"));
 
-    public MediaGenController(ModelConfigRepository modelConfigRepository, ObjectMapper objectMapper) {
+    public MediaGenController(ModelConfigRepository modelConfigRepository, ObjectMapper objectMapper,
+                               BaseUrlResolver baseUrlResolver) {
         this.modelConfigRepository = modelConfigRepository;
         this.objectMapper = objectMapper;
+        this.baseUrlResolver = baseUrlResolver;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
@@ -103,7 +108,7 @@ public class MediaGenController {
             return ResponseEntity.status(500).body(Map.of("error", typeLabel + "模型 API Key 未配置"));
         }
 
-        String baseUrl = resolveBaseUrl(config);
+        String baseUrl = baseUrlResolver.resolve(config, "https://dashscope.aliyuncs.com");
 
         // 先创建 running 状态的记录
         Long currentUserId = getCurrentUserId();
@@ -117,9 +122,9 @@ public class MediaGenController {
                 record.model = config.model;
                 record.status = "running";
                 recordId = mediaGenRecordRepository.insert(record);
-                log.info("[MediaGen] 创建running记录, id={}, userId={}, type={}", recordId, currentUserId, type);
+                log.info("创建running记录, id={}, userId={}, type={}", recordId, currentUserId, type);
             } catch (Exception ex) {
-                log.warn("[MediaGen] 创建记录失败: {}", ex.getMessage());
+                log.warn("创建记录失败", ex);
             }
         }
 
@@ -156,9 +161,9 @@ public class MediaGenController {
                 try {
                     mediaGenRecordRepository.updateToDone(recordId, mediaUrl,
                             ossGlb, ossObj, ossPreview);
-                    log.info("[MediaGen] 记录更新为done, id={}", recordId);
+                    log.info("记录更新为done, id={}", recordId);
                 } catch (Exception ex) {
-                    log.warn("[MediaGen] 更新记录失败: {}", ex.getMessage());
+                    log.warn("更新记录失败", ex);
                 }
             }
 
@@ -170,12 +175,14 @@ public class MediaGenController {
             if (extra3D != null) response.putAll(extra3D);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("[ERROR] MediaGen: {}", e.getMessage(), e);
+            log.error("MediaGen 生成失败", e);
             // 更新记录为 error
             if (recordId != null) {
                 try {
                     mediaGenRecordRepository.updateToError(recordId, e.getMessage());
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                    log.debug("MediaGen 更新错误状态失败，继续返回异常给调用方");
+                }
             }
             return ResponseEntity.status(500).body(Map.of("error", "生成失败: " + e.getMessage()));
         }
@@ -207,7 +214,7 @@ public class MediaGenController {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            throw new RuntimeException("提交视频任务失败，状态 " + response.statusCode() + ": " + response.body());
+            throw new LLMCallException("提交视频任务失败，状态 " + response.statusCode() + ": " + response.body());
         }
 
         Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
@@ -219,10 +226,10 @@ public class MediaGenController {
 
         String taskId = (String) output.get("task_id");
         if (taskId == null || taskId.isBlank()) {
-            throw new RuntimeException("未返回 task_id");
+            throw new LLMCallException("未返回 task_id");
         }
 
-        log.info("[MediaGen] 视频任务已提交, task_id={}", taskId);
+        log.info("视频任务已提交, task_id={}", taskId);
 
         String pollUrl = baseUrl.replaceAll("/+$", "") + "/api/v1/tasks/" + taskId;
         for (int i = 0; i < VIDEO_MAX_POLL_COUNT; i++) {
@@ -237,7 +244,7 @@ public class MediaGenController {
 
             HttpResponse<String> pollResponse = httpClient.send(pollRequest, HttpResponse.BodyHandlers.ofString());
             if (pollResponse.statusCode() != 200) {
-                log.warn("[MediaGen] 轮询失败, status={}", pollResponse.statusCode());
+                log.warn("轮询失败, status={}", pollResponse.statusCode());
                 continue;
             }
 
@@ -246,21 +253,21 @@ public class MediaGenController {
             if (pollOutput == null) continue;
 
             String status = (String) pollOutput.get("task_status");
-            log.info("[MediaGen] 轮询 task_status={} (第{}次)", status, (i + 1));
+            log.info("轮询 task_status={} (第{}次)", status, (i + 1));
 
             if ("SUCCEEDED".equals(status)) {
                 String videoUrl = (String) pollOutput.get("video_url");
                 if (videoUrl != null && !videoUrl.isBlank()) {
                     return videoUrl;
                 }
-                throw new RuntimeException("任务成功但未返回 video_url");
+                throw new LLMCallException("任务成功但未返回 video_url");
             } else if ("FAILED".equals(status) || "CANCELED".equals(status)) {
                 String msg = pollOutput.get("message") != null ? pollOutput.get("message").toString() : "任务失败";
                 throw new RuntimeException(msg);
             }
         }
 
-        throw new RuntimeException("视频生成超时，已轮询 " + VIDEO_MAX_POLL_COUNT + " 次");
+        throw new LLMCallException("视频生成超时，已轮询 " + VIDEO_MAX_POLL_COUNT + " 次");
     }
 
     private String callImageGeneration(String baseUrl, String apiKey, String model, String prompt) throws Exception {
@@ -292,7 +299,7 @@ public class MediaGenController {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            throw new RuntimeException("API返回状态 " + response.statusCode() + ": " + response.body());
+            throw new LLMCallException("API返回状态 " + response.statusCode() + ": " + response.body());
         }
 
         Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
@@ -305,14 +312,14 @@ public class MediaGenController {
 
         List<Map<String, Object>> choices = (List<Map<String, Object>>) output.get("choices");
         if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("API未返回结果");
+            throw new LLMCallException("API未返回结果");
         }
 
         Map<String, Object> firstChoice = choices.get(0);
         Map<String, Object> message = (Map<String, Object>) firstChoice.get("message");
         List<Map<String, Object>> content = (List<Map<String, Object>>) message.get("content");
         if (content == null || content.isEmpty()) {
-            throw new RuntimeException("API未返回内容");
+            throw new LLMCallException("API未返回内容");
         }
 
         Map<String, Object> firstContent = content.get(0);
@@ -341,7 +348,7 @@ public class MediaGenController {
         log.info("[MediaGen-3D] 提交任务, status={}, bodyLen={}", submitResponse.statusCode(), submitResponse.body().length());
 
         if (submitResponse.statusCode() != 200) {
-            throw new RuntimeException("3D任务提交失败，状态 " + submitResponse.statusCode() + ": " + submitResponse.body());
+            throw new LLMCallException("3D任务提交失败，状态 " + submitResponse.statusCode() + ": " + submitResponse.body());
         }
 
         Map<String, Object> submitResult = objectMapper.readValue(submitResponse.body(), Map.class);
@@ -354,7 +361,7 @@ public class MediaGenController {
             }
         }
         if (taskId == null || taskId.isBlank()) {
-            throw new RuntimeException("3D任务提交未返回 id: " + submitResponse.body());
+            throw new LLMCallException("3D任务提交未返回 id: " + submitResponse.body());
         }
 
         log.info("[MediaGen-3D] 任务已提交, id={}", taskId);
@@ -398,7 +405,7 @@ public class MediaGenController {
                 if (urls != null && !urls.isEmpty()) {
                     return urls;
                 }
-                throw new RuntimeException("3D任务成功但未返回模型URL: " + queryResponse.body());
+                throw new LLMCallException("3D任务成功但未返回模型URL: " + queryResponse.body());
             } else if ("failed".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status)
                     || "error".equalsIgnoreCase(status)) {
                 String msg = queryResult.get("message") != null ? queryResult.get("message").toString() : "3D生成失败";
@@ -406,7 +413,7 @@ public class MediaGenController {
             }
         }
 
-        throw new RuntimeException("3D生成超时，已轮询 " + MODEL3D_MAX_POLL_COUNT + " 次");
+        throw new LLMCallException("3D生成超时，已轮询 " + MODEL3D_MAX_POLL_COUNT + " 次");
     }
 
     @SuppressWarnings("unchecked")
@@ -568,16 +575,4 @@ public class MediaGenController {
         return ResponseEntity.ok(Map.of("allowed", allowed, "username", username == null ? "" : username));
     }
 
-    private String resolveBaseUrl(ModelConfig config) {
-        if (config.metaJson != null && !config.metaJson.isBlank()) {
-            try {
-                Map<String, Object> meta = objectMapper.readValue(config.metaJson, Map.class);
-                // 兼容驼峰和下划线两种 key
-                Object baseUrl = meta.get("baseUrl");
-                if (baseUrl == null) baseUrl = meta.get("base_url");
-                if (baseUrl != null) return baseUrl.toString();
-            } catch (Exception ignored) {}
-        }
-        return "https://dashscope.aliyuncs.com";
-    }
 }

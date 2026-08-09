@@ -1,6 +1,7 @@
 package com.example.chat.strategy;
 
 import com.example.chat.dto.LLMMessage;
+import com.example.chat.exception.LLMCallException;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -77,7 +78,7 @@ public class DoubaoStrategy implements LLMStrategy {
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
                     if (response.statusCode() != 200) {
-                        throw new RuntimeException("Doubao API returned status " + response.statusCode() + ": " + response.body());
+                        throw new LLMCallException(response.statusCode(), "Doubao API returned status " + response.statusCode());
                     }
                     try {
                         @SuppressWarnings("unchecked")
@@ -110,7 +111,7 @@ public class DoubaoStrategy implements LLMStrategy {
                         }
                         return "No response";
                     } catch (Exception e) {
-                        throw new RuntimeException("Failed to parse Doubao response", e);
+                        throw new LLMCallException("Doubao 响应解析失败", e);
                     }
                 });
     }

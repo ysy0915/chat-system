@@ -1,12 +1,12 @@
 package com.example.chat.service;
 
+import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.ModelConfigRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -27,26 +27,17 @@ public class SummaryService {
     private final LLMInvoker llmInvoker;
     private final ModelConfigRepository modelConfigRepository;
     private final MessageRepository messageRepository;
-
-    @Value("${app.llm.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
-    private String defaultBaseUrl;
-
-    @Value("${app.llm.api-key:}")
-    private String defaultApiKey;
-
-    @Value("${app.llm.model:qwen-plus}")
-    private String defaultModel;
-
-    @Value("${app.llm.provider:qwen}")
-    private String defaultProvider;
+    private final LlmConfigProperties llmConfig;
 
     @Autowired
     public SummaryService(LLMInvoker llmInvoker,
                           ModelConfigRepository modelConfigRepository,
-                          MessageRepository messageRepository) {
+                          MessageRepository messageRepository,
+                          LlmConfigProperties llmConfig) {
         this.llmInvoker = llmInvoker;
         this.modelConfigRepository = modelConfigRepository;
         this.messageRepository = messageRepository;
+        this.llmConfig = llmConfig;
     }
 
     /**
@@ -66,7 +57,7 @@ public class SummaryService {
 
         try {
             String result = llmInvoker.invoke(config, prompt, 0.3, "summary",
-                    defaultBaseUrl, defaultApiKey);
+                    llmConfig.getBaseUrl(), llmConfig.getApiKey());
             if (result == null) return null;
 
             // 清理 LLM 输出：去引号、去换行、截断到 200 字符
@@ -135,9 +126,9 @@ public class SummaryService {
 
         // 兜底：使用默认 qwen 配置
         ModelConfig fallback = new ModelConfig();
-        fallback.provider = defaultProvider;
-        fallback.model = defaultModel;
-        fallback.apiKeyEncrypted = defaultApiKey;
+        fallback.provider = llmConfig.getProvider();
+        fallback.model = llmConfig.getModel();
+        fallback.apiKeyEncrypted = llmConfig.getApiKey();
         fallback.priority = 100;
         fallback.enabled = true;
         fallback.modelType = "chat";

@@ -13,8 +13,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
 public class DebateProcessor {
@@ -54,12 +60,8 @@ public class DebateProcessor {
         this.debateRecordRepository = debateRecordRepository;
         this.broadcastService = broadcastService;
         this.llmInvoker = llmInvoker;
-        this.debateExecutor = new java.util.concurrent.ThreadPoolExecutor(
-                6, 12, 60L, java.util.concurrent.TimeUnit.SECONDS,
-                new java.util.concurrent.LinkedBlockingQueue<>(20),
-                r -> { Thread t = new Thread(r, "debate-worker"); t.setDaemon(true); return t; },
-                new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
-        );
+        this.debateExecutor = com.example.chat.config.ThreadPoolFactory.create(
+                6, 12, 20, "debate-worker");
     }
 
     public void process(Map<String, Object> payload) {

@@ -2,7 +2,9 @@ package com.example.chat.langgraph4j;
 
 import org.bsc.langgraph4j.state.AgentState;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 辩论图状态（LangGraph4j 的 AgentState）

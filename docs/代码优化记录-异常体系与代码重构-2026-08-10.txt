@@ -1,0 +1,145 @@
+================================================================================
+代码优化记录：异常体系建立 & 核心代码重构
+日期：2026-08-10
+================================================================================
+
+一、优化背景
+--------------------------------------------------------------------------------
+随着项目迭代，代码中积累了大量原始 RuntimeException，存在以下问题：
+1. 异常信息不够结构化，上下游难以针对性处理
+2. ChatProcessor.process() 方法约 254 行，逻辑混杂难以维护
+3. 多处重复手写 HTTP 直接调用 LLM 的降级逻辑
+
+本次优化围绕三个目标：
+- 建立分层异常体系替代裸 RuntimeException
+- 拆分大方法提升可读性和可测试性
+- 抽取公共 LLM 降级逻辑消除重复代码
+
+
+二、自定义异常体系
+--------------------------------------------------------------------------------
+
+新建文件在 chat-common 模块（路径: com.example.chat.exception）：
+
+┌─────────────────────────────────────────────────────────────┐
+│  LLMCallException                                            │
+│  ├─ 语义：LLM API 调用失败                                   │
+│  ├─ 字段：int httpStatus, String model                       │
+│  ├─ 使用场景：HTTP非200、返回空choices、超时等                │
+│  └─ 使用者：DirectLLMClient, LLMInvoker, DoubaoStrategy,    │
+│             OpenAICompatStrategy, LLMStrategy                 │
+├─────────────────────────────────────────────────────────────┤
+│  ModelNotAvailableException                                   │
+│  ├─ 语义：模型未配置或已禁用                                  │
+│  ├─ 字段：String modelName, String provider                  │
+│  ├─ 使用场景：模型查找失败、provider未找到                    │
+│  └─ 使用者：LLMInvoker, LangChain4jPersonalChatService,     │
+│             LangChain4jTreeHoleService                        │
+├─────────────────────────────────────────────────────────────┤
+│  ChatServiceException                                        │
+│  ├─ 语义：服务间通信、文档解析等通用业务失败                   │
+│  ├─ 字段：String serviceName, String errorCode               │
+│  ├─ 使用场景：Core/Media服务调用失败、文档解析失败、          │
+│  │          工具调用失败、Embedding失败                       │
+│  └─ 使用者：CoreClient, ToolDispatcher, EmbeddingService,    │
+│             DocumentParser, MediaGenController, ChatProcessor │
+└─────────────────────────────────────────────────────────────┘
+
+替换范围：28+ 处 RuntimeException 替换为目标异常。
+
+
+三、DirectLLMClient 统一 LLM 降级逻辑
+--------------------------------------------------------------------------------
+
+新建文件：chat-core/.../service/DirectLLMClient.java
+
+背景：KnowledgeGraphService 和 ModelAutoChatService 各自手写了
+     70+ 行 / 45+ 行的 HTTP 直接调用逻辑，代码高度重复。
+
+改动：
+1. 抽取为 DirectLLMClient，统一管理 HTTP 连接池、超时（30s）、错误处理
+2. 核心方法：
+   public String call(baseUrl, apiKey, model, messages, temperature, maxTokens)
+   → POST /chat/completions → 解析 choices[0].message.content
+3. 错误时抛 LLMCallException（含 HTTP 状态码和模型名）
+
+重构的 Service：
+- KnowledgeGraphService.callLLMDirect()：从 70 行手写 HTTP → 委托 DirectLLMClient
+- ModelAutoChatService.callLLM()：从 45 行手写降级 → 委托 DirectLLMClient
+- 同时清理了这两个类中未使用的 httpClient 字段、HTTP_TIMEOUT 常量、相关 import
+
+
+四、ChatProcessor.process() 方法拆分
+--------------------------------------------------------------------------------
+
+文件：chat-core/.../service/ChatProcessor.java
+
+原状：process() 约 254 行，包含缓存检查、LangChain4j降级、流式输出、
+      群聊并发竞速、消息状态更新等所有逻辑
+
+拆分后（8个方法，process() 缩减为约 30 行编排器）：
+
+process(Map payload)
+  ├─ 入口：解析请求、选择模型列表
+  ├─ applySwitchResult()        — 模型切换结果推送 + 持久化
+  ├─ handlePersonalChat()       — 个人对话主线
+  │   ├─ checkCacheHit()        —  Redis 缓存命中处理
+  │   ├─ tryLangChain4jChat()   —  LangChain4j 降级尝试
+  │   └─ doPersonalStream()    —  流式输出（含工具调度 + 停止管理）
+  └─ handleGroupChat()          — 群聊主线
+      ├─ updateMessageStatus()  —  停止消息状态更新
+      └─ doGroupConcurrent()   —  多模型并发竞速
+
+每个方法职责单一，命名语义化，方便后续单元测试和独立修改。
+
+
+五、修改文件清单
+--------------------------------------------------------------------------------
+
+新建（4个）：
+  chat-common/src/main/java/com/example/chat/exception/
+    ├── LLMCallException.java
+    ├── ModelNotAvailableException.java
+    └── ChatServiceException.java
+  chat-core/src/main/java/com/example/chat/service/
+    └── DirectLLMClient.java
+
+修改（14个）：
+  chat-core:
+    ├── service/ChatProcessor.java           — process() 拆分 + 异常替换
+    ├── service/KnowledgeGraphService.java    — 使用 DirectLLMClient，清理冗余
+    ├── service/ModelAutoChatService.java     — 使用 DirectLLMClient，清理冗余
+    ├── langchain4j/DirectLLMClient.java      — (同新建)
+    ├── agent/tool/ToolDispatcher.java        — 异常替换
+    ├── agent/tool/ToolRegistry.java          — 异常替换
+    ├── internal/InternalApiController.java   — 异常替换
+    └── langchain4j/EmbeddingService.java     — 异常替换
+  chat-common:
+    ├── dto/LLMMessage.java                  — (辅助改动)
+    ├── featureflag/FeatureFlagService.java   — (辅助改动)
+    ├── config/WebSocketSessionTracker.java   — (辅助改动)
+  chat-core/langchain4j:
+    ├── LangChain4jPersonalChatService.java   — 异常替换
+    ├── LangChain4jTreeHoleService.java       — 异常替换
+    ├── RedisChatMemoryStore.java             — (辅助改动)
+    └── ToolAdapter.java                     — 异常替换
+  其他:
+    ├── CoreClient.java                      — 异常替换
+    └── MediaGenController.java              — 异常替换
+
+
+六、编译验证
+--------------------------------------------------------------------------------
+执行 mvn compile -DskipTests → BUILD SUCCESS ✅
+所有模块编译通过，无新增错误。
+
+
+七、后续建议
+--------------------------------------------------------------------------------
+1. 在 Web 层或全局异常处理器中添加对这 3 种异常的统一拦截，
+   根据异常类型返回合适的 HTTP 状态码和用户友好提示。
+2. 为 ChatProcessor 的 8 个子方法编写单元测试。
+3. 监控生产环境日志中 LLMCallException 的分布，
+   识别不稳定的模型并考虑自动降级策略。
+
+================================================================================

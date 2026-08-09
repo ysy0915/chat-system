@@ -24,7 +24,9 @@ public class FrontendErrorController {
             String url = String.valueOf(payload.getOrDefault("url", ""));
             String userAgent = String.valueOf(payload.getOrDefault("userAgent", ""));
             log.warn("[前端异常] msg={} url={} ua={} stack={}", message, url, userAgent, stack);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+            log.debug("前端异常上报处理失败，忽略并继续");
+        }
         return ResponseEntity.ok(Map.of("ok", true));
     }
 }

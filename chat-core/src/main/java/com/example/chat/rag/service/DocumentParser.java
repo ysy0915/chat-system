@@ -1,5 +1,6 @@
 package com.example.chat.rag.service;
 
+import com.example.chat.exception.ChatServiceException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -38,14 +39,14 @@ public class DocumentParser {
                 return parseDocx(bytes);
             } else if (lower.endsWith(".doc")) {
                 // 老 .doc 格式 POI 支持有限，提示转换
-                throw new RuntimeException("暂不支持 .doc 格式，请转换为 .docx");
+                throw new ChatServiceException("文档解析", "UNSUPPORTED_FORMAT", "暂不支持 .doc 格式，请转换为 .docx");
             } else {
                 // TXT / MD / JSON 等纯文本
                 return new String(bytes, StandardCharsets.UTF_8);
             }
         } catch (Exception e) {
             log.error("[DocParser] 解析失败 file={} error={}", fileName, e.getMessage());
-            throw new RuntimeException("文档解析失败: " + e.getMessage(), e);
+            throw new ChatServiceException("文档解析", "PARSE_FAILED", "文档解析失败: " + fileName, e);
         }
     }
 

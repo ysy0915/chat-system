@@ -3,6 +3,7 @@ package com.example.chat.service;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
+import com.example.chat.exception.LLMCallException;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,14 +12,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.time.LocalTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.module.core", havingValue = "true", matchIfMissing = false)
@@ -28,15 +28,13 @@ public class ModelAutoChatService {
 
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
     private final BroadcastService broadcastService;
     private final BaseUrlResolver baseUrlResolver;
+    private final DirectLLMClient directLLMClient;
 
     /** LLM 统一调用入口 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private LLMInvoker llmInvoker;
-
-    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
 
     private static final List<String> TOPICS = List.of(
             "人工智能的未来", "量子计算", "太空探索", "气候变化",
@@ -48,14 +46,13 @@ public class ModelAutoChatService {
     public ModelAutoChatService(ModelConfigRepository modelConfigRepository,
                                 ObjectMapper objectMapper,
                                 BroadcastService broadcastService,
-                                BaseUrlResolver baseUrlResolver) {
+                                BaseUrlResolver baseUrlResolver,
+                                DirectLLMClient directLLMClient) {
         this.modelConfigRepository = modelConfigRepository;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
         this.baseUrlResolver = baseUrlResolver;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(HTTP_TIMEOUT)
-                .build();
+        this.directLLMClient = directLLMClient;
     }
 
     @Scheduled(fixedRate = 3600000, initialDelay = 60000)
@@ -71,7 +68,7 @@ public class ModelAutoChatService {
                     .toList();
 
             if (configs.size() < 3) {
-                log.info("[AutoChat] 可用模型不足3个，跳过");
+                log.info("AutoChat 可用模型不足3个，跳过");
                 return;
             }
 
@@ -81,17 +78,12 @@ public class ModelAutoChatService {
             ModelConfig answerer1 = shuffled.get(1);
             ModelConfig answerer2 = shuffled.get(2);
 
-            String topic = TOPICS.get(new Random().nextInt(TOPICS.size()));
+            String topic = TOPICS.get(ThreadLocalRandom.current().nextInt(TOPICS.size()));
             String reqId = "auto-" + UUID.randomUUID();
 
             String questionPrompt = "请围绕\"" + topic + "\"提出一个简短问题，不超过20个字，只输出问题本身";
-            CompletableFuture<String> questionFuture = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return callLLM(asker, questionPrompt);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            CompletableFuture<String> questionFuture = CompletableFuture.supplyAsync(
+                    () -> callLLM(asker, questionPrompt));
 
             String question = questionFuture.get();
             if (question.length() > 20) {
@@ -112,20 +104,10 @@ public class ModelAutoChatService {
 
             String answerPrompt = "请简短回答以下问题，不超过20个字，只输出答案本身：\n" + q;
 
-            CompletableFuture<String> answer1Future = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return callLLM(answerer1, answerPrompt);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
-            CompletableFuture<String> answer2Future = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return callLLM(answerer2, answerPrompt);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            CompletableFuture<String> answer1Future = CompletableFuture.supplyAsync(
+                    () -> callLLM(answerer1, answerPrompt));
+            CompletableFuture<String> answer2Future = CompletableFuture.supplyAsync(
+                    () -> callLLM(answerer2, answerPrompt));
 
             CompletableFuture.allOf(answer1Future, answer2Future).thenRun(() -> {
                 try {
@@ -143,63 +125,35 @@ public class ModelAutoChatService {
                                     .with("answer", answer2).with("user_name", answerer2Name)
                                     .with("auto_chat", true).toMap());
 
-                    log.info("[AutoChat] {}问: {} | {}答: {} | {}答: {}",
+                    log.info("{}问: {} | {}答: {} | {}答: {}",
                             askerName, q, answerer1Name, answer1, answerer2Name, answer2);
                 } catch (Exception e) {
-                    log.error("[AutoChat] 广播答案错误: {}", e.getMessage());
+                    log.error("广播答案错误", e);
                 }
             });
 
         } catch (Exception e) {
-            log.error("[AutoChat] 错误: {}", e.getMessage());
+            log.error("AutoChat 运行错误", e);
         }
     }
 
-    private String callLLM(ModelConfig config, String prompt) throws Exception {
-        // 优先通过 LLMInvoker 统一调用（享受熔断、重试、自愈、统计能力）
+    private String callLLM(ModelConfig config, String prompt) {
         if (llmInvoker != null) {
             String baseUrl = baseUrlResolver.resolve(config, null);
             String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                     ? config.apiKeyEncrypted : "";
-            return llmInvoker.invoke(config, prompt, 0.9, "auto", baseUrl, apiKey);
+            try {
+                return llmInvoker.invoke(config, prompt, 0.9, "auto", baseUrl, apiKey);
+            } catch (Exception e) {
+                throw new LLMCallException(config.model, "LLMInvoker 调用失败: " + e.getMessage(), e);
+            }
         }
-        // 降级：直接 HTTP 调用
+        // 降级：DirectLLMClient
         String baseUrl = baseUrlResolver.resolve(config, null);
-        String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
         String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                 ? config.apiKeyEncrypted : "";
-
-        Map<String, Object> requestBody = Map.of(
-                "model", config.model,
-                "messages", LLMMessage.toMapList(List.of(LLMMessage.user(prompt))),
-                "temperature", 0.9,
-                "max_tokens", 50
-        );
-
-        String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(HTTP_TIMEOUT)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("LLM API returned " + response.statusCode());
-        }
-
-        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("No choices");
-        }
-
-        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-        return message != null ? message.get("content").toString().trim() : "No response";
+        return directLLMClient.call(baseUrl, apiKey, config.model,
+                List.of(LLMMessage.user(prompt)), 0.9, 50);
     }
 
 }

@@ -17,8 +17,8 @@ import org.springframework.web.client.RestTemplate;
 public class RestTemplateConfig {
 
     @Bean
-    public RestTemplate restTemplate() {
-        ObjectMapper objectMapper = new ObjectMapper();
+    public RestTemplate restTemplate(ObjectMapper mapper) {
+        ObjectMapper objectMapper = mapper.copy();
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 

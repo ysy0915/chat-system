@@ -9,7 +9,10 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 工具适配器：把项目现有的 Tool 接口适配为 LangChain4j 格式
@@ -21,12 +24,13 @@ import java.util.*;
 public class ToolAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(ToolAdapter.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ToolRegistry toolRegistry;
+    private final ObjectMapper objectMapper;
 
-    public ToolAdapter(ToolRegistry toolRegistry) {
+    public ToolAdapter(ToolRegistry toolRegistry, ObjectMapper objectMapper) {
         this.toolRegistry = toolRegistry;
+        this.objectMapper = objectMapper;
     }
 
     /**

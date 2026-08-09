@@ -1,6 +1,9 @@
 package com.example.chat.service;
 
+import com.example.chat.config.LlmConfigProperties;
+import com.example.chat.config.ThreadPoolFactory;
 import com.example.chat.dto.LLMMessage;
+import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.neo4j.driver.*;
 import org.slf4j.Logger;
@@ -11,16 +14,13 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 知识图谱服务
@@ -36,11 +36,18 @@ public class KnowledgeGraphService {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeGraphService.class);
 
+    private static final int QUESTION_TRUNCATE_LENGTH = 500;
+    private static final int ANSWER_TRUNCATE_LENGTH = 2000;
+    private static final int KG_BATCH_SIZE = 20;
+
     private final ObjectMapper objectMapper;
     private final com.example.chat.repository.MessageRepository messageRepository;
     private final com.example.chat.repository.DebateRecordRepository debateRecordRepository;
     private final com.example.chat.repository.ModelConfigRepository modelConfigRepository;
     private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+    private final BaseUrlResolver baseUrlResolver;
+    private final LlmConfigProperties llmConfig;
+    private final DirectLLMClient directLLMClient;
 
     @Value("${spring.neo4j.uri:bolt://127.0.0.1:7687}")
     private String neo4jUri;
@@ -54,43 +61,31 @@ public class KnowledgeGraphService {
     @Value("${app.knowledge-graph.enabled:false}")
     private boolean enabled;
 
-    @Value("${app.llm.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
-    private String llmBaseUrl;
-
-    @Value("${app.llm.api-key:}")
-    private String llmApiKey;
-
-    @Value("${app.llm.model:qwen-plus}")
-    private String llmModel;
-
     private Driver neo4jDriver;
-    private HttpClient httpClient;
 
     /** LLM 统一调用入口（可选注入，core模块才有） */
     @Autowired(required = false)
     private LLMInvoker llmInvoker;
 
     /** 异步抽取线程池（单线程，避免并发打 LLM） */
-    private final ExecutorService executor = new ThreadPoolExecutor(
-            1, 1, 60, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(200),
-            r -> {
-                Thread t = new Thread(r, "kg-extractor");
-                t.setDaemon(true);
-                return t;
-            },
-            new ThreadPoolExecutor.DiscardPolicy()
-    );
+    private final ExecutorService executor =
+            ThreadPoolFactory.create(1, 1, 200, "kg-extractor");
 
     public KnowledgeGraphService(ObjectMapper objectMapper,
                                   com.example.chat.repository.MessageRepository messageRepository,
                                   com.example.chat.repository.DebateRecordRepository debateRecordRepository,
                                   com.example.chat.repository.ModelConfigRepository modelConfigRepository,
+                                  LlmConfigProperties llmConfig,
+                                  BaseUrlResolver baseUrlResolver,
+                                  DirectLLMClient directLLMClient,
                                   @Autowired(required = false) org.springframework.data.redis.core.StringRedisTemplate redisTemplate) {
         this.objectMapper = objectMapper;
         this.messageRepository = messageRepository;
         this.debateRecordRepository = debateRecordRepository;
         this.modelConfigRepository = modelConfigRepository;
+        this.llmConfig = llmConfig;
+        this.baseUrlResolver = baseUrlResolver;
+        this.directLLMClient = directLLMClient;
         this.redisTemplate = redisTemplate;
     }
 
@@ -111,9 +106,6 @@ public class KnowledgeGraphService {
                 session.run("CREATE INDEX IF NOT EXISTS FOR (e:Entity) ON (e.category)");
             }
 
-            httpClient = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
         } catch (Exception e) {
             log.warn("[KnowledgeGraph] Neo4j 连接失败，知识图谱服务降级: {}", e.getMessage());
             neo4jDriver = null;
@@ -173,8 +165,8 @@ public class KnowledgeGraphService {
     @SuppressWarnings("unchecked")
     private List<Map<String, String>> extractTriples(String question, String answer) {
         // 截断过长文本
-        String q = question.length() > 500 ? question.substring(0, 500) : question;
-        String a = answer.length() > 2000 ? answer.substring(0, 2000) : answer;
+        String q = question.length() > QUESTION_TRUNCATE_LENGTH ? question.substring(0, QUESTION_TRUNCATE_LENGTH) : question;
+        String a = answer.length() > ANSWER_TRUNCATE_LENGTH ? answer.substring(0, ANSWER_TRUNCATE_LENGTH) : answer;
 
         String prompt = """
             你是一个知识抽取专家。从以下问答中抽取知识三元组（实体-关系-实体）。
@@ -198,7 +190,7 @@ public class KnowledgeGraphService {
             if (llmInvoker != null) {
                 com.example.chat.entity.ModelConfig config = resolveModelConfig();
                 if (config != null) {
-                    content = llmInvoker.invoke(config, prompt, 0.1, "knowledge-graph", llmBaseUrl, llmApiKey);
+                    content = llmInvoker.invoke(config, prompt, 0.1, "knowledge-graph", llmConfig.getBaseUrl(), llmConfig.getApiKey());
                 }
             }
             // LLMInvoker 不可用时，降级为直接 HTTP 调用
@@ -268,25 +260,17 @@ public class KnowledgeGraphService {
     }
 
     /**
-     * 降级方案：直接 HTTP 调用 LLM（LLMInvoker 不可用时使用）
+     * 降级方案：直接 HTTP 调用 LLM（LLMInvoker 不可用时使用）。
+     * 数据库模型配置选择逻辑保留在此，实际 HTTP 调用委托给 DirectLLMClient。
      */
-    @SuppressWarnings("unchecked")
-    private String callLLMDirect(String prompt) throws Exception {
-        if (httpClient == null) {
-            httpClient = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-        }
-
-        // 从数据库获取可用的模型配置
-        String apiKey = llmApiKey;
-        String baseUrl = llmBaseUrl;
-        String model = llmModel;
+    private String callLLMDirect(String prompt) {
+        String apiKey = llmConfig.getApiKey();
+        String baseUrl = llmConfig.getBaseUrl();
+        String model = llmConfig.getModel();
 
         try {
             List<com.example.chat.entity.ModelConfig> configs = modelConfigRepository.findAllEnabledByType("chat");
             if (configs != null && !configs.isEmpty()) {
-                // 优先用千问（成本低），否则取第一个
                 com.example.chat.entity.ModelConfig chosen = configs.stream()
                         .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "dashscope".equalsIgnoreCase(c.provider))
                         .findFirst()
@@ -294,55 +278,21 @@ public class KnowledgeGraphService {
                 if (chosen.apiKeyEncrypted != null && !chosen.apiKeyEncrypted.isBlank()) {
                     apiKey = chosen.apiKeyEncrypted;
                 }
-                // 从 metaJson 中解析 base_url
-                if (chosen.metaJson != null) {
-                    try {
-                        Map<String, Object> meta = objectMapper.readValue(chosen.metaJson, Map.class);
-                        Object url = meta.get("base_url");
-                        if (url != null && !url.toString().isBlank()) baseUrl = url.toString();
-                    } catch (Exception ignored) {}
-                }
+                baseUrl = baseUrlResolver.resolve(chosen, baseUrl);
                 if (chosen.model != null && !chosen.model.isBlank()) model = chosen.model;
             }
         } catch (Exception e) {
             log.warn("[KnowledgeGraph] 获取模型配置失败，使用默认配置: {}", e.getMessage());
         }
 
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("[KnowledgeGraph] 无可用 LLM API key，跳过抽取");
+        try {
+            return directLLMClient.call(baseUrl, apiKey, model,
+                    List.of(LLMMessage.system("你是知识抽取助手，只返回JSON。"), LLMMessage.user(prompt)),
+                    0.1, -1);
+        } catch (Exception e) {
+            log.warn("[KnowledgeGraph] LLM 直接调用失败: {}", e.getMessage());
             return null;
         }
-
-        Map<String, Object> reqBody = Map.of(
-                "model", model,
-                "messages", LLMMessage.toMapList(List.of(
-                        LLMMessage.system("你是知识抽取助手，只返回JSON。"),
-                        LLMMessage.user(prompt)
-                )),
-                "temperature", 0.1
-        );
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/chat/completions"))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(Duration.ofSeconds(30))
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(reqBody)))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            log.warn("[KnowledgeGraph] LLM 返回 {}: {}", response.statusCode(), response.body());
-            return null;
-        }
-
-        // 解析 OpenAI 兼容格式响应
-        Map<String, Object> resp = objectMapper.readValue(response.body(), Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) resp.get("choices");
-        if (choices == null || choices.isEmpty()) return null;
-
-        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-        return message != null ? message.get("content").toString() : null;
     }
 
     /**
@@ -567,7 +517,7 @@ public class KnowledgeGraphService {
 
     @SuppressWarnings("unchecked")
     private void doBatchImport() {
-        int batchSize = 20;
+        int batchSize = KG_BATCH_SIZE;
         int offset = 0;
         int totalProcessed = 0;
         int totalTriples = 0;

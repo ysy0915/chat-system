@@ -8,8 +8,17 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
 import javax.sql.DataSource;
-import java.sql.*;
-import java.util.*;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/v1/sql")
@@ -18,7 +27,7 @@ public class SqlExecutorController {
 
     @Value("${sql-executor.password:LiYuHong@0929}")
     private String adminPassword;
-    private static final Map<String, Long> sessions = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, Long> sessions = new ConcurrentHashMap<>();
 
     private static final Set<String> DANGEROUS_KEYWORDS = Set.of(
             "DROP", "TRUNCATE", "ALTER", "GRANT", "REVOKE", "CREATE", "SHUTDOWN", "DELETE"

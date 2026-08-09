@@ -9,7 +9,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -39,14 +43,10 @@ public class ConversationMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationMemoryService.class);
 
-    @Autowired(required = false)
     private StringRedisTemplate redisTemplate;
-
-    @Autowired(required = false)
     private EmbeddingService embeddingService;
-
-    @Autowired(required = false)
     private VectorStoreService vectorStoreService;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.rag.memory.short-term-rounds:5}")
     private int shortTermRounds;
@@ -63,7 +63,25 @@ public class ConversationMemoryService {
     /** Milvus 中对话记忆的 Collection 名 */
     private static final String MEMORY_COLLECTION = "conversation_memory";
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    public ConversationMemoryService(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
+    @Autowired(required = false)
+    public void setRedisTemplate(StringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+
+    @Autowired(required = false)
+    public void setEmbeddingService(EmbeddingService embeddingService) {
+        this.embeddingService = embeddingService;
+    }
+
+    @Autowired(required = false)
+    public void setVectorStoreService(VectorStoreService vectorStoreService) {
+        this.vectorStoreService = vectorStoreService;
+    }
 
     // ==================== 保存对话 ====================
 

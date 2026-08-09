@@ -1,12 +1,12 @@
 package com.example.chat.service;
 
+import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -43,11 +43,12 @@ public class HistorySummaryService {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    @Value("${app.llm.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
-    private String defaultBaseUrl;
+    private final LlmConfigProperties llmConfig;
 
-    @Value("${app.llm.api-key:}")
-    private String defaultApiKey;
+    @Autowired
+    public HistorySummaryService(LlmConfigProperties llmConfig) {
+        this.llmConfig = llmConfig;
+    }
 
     /**
      * 压缩历史消息：保留最近轮次原文，更早的生成摘要。
@@ -149,7 +150,7 @@ public class HistorySummaryService {
         try {
             String summary = llmInvoker.invoke(
                     summaryConfig, summaryMessages, 0.3, "summary",
-                    defaultBaseUrl, defaultApiKey
+                    llmConfig.getBaseUrl(), llmConfig.getApiKey()
             );
             if (summary != null) {
                 summary = summary.trim();

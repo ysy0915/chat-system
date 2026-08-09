@@ -1,6 +1,7 @@
 package com.example.chat.strategy;
 
 import com.example.chat.dto.LLMMessage;
+import com.example.chat.exception.LLMCallException;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -68,7 +69,7 @@ public class OpenAICompatStrategy implements LLMStrategy {
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
                     if (response.statusCode() != 200) {
-                        throw new RuntimeException("LLM API returned status " + response.statusCode() + ": " + response.body());
+                        throw new LLMCallException(response.statusCode(), "LLM API returned status " + response.statusCode());
                     }
                     try {
                         @SuppressWarnings("unchecked")
@@ -76,13 +77,13 @@ public class OpenAICompatStrategy implements LLMStrategy {
                         @SuppressWarnings("unchecked")
                         List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
                         if (choices == null || choices.isEmpty()) {
-                            throw new RuntimeException("LLM API returned no choices");
+                            throw new LLMCallException("LLM API returned no choices");
                         }
                         @SuppressWarnings("unchecked")
                         Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
                         return message != null ? message.get("content").toString() : "No response";
                     } catch (Exception e) {
-                        throw new RuntimeException("Failed to parse LLM response", e);
+                        throw new LLMCallException("LLM 响应解析失败", e);
                     }
                 });
     }
@@ -127,7 +128,7 @@ public class OpenAICompatStrategy implements LLMStrategy {
                     if (response.statusCode() != 200) {
                         StringBuilder errBody = new StringBuilder();
                         response.body().forEach(errBody::append);
-                        throw new RuntimeException("LLM API status " + response.statusCode() + ": " + errBody);
+                        throw new LLMCallException(response.statusCode(), "LLM API status " + response.statusCode());
                     }
                     StringBuilder fullAnswer = new StringBuilder();
                     response.body().forEach(line -> {
@@ -153,7 +154,9 @@ public class OpenAICompatStrategy implements LLMStrategy {
                                         }
                                     }
                                 }
-                            } catch (Exception ignored) {}
+                            } catch (Exception streamErr) {
+                                // 流式解析行失败，跳过
+                            }
                         }
                     });
                     return fullAnswer.toString();

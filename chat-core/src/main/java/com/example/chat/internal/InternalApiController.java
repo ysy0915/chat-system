@@ -10,7 +10,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 内部 API Controller（仅供 chat-web 调用，不对外暴露）
@@ -70,11 +73,19 @@ public class InternalApiController {
     public ResponseEntity<?> processWithFile(@RequestBody Map<String, Object> payload) {
         try {
             String reqId = (String) payload.get("req_id");
-            Long userId = ((Number) payload.get("user_id")).longValue();
+            Object userIdObj = payload.get("user_id");
+            if (userIdObj == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+            }
+            Long userId = ((Number) userIdObj).longValue();
             String question = (String) payload.get("question");
             String fileName = (String) payload.get("file_name");
             String mimeType = (String) payload.get("mime_type");
-            byte[] fileBytes = Base64.getDecoder().decode((String) payload.get("file_data"));
+            Object fileDataObj = payload.get("file_data");
+            if (fileDataObj == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "缺少 file_data 字段"));
+            }
+            byte[] fileBytes = Base64.getDecoder().decode((String) fileDataObj);
             chatProcessor.processWithFile(reqId, userId, question, fileName, fileBytes, mimeType);
             return ResponseEntity.ok(Map.of("status", "accepted"));
         } catch (Exception e) {
@@ -86,7 +97,11 @@ public class InternalApiController {
     @PostMapping("/chat/regenerate")
     public ResponseEntity<?> regenerate(@RequestBody Map<String, Object> payload) {
         String reqId = (String) payload.get("req_id");
-        Long userId = ((Number) payload.get("user_id")).longValue();
+        Object userIdObj = payload.get("user_id");
+        if (userIdObj == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+        }
+        Long userId = ((Number) userIdObj).longValue();
         chatProcessor.regenerate(reqId, userId);
         return ResponseEntity.ok(Map.of("status", "accepted"));
     }
@@ -165,8 +180,12 @@ public class InternalApiController {
 
     @PostMapping("/treehole/ask")
     public ResponseEntity<?> treeHoleAsk(@RequestBody Map<String, Object> payload) {
+        Object userIdObj = payload.get("user_id");
+        if (userIdObj == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+        }
         treeHoleService.askAndStream(
-                ((Number) payload.get("user_id")).longValue(),
+                ((Number) userIdObj).longValue(),
                 (String) payload.get("question"),
                 (String) payload.getOrDefault("mood", ""));
         return ResponseEntity.ok(Map.of("status", "accepted"));
@@ -175,12 +194,20 @@ public class InternalApiController {
     @PostMapping("/treehole/ask-with-file")
     public ResponseEntity<?> treeHoleAskWithFile(@RequestBody Map<String, Object> payload) {
         try {
+            Object userIdObj = payload.get("user_id");
+            if (userIdObj == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+            }
+            Object fileDataObj = payload.get("file_data");
+            if (fileDataObj == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "缺少 file_data 字段"));
+            }
             TreeHoleMessage result = treeHoleService.askWithFile(
-                    ((Number) payload.get("user_id")).longValue(),
+                    ((Number) userIdObj).longValue(),
                     (String) payload.get("question"),
                     (String) payload.getOrDefault("mood", ""),
                     (String) payload.get("file_name"),
-                    Base64.getDecoder().decode((String) payload.get("file_data")));
+                    Base64.getDecoder().decode((String) fileDataObj));
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));

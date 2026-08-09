@@ -118,16 +118,16 @@ public class ChatProcessor {
         this.llmCallRecorder = llmCallRecorder;
         this.llmInvoker = llmInvoker;
         this.modelExecutor = new ThreadPoolExecutor(
-                3,
-                30,
+                5,
+                20,
                 60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(50),
+                new LinkedBlockingQueue<>(100),
                 r -> {
                     Thread t = new Thread(r, "llm-worker-" + System.currentTimeMillis());
                     t.setDaemon(true);
                     return t;
                 },
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                new ThreadPoolExecutor.DiscardPolicy()
         );
     }
 

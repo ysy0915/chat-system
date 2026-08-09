@@ -45,7 +45,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-        container.setMaxSessionIdleTimeout(300000L);
+        container.setMaxSessionIdleTimeout(900000L); // 15 分钟无操作断开
         container.setMaxTextMessageBufferSize(128 * 1024);
         container.setMaxBinaryMessageBufferSize(128 * 1024);
         return container;

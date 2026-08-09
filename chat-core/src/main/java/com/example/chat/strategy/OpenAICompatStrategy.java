@@ -43,6 +43,7 @@ public class OpenAICompatStrategy implements LLMStrategy {
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
+                .header("Accept-Encoding", "gzip")
                 .timeout(Duration.ofSeconds(120))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();

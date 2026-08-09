@@ -1,10 +1,19 @@
 # chat-core 生产配置（部署到 Milvus 服务器）
 server:
   port: 9090
+  tomcat:
+    threads:
+      max: 100
+      min-spare: 20
+    accept-count: 100
+    max-connections: 1000
+    connection-timeout: 5000
 
 spring:
   application:
     name: chat-core
+  jpa:
+    open-in-view: false
   cloud:
     nacos:
       discovery:
@@ -17,6 +26,8 @@ spring:
       maximum-pool-size: 10
       minimum-idle: 2
       connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 600000
     username: yangsy
     password: YangSy@0915!
   data:
@@ -38,6 +49,11 @@ mybatis:
   mapper-locations: classpath:mybatis/mappers/*.xml
   configuration:
     map-underscore-to-camel-case: true
+
+# JWT（与 chat-web 保持一致）
+jwt:
+  secret: k8Xp2mQ7vR3nF9wL5tY1bJ6cH4dA0eG8iS2uW7xZ
+  expiration: 3600000
 
 app:
   module:

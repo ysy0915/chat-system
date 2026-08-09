@@ -5,6 +5,7 @@ import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,35 +59,46 @@ public class CastleSiegeLordService {
                 redisTemplate.opsForZSet().reverseRangeWithScores(SCORE_KEY, 0, 49);
 
         List<Map<String, Object>> ranking = new ArrayList<>();
-        if (tuples == null) {
+        if (tuples == null || tuples.isEmpty()) {
             return ranking;
         }
 
-        int rank = 1;
+        // 先过滤出有效的 user: 成员
+        List<ZSetOperations.TypedTuple<String>> validTuples = new ArrayList<>();
+        List<String> memberKeys = new ArrayList<>();
         for (ZSetOperations.TypedTuple<String> tuple : tuples) {
-            if (tuple == null || tuple.getValue() == null) {
-                continue;
-            }
+            if (tuple == null || tuple.getValue() == null) continue;
             String memberKey = tuple.getValue();
-            if (!memberKey.startsWith("user:")) {
-                continue;
-            }
-            Object storedName = redisTemplate.opsForHash().get(NAME_KEY, memberKey);
+            if (!memberKey.startsWith("user:")) continue;
+            validTuples.add(tuple);
+            memberKeys.add(memberKey);
+        }
+
+        // 批量获取所有用户名（1次Redis请求替代N次循环查询）
+        @SuppressWarnings("unchecked")
+        List<Object> hashKeys = new ArrayList<>(memberKeys);
+        List<Object> names = memberKeys.isEmpty()
+                ? Collections.emptyList()
+                : redisTemplate.opsForHash().multiGet(NAME_KEY, hashKeys);
+
+        int rank = 1;
+        for (int i = 0; i < validTuples.size() && ranking.size() < safeLimit; i++) {
+            ZSetOperations.TypedTuple<String> tuple = validTuples.get(i);
+            String memberKey = tuple.getValue();
+            Object storedName = i < names.size() ? names.get(i) : null;
             String displayName = storedName != null && !storedName.toString().isBlank()
                     ? storedName.toString()
                     : fallbackDisplayName(memberKey);
 
             long score = tuple.getScore() == null ? 0L : Math.round(tuple.getScore());
             ranking.add(Map.of(
-                    "rank", rank++,
+                    "rank", rank,
                     "playerKey", memberKey,
                     "name", displayName,
                     "score", score,
-                    "title", resolveLordTitle(rank - 1)
+                    "title", resolveLordTitle(rank)
             ));
-            if (ranking.size() >= safeLimit) {
-                break;
-            }
+            rank++;
         }
         return ranking;
     }

@@ -30,6 +30,10 @@ public class ModelAutoChatService {
     private final HttpClient httpClient;
     private final BroadcastService broadcastService;
 
+    /** LLM 统一调用入口 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LLMInvoker llmInvoker;
+
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
 
     private static final List<String> TOPICS = List.of(
@@ -150,6 +154,14 @@ public class ModelAutoChatService {
     }
 
     private String callLLM(ModelConfig config, String prompt) throws Exception {
+        // 优先通过 LLMInvoker 统一调用（享受熔断、重试、自愈、统计能力）
+        if (llmInvoker != null) {
+            String baseUrl = resolveBaseUrl(config);
+            String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
+                    ? config.apiKeyEncrypted : "";
+            return llmInvoker.invoke(config, prompt, 0.9, "auto", baseUrl, apiKey);
+        }
+        // 降级：直接 HTTP 调用
         String baseUrl = resolveBaseUrl(config);
         String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
         String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())

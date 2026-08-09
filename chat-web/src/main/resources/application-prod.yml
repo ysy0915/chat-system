@@ -1,10 +1,19 @@
 # chat-web 生产配置（部署到 Milvus 服务器）
 server:
   port: 8080
+  tomcat:
+    threads:
+      max: 50
+      min-spare: 10
+    accept-count: 50
+    max-connections: 500
+    connection-timeout: 5000
 
 spring:
   application:
     name: chat-web
+  jpa:
+    open-in-view: false
   cloud:
     nacos:
       discovery:
@@ -15,6 +24,12 @@ spring:
     url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     username: yangsy
     password: YangSy@0915!
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 600000
   data:
     redis:
       host: 172.18.160.222

@@ -52,7 +52,12 @@ public class DebateProcessor {
         this.debateRecordRepository = debateRecordRepository;
         this.broadcastService = broadcastService;
         this.llmInvoker = llmInvoker;
-        this.debateExecutor = Executors.newFixedThreadPool(6);
+        this.debateExecutor = new java.util.concurrent.ThreadPoolExecutor(
+                6, 12, 60L, java.util.concurrent.TimeUnit.SECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>(20),
+                r -> { Thread t = new Thread(r, "debate-worker"); t.setDaemon(true); return t; },
+                new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
+        );
     }
 
     private static String providerDisplayName(String provider) {

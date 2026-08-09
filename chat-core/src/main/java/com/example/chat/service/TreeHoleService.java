@@ -73,6 +73,15 @@ public class TreeHoleService {
     /** 流式生成停止标记：reqId -> 是否请求停止 */
     private final ConcurrentHashMap<String, AtomicBoolean> stopFlags = new ConcurrentHashMap<>();
 
+    /** 树洞异步流式调用线程池（有界队列，防止线程爆炸） */
+    private final java.util.concurrent.ExecutorService treeholeExecutor =
+            new java.util.concurrent.ThreadPoolExecutor(
+                    3, 10, 60L, java.util.concurrent.TimeUnit.SECONDS,
+                    new java.util.concurrent.LinkedBlockingQueue<>(30),
+                    r -> { Thread t = new Thread(r, "treehole-worker"); t.setDaemon(true); return t; },
+                    new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
+            );
+
     /** 请求停止某个流式生成 */
     public void requestStop(String reqId) {
         stopFlags.put(reqId, new AtomicBoolean(true));
@@ -372,9 +381,9 @@ public class TreeHoleService {
         broadcastService.broadcast("/topic/treehole." + fUserId,
                 Map.of("type", "stream_start", "req_id", reqId));
 
-        // 异步调用流式 API
+        // 异步调用流式 API（使用线程池，防止线程爆炸）
         final long startTime = System.currentTimeMillis();
-        new Thread(() -> {
+        treeholeExecutor.submit(() -> {
             try {
                 String answer;
                 if (ragService != null && treeholeKbId > 0) {
@@ -437,7 +446,7 @@ public class TreeHoleService {
             } finally {
                 stopFlags.remove(reqId);
             }
-        }).start();
+        });
     }
 
     /**

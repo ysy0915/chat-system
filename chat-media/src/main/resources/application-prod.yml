@@ -1,9 +1,18 @@
 server:
   port: 8084
+  tomcat:
+    threads:
+      max: 30
+      min-spare: 5
+    accept-count: 30
+    max-connections: 300
+    connection-timeout: 5000
 
 spring:
   application:
     name: chat-media
+  jpa:
+    open-in-view: false
   cloud:
     nacos:
       discovery:
@@ -19,6 +28,8 @@ spring:
       maximum-pool-size: 5
       minimum-idle: 1
       connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 600000
   redis:
     host: 172.18.160.222
     port: 6379

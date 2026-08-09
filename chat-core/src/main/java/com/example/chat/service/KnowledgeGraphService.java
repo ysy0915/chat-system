@@ -65,6 +65,10 @@ public class KnowledgeGraphService {
     private Driver neo4jDriver;
     private HttpClient httpClient;
 
+    /** LLM 统一调用入口（可选注入，core模块才有） */
+    @Autowired(required = false)
+    private LLMInvoker llmInvoker;
+
     /** 异步抽取线程池（单线程，避免并发打 LLM） */
     private final ExecutorService executor = new ThreadPoolExecutor(
             1, 1, 60, TimeUnit.SECONDS,
@@ -171,6 +175,108 @@ public class KnowledgeGraphService {
         String q = question.length() > 500 ? question.substring(0, 500) : question;
         String a = answer.length() > 2000 ? answer.substring(0, 2000) : answer;
 
+        String prompt = """
+            你是一个知识抽取专家。从以下问答中抽取知识三元组（实体-关系-实体）。
+
+            规则：
+            1. 只抽取客观知识、概念、技术、因果关系，不抽取情绪、感受、个人隐私
+            2. 不抽取人名、邮箱、手机号、地址等隐私信息
+            3. 每条三元组包含 subject（主体）、relation（关系）、object（客体）
+            4. 返回 JSON 格式，不要有多余内容
+
+            示例：
+            {"triples": [{"subject":"实体1","relation":"关系","object":"实体2"}]}
+
+            问题：%s
+            回答：%s
+            """.formatted(q, a);
+
+        // 优先通过 LLMInvoker 统一调用（享受熔断、重试、自愈、统计能力）
+        String content = null;
+        try {
+            if (llmInvoker != null) {
+                com.example.chat.entity.ModelConfig config = resolveModelConfig();
+                if (config != null) {
+                    content = llmInvoker.invoke(config, prompt, 0.1, "knowledge-graph", llmBaseUrl, llmApiKey);
+                }
+            }
+            // LLMInvoker 不可用时，降级为直接 HTTP 调用
+            if (content == null) {
+                content = callLLMDirect(prompt);
+            }
+        } catch (Exception e) {
+            log.warn("[KnowledgeGraph] LLM 抽取异常: {}", e.getMessage());
+            return List.of();
+        }
+
+        if (content == null || content.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            // 提取 JSON（兼容 markdown code block）
+            content = content.trim();
+            if (content.contains("```")) {
+                int start = content.indexOf("{");
+                int end = content.lastIndexOf("}");
+                if (start >= 0 && end > start) {
+                    content = content.substring(start, end + 1);
+                }
+            }
+
+            Map<String, Object> result = objectMapper.readValue(content, Map.class);
+            List<Map<String, Object>> triples = (List<Map<String, Object>>) result.get("triples");
+            if (triples == null) return List.of();
+
+            List<Map<String, String>> parsed = new ArrayList<>();
+            for (Map<String, Object> t : triples) {
+                String subject = (String) t.get("subject");
+                String relation = (String) t.get("relation");
+                String object = (String) t.get("object");
+                if (subject != null && !subject.isBlank() && relation != null && !relation.isBlank()
+                        && object != null && !object.isBlank()) {
+                    parsed.add(Map.of(
+                            "subject", subject.trim(),
+                            "relation", relation.trim(),
+                            "object", object.trim()
+                    ));
+                }
+            }
+            return parsed;
+        } catch (Exception e) {
+            log.warn("[KnowledgeGraph] 解析三元组JSON失败: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 解析模型配置（供 LLMInvoker 使用）
+     */
+    private com.example.chat.entity.ModelConfig resolveModelConfig() {
+        try {
+            List<com.example.chat.entity.ModelConfig> configs = modelConfigRepository.findAllEnabledByType("chat");
+            if (configs == null || configs.isEmpty()) return null;
+            return configs.stream()
+                    .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "deepseek".equalsIgnoreCase(c.provider))
+                    .findFirst()
+                    .orElse(configs.get(0));
+        } catch (Exception e) {
+            log.warn("[KnowledgeGraph] 获取模型配置失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 降级方案：直接 HTTP 调用 LLM（LLMInvoker 不可用时使用）
+     */
+    @SuppressWarnings("unchecked")
+    private String callLLMDirect(String prompt) throws Exception {
+        if (httpClient == null) {
+            httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+        }
+
         // 从数据库获取可用的模型配置
         String apiKey = llmApiKey;
         String baseUrl = llmBaseUrl;
@@ -203,91 +309,39 @@ public class KnowledgeGraphService {
 
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("[KnowledgeGraph] 无可用 LLM API key，跳过抽取");
-            return List.of();
+            return null;
         }
 
-        String prompt = """
-            你是一个知识抽取专家。从以下问答中抽取知识三元组（实体-关系-实体）。
+        Map<String, Object> reqBody = Map.of(
+                "model", model,
+                "messages", List.of(
+                        Map.of("role", "system", "content", "你是知识抽取助手，只返回JSON。"),
+                        Map.of("role", "user", "content", prompt)
+                ),
+                "temperature", 0.1
+        );
 
-            规则：
-            1. 只抽取客观知识、概念、技术、因果关系，不抽取情绪、感受、个人隐私
-            2. 不抽取人名、邮箱、手机号、地址等隐私信息
-            3. 实体名称要简洁（2-15字），关系用动词短语（2-10字）
-            4. 如果问答中没有有价值的知识，返回空数组
-            5. 最多抽取5个三元组
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/chat/completions"))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .timeout(Duration.ofSeconds(30))
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(reqBody)))
+                .build();
 
-            输出JSON格式：
-            {"triples": [{"subject":"实体1","relation":"关系","object":"实体2"}]}
-
-            问题：%s
-            回答：%s
-            """.formatted(q, a);
-
-        try {
-            Map<String, Object> reqBody = Map.of(
-                    "model", model,
-                    "messages", List.of(
-                            Map.of("role", "system", "content", "你是知识抽取助手，只返回JSON。"),
-                            Map.of("role", "user", "content", prompt)
-                    ),
-                    "temperature", 0.1
-            );
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/chat/completions"))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .timeout(Duration.ofSeconds(30))
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(reqBody)))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                log.warn("[KnowledgeGraph] LLM 返回 {}: {}", response.statusCode(), response.body());
-                return List.of();
-            }
-
-            // 解析 OpenAI 兼容格式响应
-            Map<String, Object> resp = objectMapper.readValue(response.body(), Map.class);
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) resp.get("choices");
-            if (choices == null || choices.isEmpty()) return List.of();
-
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            String content = (String) message.get("content");
-
-            // 提取 JSON（兼容 markdown code block）
-            content = content.trim();
-            if (content.contains("```")) {
-                int start = content.indexOf("{");
-                int end = content.lastIndexOf("}");
-                if (start >= 0 && end > start) {
-                    content = content.substring(start, end + 1);
-                }
-            }
-
-            Map<String, Object> result = objectMapper.readValue(content, Map.class);
-            List<Map<String, Object>> triples = (List<Map<String, Object>>) result.get("triples");
-            if (triples == null) return List.of();
-
-            List<Map<String, String>> parsed = new ArrayList<>();
-            for (Map<String, Object> t : triples) {
-                String subject = (String) t.get("subject");
-                String relation = (String) t.get("relation");
-                String object = (String) t.get("object");
-                if (subject != null && !subject.isBlank() && relation != null && !relation.isBlank()
-                        && object != null && !object.isBlank()) {
-                    parsed.add(Map.of(
-                            "subject", subject.trim(),
-                            "relation", relation.trim(),
-                            "object", object.trim()
-                    ));
-                }
-            }
-            return parsed;
-        } catch (Exception e) {
-            log.warn("[KnowledgeGraph] LLM 抽取异常: {}", e.getMessage());
-            return List.of();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            log.warn("[KnowledgeGraph] LLM 返回 {}: {}", response.statusCode(), response.body());
+            return null;
         }
+
+        // 解析 OpenAI 兼容格式响应
+        Map<String, Object> resp = objectMapper.readValue(response.body(), Map.class);
+        List<Map<String, Object>> choices = (List<Map<String, Object>>) resp.get("choices");
+        if (choices == null || choices.isEmpty()) return null;
+
+        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+        return message != null ? message.get("content").toString() : null;
     }
 
     /**

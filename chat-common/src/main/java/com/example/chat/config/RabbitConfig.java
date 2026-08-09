@@ -57,6 +57,9 @@ public class RabbitConfig {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(converter);
+        factory.setConcurrentConsumers(3);
+        factory.setMaxConcurrentConsumers(10);
+        factory.setPrefetchCount(5);
         return factory;
     }
 

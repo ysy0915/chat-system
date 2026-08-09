@@ -121,15 +121,23 @@ public class OnlineCountRedisService {
 
         for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
             String dateStr = date.format(DATE_FORMATTER);
-            int dayTotal = 0;
+            // 批量获取所有页面当天的访问量（1次Redis mget替代N次get）
+            List<String> visitKeys = new ArrayList<>();
+            List<String> pageOrder = new ArrayList<>();
             for (String rawPage : pages) {
                 String page = normalizePage(rawPage);
-                String visitKey = VISIT_PREFIX + page + ":" + dateStr;
-                String val = redisTemplate.opsForValue().get(visitKey);
-                if (val != null) {
-                    try {
-                        dayTotal += Integer.parseInt(val);
-                    } catch (NumberFormatException ignored) {}
+                visitKeys.add(VISIT_PREFIX + page + ":" + dateStr);
+                pageOrder.add(page);
+            }
+            List<String> values = redisTemplate.opsForValue().multiGet(visitKeys);
+            int dayTotal = 0;
+            if (values != null) {
+                for (String val : values) {
+                    if (val != null) {
+                        try {
+                            dayTotal += Integer.parseInt(val);
+                        } catch (NumberFormatException ignored) {}
+                    }
                 }
             }
             result.put(dateStr, dayTotal);
@@ -151,11 +159,18 @@ public class OnlineCountRedisService {
         for (String rawPage : pages) {
             String page = normalizePage(rawPage);
             Map<String, Integer> pageData = new LinkedHashMap<>();
+            // 批量获取该页面所有日期的访问量
+            List<String> visitKeys = new ArrayList<>();
+            List<String> dateStrs = new ArrayList<>();
             for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
                 String dateStr = date.format(DATE_FORMATTER);
-                String visitKey = VISIT_PREFIX + page + ":" + dateStr;
-                String val = redisTemplate.opsForValue().get(visitKey);
-                pageData.put(dateStr, val != null ? Integer.parseInt(val) : 0);
+                visitKeys.add(VISIT_PREFIX + page + ":" + dateStr);
+                dateStrs.add(dateStr);
+            }
+            List<String> values = redisTemplate.opsForValue().multiGet(visitKeys);
+            for (int i = 0; i < dateStrs.size(); i++) {
+                String val = values != null && i < values.size() ? values.get(i) : null;
+                pageData.put(dateStrs.get(i), val != null ? Integer.parseInt(val) : 0);
             }
             result.put(page, pageData);
         }

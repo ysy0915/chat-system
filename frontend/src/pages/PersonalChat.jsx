@@ -17,6 +17,7 @@ export default function PersonalChat() {
   const [onlineCount, setOnlineCount] = useState(0)
   const [selectedFile, setSelectedFile] = useState(null)
   const [circuitOpen, setCircuitOpen] = useState(false)
+  const [redirectCountdown, setRedirectCountdown] = useState(0)
   const fileInputRef = useRef(null)
   const failCountRef = useRef(0)
   const circuitTimerRef = useRef(null)
@@ -114,12 +115,175 @@ export default function PersonalChat() {
     { label: '千问', keyword: '切换千问', provider: 'qwen' },
   ]
 
+  // 等待WebSocket连接就绪（断线重连后自动恢复）
+  const reconnectRef = useRef(null)
+  const connectingRef = useRef(false)  // 防止并发重连
+  const disconnectedRef = useRef(false) // 15分钟超时断开标记
+
+  // 断开后3秒倒计时自动返回首页
+  useEffect(() => {
+    if (redirectCountdown <= 0) return
+    if (redirectCountdown === 1) {
+      const timer = setTimeout(() => { window.location.href = '/chat/' }, 1000)
+      return () => clearTimeout(timer)
+    }
+    const timer = setTimeout(() => setRedirectCountdown(c => c - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [redirectCountdown])
+  const ensureConnected = async () => {
+    if (connectedRef.current) return true
+    if (disconnectedRef.current) return false  // 已断开，不自动重连
+    // 如果正在连接中，等待现有连接完成
+    if (connectingRef.current) {
+      let waited = 0
+      while (connectingRef.current && !connectedRef.current && waited < 15000) {
+        await new Promise(r => setTimeout(r, 200))
+        waited += 200
+      }
+      return connectedRef.current
+    }
+    connectingRef.current = true
+    // 如果已有重连定时器在等待，先清掉
+    if (reconnectRef.current) {
+      clearTimeout(reconnectRef.current)
+      reconnectRef.current = null
+    }
+    // 直接新建SockJS连接（不依赖旧的client）
+    if (clientRef.current) {
+      try { clientRef.current.deactivate() } catch (e) {}
+      clientRef.current = null
+    }
+    // 重新创建连接
+    const sock = new SockJS('/ws/chat?userId=' + userId)
+    const client = new Client({
+      webSocketFactory: () => sock,
+      debug: () => {},
+      reconnectDelay: 0,
+      heartbeatIncoming: 25000,
+      heartbeatOutgoing: 25000,
+      onConnect: () => {
+        connectedRef.current = true
+        connectingRef.current = false
+        client.subscribe(`/topic/user.${userId}`, (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            if (payload.type === 'stream_start') {
+              setTyping(false)
+              failCountRef.current = 0
+              streamingReqIdRef.current = payload.req_id
+              setMessages(prev => [...prev, { role: 'ai', content: '', streaming: true, reqId: payload.req_id }])
+            } else if (payload.type === 'stream_token') {
+              setMessages(prev => {
+                const updated = [...prev]
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].role === 'ai' && updated[i].streaming) {
+                    updated[i] = { ...updated[i], content: (updated[i].content || '') + payload.token }
+                    break
+                  }
+                }
+                return updated
+              })
+            } else if (payload.type === 'done' || payload.answer) {
+              setTyping(false)
+              failCountRef.current = 0
+              streamingReqIdRef.current = null
+              setMessages(prev => {
+                const last = prev[prev.length - 1]
+                if (last && last.role === 'ai' && last.streaming) {
+                  const answer = extractAnswer(payload.answer || '')
+                  const updated = [...prev]
+                  updated[updated.length - 1] = {
+                    role: 'ai', content: answer || last.content, streaming: false,
+                    latency: payload.latency, tokens: payload.tokens, model: payload.model,
+                    reqId: last.reqId
+                  }
+                  return updated
+                }
+                const answer = extractAnswer(payload.answer || '')
+                return [...prev, {
+                  role: 'ai', content: answer,
+                  latency: payload.latency, tokens: payload.tokens, model: payload.model
+                }]
+              })
+            } else if (payload.type === 'stopped') {
+              setTyping(false)
+              streamingReqIdRef.current = null
+              setMessages(prev => {
+                const last = prev[prev.length - 1]
+                if (last && last.role === 'ai' && last.streaming) {
+                  const answer = extractAnswer(payload.answer || '')
+                  const updated = [...prev]
+                  updated[updated.length - 1] = {
+                    role: 'ai', content: answer || last.content, streaming: false, stopped: true,
+                    reqId: last.reqId
+                  }
+                  return updated
+                }
+                return prev
+              })
+            } else if (payload.type === 'error') {
+              setTyping(false)
+              streamingReqIdRef.current = null
+              triggerFailure()
+              const errMsg = payload.message || '处理失败，请稍后重试'
+              setMessages(prev => {
+                const last = prev[prev.length - 1]
+                if (last && last.role === 'ai' && last.streaming) {
+                  const updated = [...prev]
+                  updated[updated.length - 1] = { role: 'system', content: '❌ ' + errMsg }
+                  return updated
+                }
+                return [...prev, { role: 'system', content: '❌ ' + errMsg }]
+              })
+            }
+          } catch (e) { console.error(e) }
+        })
+        client.subscribe('/topic/online-count/personal', (msg) => {
+          try {
+            const payload = JSON.parse(msg.body)
+            setOnlineCount(payload.count || 0)
+          } catch (e) { console.error(e) }
+        })
+      },
+      onStompError: () => { setTyping(false) },
+      onWebSocketClose: () => {
+        connectedRef.current = false
+        connectingRef.current = false
+        // 不自动重连，标记断开状态，启动倒计时返回首页
+        disconnectedRef.current = true
+        setTyping(false)
+        showDisconnectMsg()
+      }
+    })
+    clientRef.current = client
+    client.activate()
+    // 等待连接建立
+    let waited = 0
+    while (!connectedRef.current && waited < 15000) {
+      await new Promise(r => setTimeout(r, 200))
+      waited += 200
+    }
+    connectingRef.current = false
+    return connectedRef.current
+  }
+
   const switchModel = async (model) => {
     setShowModelMenu(false)
     if (circuitOpen) return
-    const reqId = generateId()
+    if (disconnectedRef.current) {
+      if (redirectCountdown === 0) showDisconnectMsg()
+      return
+    }
     setMessages(prev => [...prev, { role: 'user', content: model.keyword }])
     setTyping(true)
+    const connected = await ensureConnected()
+    if (!connected) {
+      setTyping(false)
+      disconnectedRef.current = true
+      showDisconnectMsg()
+      return
+    }
+    const reqId = generateId()
     try {
       await axios.post('/api/v1/messages', {
         req_id: reqId,
@@ -127,10 +291,11 @@ export default function PersonalChat() {
         user_id: userId,
         private: 'true',
         ai_answer: true
-      }, { timeout: 30000 })
+      }, { timeout: 120000 })
       setCurrentModel(model.label)
     } catch (e) {
       setTyping(false)
+      // 切换模型失败不触发熔断（不是LLM调用失败，只是消息传递问题）
       setMessages(prev => [...prev, { role: 'system', content: '切换失败，请重试' }])
     }
   }
@@ -161,124 +326,18 @@ export default function PersonalChat() {
     axios.get('/api/v1/messages/online-count', { params: { page: 'personal' } })
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
-    const sock = new SockJS('/ws/chat?userId=' + userId)
-    let reconnectTimer = null
-    let manualClose = false
-    const client = new Client({
-      webSocketFactory: () => sock,
-      debug: () => {},
-      reconnectDelay: 0,
-      onConnect: () => {
-        connectedRef.current = true
-        client.subscribe(`/topic/user.${userId}`, (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            if (payload.type === 'stream_start') {
-              // 流式输出开始：创建一条空的 AI 消息
-              setTyping(false)
-              failCountRef.current = 0
-              streamingReqIdRef.current = payload.req_id
-              setMessages(prev => [...prev, { role: 'ai', content: '', streaming: true, reqId: payload.req_id }])
-            } else if (payload.type === 'stream_token') {
-              // 流式 token：追加到最后一条 AI 消息
-              setMessages(prev => {
-                const updated = [...prev]
-                for (let i = updated.length - 1; i >= 0; i--) {
-                  if (updated[i].role === 'ai' && updated[i].streaming) {
-                    updated[i] = { ...updated[i], content: (updated[i].content || '') + payload.token }
-                    break
-                  }
-                }
-                return updated
-              })
-            } else if (payload.type === 'done' || payload.answer) {
-              // 流式结束或非流式完成
-              setTyping(false)
-              failCountRef.current = 0
-              streamingReqIdRef.current = null
-              setMessages(prev => {
-                // 如果最后一条是流式消息，更新它而不是新增
-                const last = prev[prev.length - 1]
-                if (last && last.role === 'ai' && last.streaming) {
-                  const answer = extractAnswer(payload.answer || '')
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: 'ai', content: answer || last.content, streaming: false,
-                    latency: payload.latency, tokens: payload.tokens, model: payload.model,
-                    reqId: last.reqId
-                  }
-                  return updated
-                }
-                const answer = extractAnswer(payload.answer || '')
-                return [...prev, {
-                  role: 'ai', content: answer,
-                  latency: payload.latency, tokens: payload.tokens, model: payload.model
-                }]
-              })
-            } else if (payload.type === 'stopped') {
-              // 流式被用户停止
-              setTyping(false)
-              streamingReqIdRef.current = null
-              setMessages(prev => {
-                const last = prev[prev.length - 1]
-                if (last && last.role === 'ai' && last.streaming) {
-                  const answer = extractAnswer(payload.answer || '')
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: 'ai', content: answer || last.content, streaming: false, stopped: true,
-                    reqId: last.reqId
-                  }
-                  return updated
-                }
-                return prev
-              })
-            } else if (payload.type === 'error') {
-              setTyping(false)
-              streamingReqIdRef.current = null
-              triggerFailure()
-              const errMsg = payload.message || '处理失败，请稍后重试'
-              setMessages(prev => {
-                // 如果最后一条是流式消息，标记为错误
-                const last = prev[prev.length - 1]
-                if (last && last.role === 'ai' && last.streaming) {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = { role: 'system', content: '❌ ' + errMsg }
-                  return updated
-                }
-                return [...prev, { role: 'system', content: '❌ ' + errMsg }]
-              })
-            }
-          } catch (e) { console.error(e) }
-        })
-        client.subscribe('/topic/online-count/personal', (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count || 0)
-          } catch (e) { console.error(e) }
-        })
-      },
-      onStompError: () => { setTyping(false) },
-      onWebSocketClose: () => {
-        connectedRef.current = false
-        // 自动重连：非主动关闭时 3 秒后重连
-        if (!manualClose) {
-          reconnectTimer = setTimeout(() => {
-            if (!manualClose && clientRef.current === client) {
-              try { Promise.resolve(client.activate()).catch(() => {}) } catch (e) {}
-            }
-          }, 3000)
-        }
-      }
-    })
-    clientRef.current = client
-    client.activate()
+
+    // 初始连接
+    ensureConnected()
+
     return () => {
-      manualClose = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current)
+        reconnectRef.current = null
+      }
       connectedRef.current = false
-      const c = clientRef.current
-      if (c) {
-        try { Promise.resolve(c.deactivate()).catch(() => {}) } catch (e) {}
+      if (clientRef.current) {
+        try { Promise.resolve(clientRef.current.deactivate()).catch(() => {}) } catch (e) {}
         clientRef.current = null
       }
     }
@@ -302,6 +361,16 @@ export default function PersonalChat() {
     if (!question.trim() && !selectedFile) return
     if (circuitOpen) {
       setMessages(prev => [...prev, { role: 'system', content: '⚡ 服务熔断中，请稍后再试' }])
+      return
+    }
+    if (disconnectedRef.current) {
+      if (redirectCountdown === 0) showDisconnectMsg()
+      return
+    }
+    // 等待WebSocket连接建立
+    const connected = await ensureConnected()
+    if (!connected) {
+      setMessages(prev => [...prev, { role: 'system', content: '连接未就绪，请返回首页重试', action: 'home' }])
       return
     }
     const fileToSend = selectedFile
@@ -365,6 +434,23 @@ export default function PersonalChat() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendQuestion()
+    }
+  }
+
+  // 显示断开提示并启动倒计时
+  const showDisconnectMsg = () => {
+    setMessages(prev => {
+      const last = prev[prev.length - 1]
+      if (last && last.role === 'system' && last.content.includes('连接已断开')) return prev
+      return [...prev, { role: 'system', content: '⏰ 因长时间未操作，连接已断开，即将返回首页', action: 'home' }]
+    })
+    setRedirectCountdown(3)
+  }
+
+  // 输入框聚焦时检查连接状态
+  const handleFocus = () => {
+    if (disconnectedRef.current && redirectCountdown === 0) {
+      showDisconnectMsg()
     }
   }
 
@@ -621,7 +707,18 @@ export default function PersonalChat() {
               </div>
             </div>
           ) : (
-            <div key={idx} className={`msg ${m.role}`}>{m.content}</div>
+            <div
+              key={idx}
+              className={`msg ${m.role}`}
+              style={m.content.includes('已重新连接') ? { color: '#4CAF50', fontWeight: 500 } : undefined}
+            >
+              {m.content}
+              {m.action === 'home' && (
+                <span style={{ marginLeft: '8px', color: redirectCountdown <= 1 ? '#f44336' : '#4f8cff', fontWeight: 500 }}>
+                  （{redirectCountdown}秒后自动返回…）
+                </span>
+              )}
+            </div>
           )
         ))}
         {typing && (
@@ -740,6 +837,7 @@ export default function PersonalChat() {
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={handleKey}
+            onFocus={handleFocus}
             placeholder="输入你的私密问题..."
           />
           <button type="button" className="attach-btn" onClick={() => fileInputRef.current?.click()} title="上传文件">

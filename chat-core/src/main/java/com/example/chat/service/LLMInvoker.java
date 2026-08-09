@@ -3,6 +3,7 @@ package com.example.chat.service;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.factory.LLMStrategyFactory;
 import com.example.chat.observability.CallTrace;
+import com.example.chat.observability.CircuitBreaker;
 import com.example.chat.observability.ErrorAggregator;
 import com.example.chat.observability.ErrorType;
 import com.example.chat.observability.SelfHealingService;
@@ -59,6 +60,10 @@ public class LLMInvoker {
     @Autowired(required = false)
     private ModelRouter modelRouter;
 
+    /** 熔断器 */
+    @Autowired(required = false)
+    private CircuitBreaker circuitBreaker;
+
     public LLMInvoker(LLMStrategyFactory strategyFactory,
                        BaseUrlResolver baseUrlResolver,
                        LLMCallRecorder callRecorder) {
@@ -80,6 +85,10 @@ public class LLMInvoker {
     public String invoke(ModelConfig config, List<Map<String, Object>> messages,
                          double temperature, String scene,
                          String defaultBaseUrl, String defaultApiKey) throws Exception {
+        // 熔断检查：provider连续失败5次后快速失败，不发起LLM调用
+        if (circuitBreaker != null && !circuitBreaker.allowRequest(config.provider)) {
+            throw new RuntimeException("LLM provider=" + config.provider + " 已熔断，请稍后重试");
+        }
         long startTime = System.currentTimeMillis();
         // 生成 traceId（若当前线程未开启）
         boolean traceStarted = false;
@@ -99,6 +108,7 @@ public class LLMInvoker {
         try {
             String answer = strategy.invoke(baseUrl, apiKey, config.model, messages, temperature);
             long latency = System.currentTimeMillis() - startTime;
+            if (circuitBreaker != null) circuitBreaker.recordSuccess(config.provider);
             callRecorder.record(config.provider, config.model, scene, true, latency,
                     answer != null ? answer.length() : 0);
             log.info("[LLMInvoker] {} provider={} model={} latency={}ms answerLen={}",
@@ -107,6 +117,7 @@ public class LLMInvoker {
             return answer;
         } catch (Exception e) {
             long latency = System.currentTimeMillis() - startTime;
+            if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
             callRecorder.record(config.provider, config.model, scene, false, latency, 0);
             log.error("[LLMInvoker] {} 调用失败 provider={} model={} latency={}ms error={}",
                     scene, config.provider, config.model, latency, e.getMessage());
@@ -142,6 +153,10 @@ public class LLMInvoker {
                                double temperature, String scene,
                                String defaultBaseUrl, String defaultApiKey,
                                Consumer<String> callback) throws Exception {
+        // 熔断检查
+        if (circuitBreaker != null && !circuitBreaker.allowRequest(config.provider)) {
+            throw new RuntimeException("LLM provider=" + config.provider + " 已熔断，请稍后重试");
+        }
         long startTime = System.currentTimeMillis();
         boolean traceStarted = false;
         String traceId = null;
@@ -160,6 +175,7 @@ public class LLMInvoker {
         try {
             String answer = strategy.invokeStream(baseUrl, apiKey, config.model, messages, temperature, callback);
             long latency = System.currentTimeMillis() - startTime;
+            if (circuitBreaker != null) circuitBreaker.recordSuccess(config.provider);
             callRecorder.record(config.provider, config.model, scene, true, latency,
                     answer != null ? answer.length() : 0);
             log.info("[LLMInvoker] stream:{} provider={} model={} latency={}ms answerLen={}",
@@ -168,6 +184,7 @@ public class LLMInvoker {
             return answer;
         } catch (Exception e) {
             long latency = System.currentTimeMillis() - startTime;
+            if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
             callRecorder.record(config.provider, config.model, scene, false, latency, 0);
             log.error("[LLMInvoker] stream:{} 调用失败 provider={} model={} latency={}ms error={}",
                     scene, config.provider, config.model, latency, e.getMessage());

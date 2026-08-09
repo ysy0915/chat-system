@@ -28,7 +28,7 @@ public class WebSocketSessionTracker {
     private static final String SESSION_PAGE_PREFIX = "ws:page:";
     private static final String KNOWN_PAGES_KEY = "ws:known:pages";
     private static final String SESSION_HEARTBEAT_PREFIX = "ws:heartbeat:";
-    private static final long IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 分钟无操作清理
+    private static final long IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 分钟无操作清理
 
     /** 随机在线人数上限（0-300） */
     private static final int RANDOM_TOTAL_MAX = 301;

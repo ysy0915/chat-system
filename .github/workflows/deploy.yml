@@ -48,7 +48,7 @@ jobs:
 
       - name: Upload frontend dist
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -73,28 +73,28 @@ jobs:
 
       - name: Upload chat-core jar
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'core' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jar-core
           path: chat-core/target/chat-core-0.0.1-SNAPSHOT.jar
 
       - name: Upload chat-web jar
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'web' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jar-web
           path: chat-web/target/chat-web-0.0.1-SNAPSHOT.jar
 
       - name: Upload chat-games jar
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'games' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jar-games
           path: chat-games/target/chat-games-0.0.1-SNAPSHOT.jar
 
       - name: Upload chat-media jar
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'media' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jar-media
           path: chat-media/target/chat-media-0.0.1-SNAPSHOT.jar

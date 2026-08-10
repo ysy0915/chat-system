@@ -29,7 +29,7 @@ jobs:
           npm run build
 
       - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -102,7 +102,7 @@ jobs:
 
       # ---- 上传报告 ----
       - name: Upload JaCoCo Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: jacoco-coverage
@@ -115,7 +115,7 @@ jobs:
           retention-days: 14
 
       - name: Upload SpotBugs Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: spotbugs-report
@@ -123,7 +123,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Checkstyle Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: checkstyle-report
@@ -131,7 +131,7 @@ jobs:
           retention-days: 14
 
       - name: Upload PMD Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: pmd-report
@@ -139,7 +139,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Dependency-Check Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: dependency-check-report

@@ -11,21 +11,30 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Date;
 
 @Component
 public class JwtUtil {
 
     private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
+    /** 标记值：jwt.secret 未配置时使用随机密钥 */
+    private static final String DISABLED_MARKER = "DISABLED_MARKER_NO_DEFAULT_KEY";
     private final SecretKey key;
     private final long expirationMs;
 
-    public JwtUtil(@Value("${jwt.secret:defaultsecretkeydefaultsecretkey}") String secret,
-                   @Value("${jwt.expiration:3600000}") long expirationMs) {
-        if ("defaultsecretkeydefaultsecretkey".equals(secret)) {
-            log.warn("[JWT] ⚠️ 警告: 使用默认JWT密钥！请在配置中设置 jwt.secret 为随机强密钥");
+    public JwtUtil(@Value("${jwt.secret:#{null}}") String secret,
+                   @Value("${jwt.expiration:86400000}") long expirationMs) {
+        if (secret == null || secret.isBlank() || DISABLED_MARKER.equals(secret)) {
+            // 未配置密钥 → 生成随机密钥，每次重启废弃所有旧 token
+            byte[] randomBytes = new byte[32];
+            new SecureRandom().nextBytes(randomBytes);
+            this.key = Keys.hmacShaKeyFor(randomBytes);
+            log.warn("[JWT] ⚠️ 未配置 jwt.secret，使用随机密钥 (重启后旧token全部失效)");
+        } else {
+            this.key = Keys.hmacShaKeyFor(secret.getBytes());
         }
-        this.key = Keys.hmacShaKeyFor(secret.getBytes());
         this.expirationMs = expirationMs;
     }
 

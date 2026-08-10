@@ -4,8 +4,10 @@ import com.example.chat.security.JwtAuthenticationFilter;
 import com.example.chat.security.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,7 +32,20 @@ public class SecurityConfig {
                 .xssProtection(xss -> {})
             )
             .authorizeHttpRequests(auth -> auth
-                .anyRequest().permitAll()
+                // 白名单：无需登录即可访问
+                .requestMatchers("/api/v1/auth/**").permitAll()         // 登录/注册
+                .requestMatchers("/api/v1/messages/**").permitAll()     // 发消息/历史消息
+                .requestMatchers("/api/v1/graph/**").permitAll()        // 知识图谱
+                .requestMatchers("/api/v1/games/**").permitAll()      // 游戏（城堡攻防）
+                .requestMatchers("/ws/**").permitAll()                // WebSocket
+                // 管理接口（自有 X-Admin-Password 密码鉴权）
+                .requestMatchers("/api/v1/admin/**").permitAll()
+                // 其余接口需登录
+                .anyRequest().authenticated()
+            )
+            // 未登录返回 JSON 而非重定向登录页
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
             )
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 

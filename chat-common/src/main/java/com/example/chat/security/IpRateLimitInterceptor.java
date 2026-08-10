@@ -225,10 +225,13 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
 
     /** 手动拉黑 IP（供管理接口调用） */
     public void manualBlacklist(String ip, String reason, Duration ttl) {
-        blacklist(ip, reason);
+        // blacklist() 已设置默认 BLACKLIST_TTL，外部传入 ttl 时覆盖
         if (ttl != null) {
             redis.opsForValue().set(KEY_BLACKLIST + ip, reason, ttl);
+        } else {
+            blacklist(ip, reason);
         }
+        log.warn("IP 已手动拉黑: {} 原因: {} ttl={}", ip, reason, ttl);
     }
 
     /** 解封 IP */

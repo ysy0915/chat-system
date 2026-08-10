@@ -329,7 +329,7 @@ public class CoreClient {
         for (int i = 0; i < coreUrls.size(); i++) {
             String url = nextCoreUrl();
             try {
-                log.info("[CoreClient] POST {} -> {} payload={}", path, url, payload);
+                log.info("[CoreClient] POST {} -> {} ", path, url);
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
                 HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);

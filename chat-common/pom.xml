@@ -106,6 +106,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- JSON 日志输出（prod 环境） -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
+        </dependency>
+
         <!-- 阿里云内容安全（optional，只有 core/web 需要） -->
         <dependency>
             <groupId>com.aliyun</groupId>

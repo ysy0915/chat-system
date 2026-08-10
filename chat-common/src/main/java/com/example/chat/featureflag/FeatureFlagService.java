@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 特性开关服务（本地化Harness Feature Flags等效方案）
@@ -140,7 +141,7 @@ public class FeatureFlagService {
     public void setConfig(String flagName, FlagConfig config) {
         try {
             String json = objectMapper.writeValueAsString(config);
-            redisTemplate.opsForValue().set(KEY_PREFIX + flagName, json);
+            redisTemplate.opsForValue().set(KEY_PREFIX + flagName, json, 30, TimeUnit.DAYS);
             cache.remove(flagName); // 清除本地缓存
             log.info("[FeatureFlag] {} 已更新: enabled={}, percentage={}, env={}",
                     flagName, config.enabled, config.percentage, config.environments);

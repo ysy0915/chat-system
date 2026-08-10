@@ -105,6 +105,12 @@
             <version>5.27.0</version>
         </dependency>
 
+        <!-- SpringDoc OpenAPI (Swagger UI: /internal/swagger-ui.html) -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
         <!-- 测试 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

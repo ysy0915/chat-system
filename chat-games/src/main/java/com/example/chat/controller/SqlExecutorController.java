@@ -1,5 +1,8 @@
 package com.example.chat.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Tag(name = "SQL执行器", description = "游戏内 SQL 执行与调试接口")
 @RestController
 @RequestMapping("/api/v1/sql")
 public class SqlExecutorController {
@@ -53,8 +57,11 @@ public class SqlExecutorController {
         return true;
     }
 
+    @Operation(summary = "SQL执行器登录", description = "使用管理员密码登录，获取执行SQL的临时令牌")
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
+    public ResponseEntity<?> login(
+            @Parameter(description = "请求体，包含 password 字段") @RequestBody Map<String, String> body,
+            HttpServletRequest request) {
         String clientIp = request.getHeader("X-Real-IP");
         if (clientIp == null) clientIp = request.getRemoteAddr();
 
@@ -68,10 +75,12 @@ public class SqlExecutorController {
         return ResponseEntity.status(401).body(Map.of("error", "密码错误"));
     }
 
+    @Operation(summary = "执行SQL语句", description = "执行SQL查询或更新语句，禁止执行DROP/TRUNCATE等危险操作")
     @PostMapping("/execute")
-    public ResponseEntity<?> execute(@RequestHeader(value = "X-Admin-Token", required = false) String token,
-                                     @RequestBody Map<String, String> body,
-                                     HttpServletRequest request) {
+    public ResponseEntity<?> execute(
+            @Parameter(description = "管理员令牌，登录后获取") @RequestHeader(value = "X-Admin-Token", required = false) String token,
+            @Parameter(description = "请求体，包含 sql 字段（长度不超过5000）") @RequestBody Map<String, String> body,
+            HttpServletRequest request) {
         String clientIp = request.getHeader("X-Real-IP");
         if (clientIp == null) clientIp = request.getRemoteAddr();
 

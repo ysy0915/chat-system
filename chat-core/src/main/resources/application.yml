@@ -63,3 +63,11 @@ app:
 security:
   internal:
     enabled: false
+
+springdoc:
+  api-docs:
+    path: /internal/v3/api-docs
+  swagger-ui:
+    path: /internal/swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha

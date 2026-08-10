@@ -1,12 +1,14 @@
 package com.example.chat.controller;
 
 import com.example.chat.service.CastleSiegeBattlefieldService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+@Tag(name = "城堡攻防-战场", description = "城堡攻防战场 WebSocket 通信")
 @RestController
 public class CastleSiegeBattlefieldController {
 

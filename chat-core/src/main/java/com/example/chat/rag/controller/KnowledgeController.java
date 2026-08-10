@@ -7,6 +7,9 @@ import com.example.chat.rag.service.DocumentParser;
 import com.example.chat.rag.service.TextChunker;
 import com.example.chat.rag.service.VectorStoreService;
 import com.example.chat.security.JwtUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +36,7 @@ import java.util.Map;
  *
  *   POST   /api/v1/rag/search            测试检索（不调 LLM，只看召回结果）
  */
+@Tag(name = "知识库管理", description = "RAG 知识库的创建、文档上传与检索")
 @RestController
 @RequestMapping("/api/v1/rag")
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
@@ -76,9 +80,10 @@ public class KnowledgeController {
 
     // ============ 知识库 CRUD ============
 
+    @Operation(summary = "创建知识库", description = "创建一个新的RAG知识库，需管理员权限")
     @PostMapping("/kb")
     public ResponseEntity<?> createKnowledgeBase(@RequestBody Map<String, String> body,
-                                                  @RequestHeader("Authorization") String auth) {
+                                                  @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
 
@@ -94,16 +99,19 @@ public class KnowledgeController {
         return ResponseEntity.ok(kb);
     }
 
+    @Operation(summary = "知识库列表", description = "列出所有已创建的知识库，需管理员权限")
     @GetMapping("/kb")
-    public ResponseEntity<?> listKnowledgeBases(@RequestHeader("Authorization") String auth) {
+    public ResponseEntity<?> listKnowledgeBases(@Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
         return ResponseEntity.ok(ragRepository.findAllKnowledgeBases());
     }
 
+    @Operation(summary = "删除知识库", description = "删除知识库及其向量数据，需管理员权限")
     @DeleteMapping("/kb/{id}")
-    public ResponseEntity<?> deleteKnowledgeBase(@PathVariable Long id,
-                                                  @RequestHeader("Authorization") String auth) {
+    public ResponseEntity<?> deleteKnowledgeBase(
+            @Parameter(description = "知识库ID") @PathVariable Long id,
+            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
 
@@ -118,10 +126,12 @@ public class KnowledgeController {
 
     // ============ 文档管理 ============
 
+    @Operation(summary = "上传文档到知识库", description = "上传文件到指定知识库，自动解析、分片并向量化，需管理员权限")
     @PostMapping("/kb/{kbId}/documents")
-    public ResponseEntity<?> uploadDocument(@PathVariable Long kbId,
-                                             @RequestParam("file") MultipartFile file,
-                                             @RequestHeader("Authorization") String auth) {
+    public ResponseEntity<?> uploadDocument(
+            @Parameter(description = "知识库ID") @PathVariable Long kbId,
+            @Parameter(description = "上传的文件") @RequestParam("file") MultipartFile file,
+            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
 
@@ -173,17 +183,21 @@ public class KnowledgeController {
         }
     }
 
+    @Operation(summary = "文档列表", description = "列出指定知识库中的所有文档，需管理员权限")
     @GetMapping("/kb/{kbId}/documents")
-    public ResponseEntity<?> listDocuments(@PathVariable Long kbId,
-                                           @RequestHeader("Authorization") String auth) {
+    public ResponseEntity<?> listDocuments(
+            @Parameter(description = "知识库ID") @PathVariable Long kbId,
+            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
         return ResponseEntity.ok(ragRepository.findDocumentsByKbId(kbId));
     }
 
+    @Operation(summary = "删除文档", description = "删除指定文档及其向量数据，需管理员权限")
     @DeleteMapping("/documents/{id}")
-    public ResponseEntity<?> deleteDocument(@PathVariable Long id,
-                                            @RequestHeader("Authorization") String auth) {
+    public ResponseEntity<?> deleteDocument(
+            @Parameter(description = "文档ID") @PathVariable Long id,
+            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
         // 注意：Milvus 按 doc_id 删除向量需要额外实现 deleteEntities
@@ -195,9 +209,10 @@ public class KnowledgeController {
 
     // ============ 检索测试 ============
 
+    @Operation(summary = "知识库检索测试", description = "在指定知识库中执行向量检索，返回语义相似的文档片段，用于测试检索效果")
     @PostMapping("/search")
     public ResponseEntity<?> search(@RequestBody Map<String, Object> body,
-                                    @RequestHeader("Authorization") String auth) {
+                                    @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader("Authorization") String auth) {
         ResponseEntity<?> err = checkAdmin(auth);
         if (err != null) return err;
 

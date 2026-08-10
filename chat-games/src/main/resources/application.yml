@@ -1,0 +1,7 @@
+springdoc:
+  api-docs:
+    path: /games/v3/api-docs
+  swagger-ui:
+    path: /games/swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha

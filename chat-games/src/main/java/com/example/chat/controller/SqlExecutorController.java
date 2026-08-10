@@ -11,6 +11,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SqlExecutorController {
     private static final Logger auditLog = LoggerFactory.getLogger("SQL_AUDIT");
 
-    @Value("${sql-executor.password:LiYuHong@0929}")
+    @Value("${sql-executor.password:}")
     private String adminPassword;
     private static final Map<String, Long> sessions = new ConcurrentHashMap<>();
 
@@ -57,7 +58,7 @@ public class SqlExecutorController {
         String clientIp = request.getHeader("X-Real-IP");
         if (clientIp == null) clientIp = request.getRemoteAddr();
 
-        if (adminPassword != null && adminPassword.equals(body.get("password"))) {
+        if (adminPassword != null && !adminPassword.isBlank() && adminPassword.equals(body.get("password"))) {
             String token = UUID.randomUUID().toString();
             sessions.put(token, System.currentTimeMillis());
             auditLog.info("[SQL_AUDIT] LOGIN_SUCCESS ip={}", clientIp);
@@ -122,7 +123,7 @@ public class SqlExecutorController {
                     affectedRows = stmt.executeUpdate(sql);
                 }
             }
-        } catch (Exception e) {
+        } catch (SQLException e) {
             error = e.getMessage();
             auditLog.error("[SQL_AUDIT] EXECUTE_ERROR ip={} error={}", clientIp, error);
         }

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -25,6 +26,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import org.springframework.dao.DataAccessException;
 
 @Service
 public class ChatProcessor {
@@ -142,7 +146,7 @@ public class ChatProcessor {
         try {
             Map<?, ?> parsed = objectMapper.readValue(switchResult, Map.class);
             displayText = (String) parsed.get("answer");
-        } catch (Exception ignored) {
+        } catch (JsonProcessingException ignored) {
             log.debug("无法解析切换结果JSON: {}", switchResult);
         }
         Message m = messageRepository.findByReqId(reqId);
@@ -204,7 +208,7 @@ public class ChatProcessor {
         String cached = null;
         try {
             cached = redisTemplate.opsForValue().get(buildCacheKey(question));
-        } catch (Exception ex) {
+        } catch (DataAccessException ex) {
             log.warn("Redis read failed, skipping cache: {}", ex.getMessage());
         }
         if (cached == null) return false;
@@ -215,7 +219,7 @@ public class ChatProcessor {
         if (m != null) {
             try {
                 m.answerJson = objectMapper.writeValueAsString(Map.of("answer", cached));
-            } catch (Exception e) {
+            } catch (JsonProcessingException e) {
                 m.answerJson = "{\"answer\":\"\"}";
             }
             m.status = "done";
@@ -381,7 +385,7 @@ public class ChatProcessor {
         if (msg != null) {
             try {
                 msg.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
-            } catch (Exception e) {
+            } catch (JsonProcessingException e) {
                 msg.answerJson = "{\"answer\":\"\"}";
             }
             msg.status = status;
@@ -423,7 +427,7 @@ public class ChatProcessor {
         m.isPrivate = 1;
         try {
             messageRepository.insert(m);
-        } catch (Exception ex) {
+        } catch (DataAccessException ex) {
             log.warn("[WARN] regenerate 插入消息记录失败: {}", ex.getMessage());
         }
 
@@ -557,7 +561,7 @@ public class ChatProcessor {
         String cacheKey = buildCacheKey(question, provider, model);
         try {
             redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
-        } catch (Exception ex) {
+        } catch (DataAccessException ex) {
             log.warn("[WARN] Redis write failed: {}", ex.getMessage());
         }
 
@@ -574,7 +578,7 @@ public class ChatProcessor {
         if (m != null) {
             try {
                 m.answerJson = objectMapper.writeValueAsString(Map.of("answer", answer));
-            } catch (Exception e) {
+            } catch (JsonProcessingException e) {
                 m.answerJson = "{\"answer\":\"\"}";
             }
             m.status = "done";
@@ -616,7 +620,7 @@ public class ChatProcessor {
             StringBuilder sb = new StringBuilder();
             for (byte b : hash) sb.append(String.format("%02x", b));
             return sb.toString();
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             return Integer.toHexString(input.hashCode());
         }
     }

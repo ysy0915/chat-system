@@ -9,6 +9,7 @@ import com.example.chat.entity.TreeHoleMessage;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.repository.TreeHoleRepository;
 import com.example.chat.service.BroadcastService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,7 +133,7 @@ public class TreeHoleService {
             String errMsg = root.getMessage() != null ? root.getMessage() : e.getMessage();
             try {
                 m.answerJson = objectMapper.writeValueAsString(Map.of("answer", "解析失败：" + errMsg));
-            } catch (Exception je) {
+            } catch (JsonProcessingException je) {
                 m.answerJson = "{\"answer\":\"解析失败：未知错误\"}";
             }
             m.status = "error";

@@ -98,7 +98,7 @@ public class ChatHistoryBuilder {
                     historyMsgs.add(LLMMessage.assistant(extractAnswerText(m.answerJson)));
                 }
             }
-        } catch (Exception ex) {
+        } catch (org.springframework.dao.DataAccessException ex) {
             log.warn("[WARN] Failed to load recent messages for user {}: {}", userId, ex.getMessage());
         }
         return historyMsgs;
@@ -138,7 +138,7 @@ public class ChatHistoryBuilder {
             Map<String, Object> m = objectMapper.readValue(answerJson, Map.class);
             Object answer = m.get("answer");
             return answer != null ? answer.toString() : answerJson;
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             return answerJson;
         }
     }

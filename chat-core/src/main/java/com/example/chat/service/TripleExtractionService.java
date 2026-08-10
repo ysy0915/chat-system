@@ -6,10 +6,12 @@ import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.util.BaseUrlResolver;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -108,7 +110,7 @@ public class TripleExtractionService {
                     .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "deepseek".equalsIgnoreCase(c.provider))
                     .findFirst()
                     .orElse(configs.get(0));
-        } catch (Exception e) {
+        } catch (DataAccessException e) {
             log.warn("[KnowledgeGraph] 获取模型配置失败: {}", e.getMessage());
             return null;
         }
@@ -132,7 +134,7 @@ public class TripleExtractionService {
                 baseUrl = baseUrlResolver.resolve(chosen, baseUrl);
                 if (chosen.model != null && !chosen.model.isBlank()) model = chosen.model;
             }
-        } catch (Exception e) {
+        } catch (DataAccessException e) {
             log.warn("[KnowledgeGraph] 获取模型配置失败，使用默认配置: {}", e.getMessage());
         }
 
@@ -177,7 +179,7 @@ public class TripleExtractionService {
                 }
             }
             return parsed;
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             log.warn("[KnowledgeGraph] 解析三元组JSON失败: {}", e.getMessage());
             return List.of();
         }

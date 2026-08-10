@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.Map;
 
 @Tag(name = "树洞", description = "匿名/半匿名树洞消息：提问、文件、重新生成、停止")
@@ -96,7 +97,7 @@ public class TreeHoleController {
             return ResponseEntity.ok(Map.of("status", "streaming", "req_id", reqId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
+        } catch (IOException e) {
             return ResponseEntity.status(500).body("文件处理失败: " + e.getMessage());
         }
     }

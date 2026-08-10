@@ -1,6 +1,7 @@
 package com.example.chat.agent.tool.impl;
 
 import com.example.chat.agent.tool.Tool;
+import com.example.chat.exception.CalculationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -84,7 +85,7 @@ public class CalculatorTool implements Tool {
         double parse() {
             double v = expr();
             if (pos < s.length()) {
-                throw new RuntimeException("未消费的字符: " + s.substring(pos));
+                throw new CalculationException("未消费的字符: " + s.substring(pos));
             }
             return v;
         }
@@ -108,7 +109,7 @@ public class CalculatorTool implements Tool {
                 else if (c == '/') {
                     pos++;
                     double divisor = factor();
-                    if (divisor == 0) throw new RuntimeException("除零错误");
+                    if (divisor == 0) throw new CalculationException("除零错误");
                     v /= divisor;
                 } else break;
             }
@@ -116,13 +117,13 @@ public class CalculatorTool implements Tool {
         }
 
         private double factor() {
-            if (pos >= s.length()) throw new RuntimeException("表达式不完整");
+            if (pos >= s.length()) throw new CalculationException("表达式不完整");
             char c = s.charAt(pos);
             if (c == '(') {
                 pos++;
                 double v = expr();
                 if (pos >= s.length() || s.charAt(pos) != ')') {
-                    throw new RuntimeException("缺少右括号");
+                    throw new CalculationException("缺少右括号");
                 }
                 pos++;
                 return v;
@@ -134,7 +135,7 @@ public class CalculatorTool implements Tool {
             while (pos < s.length() && (Character.isDigit(s.charAt(pos)) || s.charAt(pos) == '.')) {
                 pos++;
             }
-            if (start == pos) throw new RuntimeException("期望数字，但遇到: " + c);
+            if (start == pos) throw new CalculationException("期望数字，但遇到: " + c);
             return Double.parseDouble(s.substring(start, pos));
         }
     }

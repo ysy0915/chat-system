@@ -8,9 +8,11 @@ import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.DebateRecordRepository;
 import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.ModelConfigRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -283,7 +285,7 @@ public class DebateProcessor {
             if (knowledgeGraphService != null && m != null && m.id != null) {
                 knowledgeGraphService.extractAndSaveAsync(m.id, question, finalAnswer, "debate");
             }
-        } catch (Exception ex) {
+        } catch (JsonProcessingException | DataAccessException ex) {
             log.warn("[Debate] 结果持久化失败: {}", ex.getMessage());
         }
     }

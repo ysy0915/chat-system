@@ -38,6 +38,27 @@ public class RoutingDecision {
         this.reason = reason;
     }
 
+    public TaskType getTaskType() { return taskType; }
+    public void setTaskType(TaskType taskType) { this.taskType = taskType; }
+
+    public String getSelectedModel() { return selectedModel; }
+    public void setSelectedModel(String selectedModel) { this.selectedModel = selectedModel; }
+
+    public String getSelectedProvider() { return selectedProvider; }
+    public void setSelectedProvider(String selectedProvider) { this.selectedProvider = selectedProvider; }
+
+    public Long getSelectedModelId() { return selectedModelId; }
+    public void setSelectedModelId(Long selectedModelId) { this.selectedModelId = selectedModelId; }
+
+    public ModelConfig getSelectedConfig() { return selectedConfig; }
+    public void setSelectedConfig(ModelConfig selectedConfig) { this.selectedConfig = selectedConfig; }
+
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
+
+    public List<String> getAlternatives() { return alternatives; }
+    public void setAlternatives(List<String> alternatives) { this.alternatives = alternatives; }
+
     /**
      * 添加候选模型
      */

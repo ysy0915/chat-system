@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -102,7 +103,7 @@ public class MonitorController {
             record.recordedAt = now;
             try {
                 onlineCountRepository.insert(record);
-            } catch (Exception e) {
+            } catch (DataAccessException e) {
                 log.warn("[WARN] record failed: {}", e.getMessage());
             }
         }

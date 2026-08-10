@@ -91,7 +91,7 @@ public class BatchImportService {
             }
             log.info("[KG-Batch] 辩论导入: {} 三元组", debateTriples);
             totalTriples += debateTriples;
-        } catch (Exception e) {
+        } catch (org.springframework.dao.DataAccessException e) {
             log.warn("[KG-Batch] 导入辩论记录失败: {}", e.getMessage());
         }
 
@@ -106,7 +106,7 @@ public class BatchImportService {
             Map<String, Object> parsed = objectMapper.readValue(answerJson, Map.class);
             Object answer = parsed.get("answer");
             return answer != null ? answer.toString() : null;
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             return answerJson; // 可能是纯文本
         }
     }

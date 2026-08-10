@@ -40,6 +40,36 @@ public class CallTrace {
     /**
      * 序列化为简单 JSON（避免引入 Jackson 依赖）
      */
+    public String getTraceId() { return traceId; }
+    public void setTraceId(String traceId) { this.traceId = traceId; }
+
+    public String getScene() { return scene; }
+    public void setScene(String scene) { this.scene = scene; }
+
+    public String getProvider() { return provider; }
+    public void setProvider(String provider) { this.provider = provider; }
+
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+
+    public long getStartTime() { return startTime; }
+    public void setStartTime(long startTime) { this.startTime = startTime; }
+
+    public long getEndTime() { return endTime; }
+    public void setEndTime(long endTime) { this.endTime = endTime; }
+
+    public long getLatency() { return latency; }
+    public void setLatency(long latency) { this.latency = latency; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getErrorMessage() { return errorMessage; }
+    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public String getToolCalls() { return toolCalls; }
+    public void setToolCalls(String toolCalls) { this.toolCalls = toolCalls; }
+
     public String toJson() {
         StringBuilder sb = new StringBuilder("{");
         sb.append("\"traceId\":\"").append(escape(traceId)).append("\",");

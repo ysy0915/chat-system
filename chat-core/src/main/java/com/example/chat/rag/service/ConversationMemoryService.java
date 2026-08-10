@@ -116,7 +116,7 @@ public class ConversationMemoryService {
             // 只保留最近 N 轮（每轮 = 1 条 entry）
             redisTemplate.opsForList().trim(key, -shortTermRounds, -1);
             redisTemplate.expire(key, redisTtlHours, TimeUnit.HOURS);
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | org.springframework.data.redis.RedisSystemException e) {
             log.warn("[Memory] 短期记忆保存失败 scene={} user={} error={}", scene, userId, e.getMessage());
         }
     }
@@ -209,7 +209,7 @@ public class ConversationMemoryService {
                 ));
             }
             return result;
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | org.springframework.data.redis.RedisSystemException e) {
             log.warn("[Memory] 短期记忆读取失败 scene={} user={} error={}", scene, userId, e.getMessage());
             return Collections.emptyList();
         }

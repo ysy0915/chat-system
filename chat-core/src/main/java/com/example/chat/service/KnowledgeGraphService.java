@@ -78,7 +78,7 @@ public class KnowledgeGraphService {
                 session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE");
                 session.run("CREATE INDEX IF NOT EXISTS FOR (e:Entity) ON (e.category)");
             }
-        } catch (Exception e) {
+        } catch (org.neo4j.driver.exceptions.Neo4jException e) {
             log.warn("[KnowledgeGraph] Neo4j 连接失败，知识图谱服务降级: {}", e.getMessage());
             neo4jDriver = null;
         }
@@ -104,7 +104,7 @@ public class KnowledgeGraphService {
                     log.debug("[KnowledgeGraph] 消息 {} 已抽取过，跳过", messageId);
                     return;
                 }
-            } catch (Exception e) {
+            } catch (org.springframework.data.redis.RedisSystemException e) {
                 // Redis 不可用时继续，Neo4j MERGE 幂等
             }
         }

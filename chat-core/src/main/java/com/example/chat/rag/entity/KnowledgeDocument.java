@@ -15,6 +15,33 @@ public class KnowledgeDocument {
     public String errorMessage;     // 失败原因
     public String createdAt;        // 创建时间
 
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public Long getKnowledgeBaseId() { return knowledgeBaseId; }
+    public void setKnowledgeBaseId(Long knowledgeBaseId) { this.knowledgeBaseId = knowledgeBaseId; }
+
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
+
+    public int getChunkCount() { return chunkCount; }
+    public void setChunkCount(int chunkCount) { this.chunkCount = chunkCount; }
+
+    public long getFileSize() { return fileSize; }
+    public void setFileSize(long fileSize) { this.fileSize = fileSize; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getErrorMessage() { return errorMessage; }
+    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public String getCreatedAt() { return createdAt; }
+    public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+
     @Override
     public String toString() {
         return "KnowledgeDocument{id=" + id + ", kb=" + knowledgeBaseId +

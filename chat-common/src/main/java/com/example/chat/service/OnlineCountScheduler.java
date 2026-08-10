@@ -5,6 +5,7 @@ import com.example.chat.entity.OnlineCountRecord;
 import com.example.chat.repository.OnlineCountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -40,7 +41,7 @@ public class OnlineCountScheduler {
             record.recordedAt = now;
             try {
                 onlineCountRepository.insert(record);
-            } catch (Exception e) {
+            } catch (DataAccessException e) {
                 log.warn("[WARN] Failed to record online count for page={}: {}", entry.getKey(), e.getMessage());
             }
         }

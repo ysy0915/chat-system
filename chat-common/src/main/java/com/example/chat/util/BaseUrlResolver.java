@@ -1,6 +1,7 @@
 package com.example.chat.util;
 
 import com.example.chat.entity.ModelConfig;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,7 @@ public class BaseUrlResolver {
                 Object url = meta.get("baseUrl");
                 if (url == null) url = meta.get("base_url");
                 if (url != null) return url.toString();
-            } catch (Exception ignored) {
+            } catch (JsonProcessingException ignored) {
                 log.debug("BaseUrlResolver 解析 metaJson 失败，使用默认地址");
             }
         }

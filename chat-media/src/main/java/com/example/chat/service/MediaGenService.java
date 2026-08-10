@@ -4,6 +4,7 @@ import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.MediaGenRecord;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
+import com.example.chat.exception.MediaGenException;
 import com.example.chat.repository.MediaGenRecordRepository;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.util.BaseUrlResolver;
@@ -11,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -93,7 +95,7 @@ public class MediaGenService {
                 recordRepo.insert(record);
                 recordId = record.id;
                 log.info("[MediaGen] 创建running记录, id={}, userId={}, type={}", recordId, userId, type);
-            } catch (Exception ex) {
+            } catch (DataAccessException ex) {
                 log.warn("[MediaGen] 创建记录失败", ex);
             }
         }
@@ -129,7 +131,7 @@ public class MediaGenService {
             if (recordId != null) {
                 try {
                     recordRepo.updateToDone(recordId, mediaUrl, ossGlb, ossObj, ossPreview);
-                } catch (Exception ex) {
+                } catch (DataAccessException ex) {
                     log.warn("[MediaGen] 更新记录失败", ex);
                 }
             }
@@ -143,9 +145,9 @@ public class MediaGenService {
             if (recordId != null) {
                 try {
                     recordRepo.updateToError(recordId, e.getMessage());
-                } catch (Exception ignored) { }
+                } catch (DataAccessException ignored) { }
             }
-            throw new RuntimeException(e.getMessage(), e);
+            throw new MediaGenException(e.getMessage(), e);
         }
     }
 
@@ -165,7 +167,7 @@ public class MediaGenService {
         Map<String, Object> result = objectMapper.readValue(resp.body(), Map.class);
         Map<String, Object> output = (Map<String, Object>) result.get("output");
         if (output == null)
-            throw new RuntimeException(result.get("message") != null ? result.get("message").toString() : "未知错误");
+            throw new MediaGenException(result.get("message") != null ? result.get("message").toString() : "未知错误");
 
         List<Map<String, Object>> choices = (List<Map<String, Object>>) output.get("choices");
         if (choices == null || choices.isEmpty()) throw new LLMCallException("API未返回结果");
@@ -195,7 +197,7 @@ public class MediaGenService {
         Map<String, Object> result = objectMapper.readValue(resp.body(), Map.class);
         Map<String, Object> output = (Map<String, Object>) result.get("output");
         if (output == null)
-            throw new RuntimeException(result.get("message") != null ? result.get("message").toString() : "未知错误");
+            throw new MediaGenException(result.get("message") != null ? result.get("message").toString() : "未知错误");
 
         String taskId = (String) output.get("task_id");
         if (taskId == null || taskId.isBlank()) throw new LLMCallException("未返回 task_id");
@@ -217,7 +219,7 @@ public class MediaGenService {
                 if (videoUrl != null && !videoUrl.isBlank()) return videoUrl;
                 throw new LLMCallException("任务成功但未返回 video_url");
             } else if ("FAILED".equals(status) || "CANCELED".equals(status)) {
-                throw new RuntimeException(po.get("message") != null ? po.get("message").toString() : "任务失败");
+                throw new MediaGenException(po.get("message") != null ? po.get("message").toString() : "任务失败");
             }
         }
         throw new LLMCallException("视频生成超时，已轮询 " + VIDEO_MAX_POLL_COUNT + " 次");
@@ -262,7 +264,7 @@ public class MediaGenService {
                 throw new LLMCallException("3D任务成功但未返回模型URL");
             } else if ("failed".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status)
                     || "error".equalsIgnoreCase(status)) {
-                throw new RuntimeException(qrs.get("message") != null ? qrs.get("message").toString() : "3D生成失败");
+                throw new MediaGenException(qrs.get("message") != null ? qrs.get("message").toString() : "3D生成失败");
             }
         }
         throw new LLMCallException("3D生成超时，已轮询 " + MODEL3D_MAX_POLL_COUNT + " 次");

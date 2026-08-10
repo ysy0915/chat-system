@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -65,8 +64,8 @@ public class FeatureFlagService {
     }
 
     public static class FlagConfig {
-        public boolean enabled = false;
-        public int percentage = 0; // 0-100，灰度百分比
+        public boolean enabled;
+        public int percentage; // 0-100，灰度百分比
         public Set<String> whitelist = new HashSet<>(); // 白名单用户ID
         public Set<String> blacklist = new HashSet<>(); // 黑名单用户ID
         public Set<String> environments = new HashSet<>(); // 启用的环境（dev/staging/prod）

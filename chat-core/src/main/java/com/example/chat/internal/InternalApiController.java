@@ -40,6 +40,8 @@ public class InternalApiController {
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
     private final KnowledgeGraphService knowledgeGraphService;
+    private final com.example.chat.observability.TraceRecorder traceRecorder;
+    private final com.example.chat.observability.ErrorAggregator errorAggregator;
 
     public InternalApiController(
             ChatProcessor chatProcessor,
@@ -52,7 +54,9 @@ public class InternalApiController {
             UserRepository userRepository,
             ModelConfigRepository modelConfigRepository,
             ObjectMapper objectMapper,
-            @Autowired(required = false) KnowledgeGraphService knowledgeGraphService) {
+            @Autowired(required = false) KnowledgeGraphService knowledgeGraphService,
+            @Autowired(required = false) com.example.chat.observability.TraceRecorder traceRecorder,
+            @Autowired(required = false) com.example.chat.observability.ErrorAggregator errorAggregator) {
         this.chatProcessor = chatProcessor;
         this.treeHoleService = treeHoleService;
         this.treeHoleQueryService = treeHoleQueryService;
@@ -64,6 +68,8 @@ public class InternalApiController {
         this.modelConfigRepository = modelConfigRepository;
         this.objectMapper = objectMapper;
         this.knowledgeGraphService = knowledgeGraphService;
+        this.traceRecorder = traceRecorder;
+        this.errorAggregator = errorAggregator;
     }
 
     // ==================== 群聊 ====================
@@ -377,12 +383,6 @@ public class InternalApiController {
     }
 
     // ==================== 可观测性 ====================
-
-    @Autowired(required = false)
-    private com.example.chat.observability.TraceRecorder traceRecorder;
-
-    @Autowired(required = false)
-    private com.example.chat.observability.ErrorAggregator errorAggregator;
 
     @Operation(summary = "最近追踪记录", description = "获取最近的执行追踪记录，用于性能分析和调试")
     @GetMapping("/traces")

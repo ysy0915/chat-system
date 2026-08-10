@@ -9,9 +9,9 @@ import org.bsc.langgraph4j.action.NodeAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -53,7 +53,7 @@ public class DebateNodes {
 
     private static String providerName(ModelConfig config) {
         if (config == null || config.provider == null) return "未知";
-        return switch (config.provider.toLowerCase()) {
+        return switch (config.provider.toLowerCase(Locale.ROOT)) {
             case "doubao" -> "豆包";
             case "qwen" -> "千问";
             case "deepseek" -> "DeepSeek";
@@ -121,7 +121,7 @@ public class DebateNodes {
                         });
                 } catch (Exception e) {
                     log.error("[DebateGraph] 正方调用失败 round={}: {}", round, e.getMessage());
-                    proBuilder.append("[").append(providerName(proModel)).append(" 调用失败]");
+                    proBuilder.append('[').append(providerName(proModel)).append(" 调用失败]");
                 }
             }, parallelExecutor);
 
@@ -140,7 +140,7 @@ public class DebateNodes {
                         });
                 } catch (Exception e) {
                     log.error("[DebateGraph] 反方调用失败 round={}: {}", round, e.getMessage());
-                    conBuilder.append("[").append(providerName(conModel)).append(" 调用失败]");
+                    conBuilder.append('[').append(providerName(conModel)).append(" 调用失败]");
                 }
             }, parallelExecutor);
 
@@ -159,7 +159,7 @@ public class DebateNodes {
                         });
                 } catch (Exception e) {
                     log.error("[DebateGraph] 中立方调用失败 round={}: {}", round, e.getMessage());
-                    neutralBuilder.append("[").append(providerName(summaryModel)).append(" 调用失败]");
+                    neutralBuilder.append('[').append(providerName(summaryModel)).append(" 调用失败]");
                 }
             }, parallelExecutor);
 
@@ -229,15 +229,15 @@ public class DebateNodes {
             prompt.append("你是辩论主持人。话题：「").append(topic).append("」\n");
             prompt.append("正方观点：\n");
             for (int i = 0; i < proArgs.size(); i++) {
-                prompt.append("  第").append(i + 1).append("轮：").append(proArgs.get(i)).append("\n");
+                prompt.append("  第").append(i + 1).append("轮：").append(proArgs.get(i)).append('\n');
             }
             prompt.append("反方观点：\n");
             for (int i = 0; i < conArgs.size(); i++) {
-                prompt.append("  第").append(i + 1).append("轮：").append(conArgs.get(i)).append("\n");
+                prompt.append("  第").append(i + 1).append("轮：").append(conArgs.get(i)).append('\n');
             }
             prompt.append("中立方观点：\n");
             for (int i = 0; i < neutralArgs.size(); i++) {
-                prompt.append("  第").append(i + 1).append("轮：").append(neutralArgs.get(i)).append("\n");
+                prompt.append("  第").append(i + 1).append("轮：").append(neutralArgs.get(i)).append('\n');
             }
             prompt.append("\n请按照以下格式汇总三方观点，每部分换行，每部分 50 字以内：\n");
             prompt.append("【正方强调】（正方核心观点）\n...\n\n");

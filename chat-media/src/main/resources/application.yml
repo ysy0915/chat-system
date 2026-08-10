@@ -1,0 +1,9 @@
+# chat-media 本地配置 (覆盖 Nacos / application-prod.yml)
+springdoc:
+  api-docs:
+    path: /media/v3/api-docs
+  swagger-ui:
+    path: /media/swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true

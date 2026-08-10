@@ -31,19 +31,19 @@ public class OssService {
     @Value("${oss.enabled:false}")
     private boolean enabled;
 
-    @Value("${oss.endpoint}")
+    @Value("${oss.endpoint:}")
     private String endpoint;
 
-    @Value("${oss.access-key-id}")
+    @Value("${oss.access-key-id:}")
     private String accessKeyId;
 
-    @Value("${oss.access-key-secret}")
+    @Value("${oss.access-key-secret:}")
     private String accessKeySecret;
 
-    @Value("${oss.bucket-name}")
+    @Value("${oss.bucket-name:}")
     private String bucketName;
 
-    @Value("${oss.public-domain}")
+    @Value("${oss.public-domain:}")
     private String publicDomain;
 
     private OSS ossClient;
@@ -96,7 +96,7 @@ public class OssService {
             String contentType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
 
             // 根据类型确定扩展名
-            String ext = getExtension(mediaType, sourceUrl, contentType);
+            String ext = getExtension(sourceUrl, contentType);
             // 按日期分目录: media/3d/2026-08-07/uuid.glb
             String dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
             String objectKey = String.format("media/%s/%s/%s.%s", mediaType, dateStr, UUID.randomUUID().toString().replace("-", ""), ext);
@@ -144,7 +144,8 @@ public class OssService {
         }
     }
 
-    private String getExtension(String mediaType, String url, String contentType) {
+    @SuppressWarnings("PMD.NPathComplexity")
+    private String getExtension(String url, String contentType) {
         // 3D 模型
         if (url.contains(".glb")) return "glb";
         if (url.contains(".obj")) return "obj";

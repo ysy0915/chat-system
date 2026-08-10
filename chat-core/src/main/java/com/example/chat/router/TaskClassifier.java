@@ -1,5 +1,6 @@
 package com.example.chat.router;
 
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,8 +47,8 @@ public class TaskClassifier {
      */
     public TaskType classify(String userInput, String scene) {
         String input = userInput == null ? "" : userInput.trim();
-        String lowerInput = input.toLowerCase();
-        String s = scene == null ? "" : scene.trim().toLowerCase();
+        String lowerInput = input.toLowerCase(Locale.ROOT);
+        String s = scene == null ? "" : scene.trim().toLowerCase(Locale.ROOT);
 
         // 1. 图片理解优先级最高
         if (containsImage(lowerInput)) {

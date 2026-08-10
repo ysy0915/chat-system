@@ -1,15 +1,20 @@
 package com.example.chat.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * 多模态消息的内容部分 — text 或 image_url
  */
+@Schema(description = "多模态内容部分")
 public class ContentPart {
 
-    private String type;    // "text" | "image_url"
+    @Schema(description = "类型: text / image_url")
+    private String type;
+    @Schema(description = "文本内容 (type=text时)")
     private String text;
+    @Schema(description = "图片URL (type=image_url时)")
     private ImageUrl imageUrl;
 
     public ContentPart() {}
@@ -58,7 +63,9 @@ public class ContentPart {
 
     // ========= 内部类 =========
 
+    @Schema(description = "图片URL封装")
     public static class ImageUrl {
+        @Schema(description = "图片URL", example = "https://example.com/img.png")
         private String url;
 
         public ImageUrl() {}

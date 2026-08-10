@@ -1,5 +1,6 @@
 package com.example.chat.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,11 +12,15 @@ import java.util.Objects;
  *
  * 支持纯文本和多模态（图片）两种 content 格式。
  */
+@Schema(description = "LLM 对话消息")
 public class LLMMessage {
 
+    @Schema(description = "角色: system / user / assistant")
     private String role;
-    private Object content;  // String 或 List<ContentPart>
-    private String name;     // 可选：函数调用时用
+    @Schema(description = "消息内容 (String 或 List<ContentPart>)")
+    private Object content;
+    @Schema(description = "函数调用名称 (可选)")
+    private String name;
 
     public LLMMessage() {}
 

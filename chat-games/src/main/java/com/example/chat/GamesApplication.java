@@ -20,6 +20,7 @@ import org.springframework.context.annotation.ComponentScan;
     "com.example.chat.service",
     "com.example.chat.controller"
 })
+@SuppressWarnings("PMD.UseUtilityClass")
 public class GamesApplication {
     public static void main(String[] args) {
         SpringApplication app = new SpringApplication(GamesApplication.class);

@@ -18,8 +18,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Tag(name = "监控面板", description = "在线人数、LLM 调用统计、调用链路追踪（需密码认证）")

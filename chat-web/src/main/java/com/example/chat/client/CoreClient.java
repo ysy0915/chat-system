@@ -12,7 +12,6 @@ import com.example.chat.exception.ChatServiceException;
 
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**

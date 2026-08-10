@@ -2,7 +2,9 @@ package com.example.chat.common;
 
 import java.util.Map;
 
-public class ApiResponse {
+public final class ApiResponse {
+
+    private ApiResponse() {}
 
     public static <T> Map<String, Object> ok(T data) {
         return Map.of("ok", true, "data", data);

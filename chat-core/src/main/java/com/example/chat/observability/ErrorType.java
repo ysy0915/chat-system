@@ -1,5 +1,7 @@
 package com.example.chat.observability;
 
+import java.util.Locale;
+
 /**
  * 错误类型枚举
  */
@@ -26,7 +28,7 @@ public enum ErrorType {
         if (e == null || e.getMessage() == null) {
             return UNKNOWN;
         }
-        String msg = e.getMessage().toLowerCase();
+        String msg = e.getMessage().toLowerCase(Locale.ROOT);
         if (msg.contains("timeout") || msg.contains("timed out") || msg.contains("超时")) {
             return TIMEOUT;
         }

@@ -11,8 +11,16 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
+// @EnableMethodSecurity 会在 Spring Security 6.x 中改变 AuthorizationFilter 行为，
+// 导致 SockJS WebSocket 的 xhr_send POST 请求被拒绝（403）。等 SockJS 升级后再启用。
+// @EnableMethodSecurity
 public class SecurityConfig {
     private final JwtUtil jwtUtil;
 
@@ -25,11 +33,18 @@ public class SecurityConfig {
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil);
 
         http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .headers(headers -> headers
                 .frameOptions(frame -> frame.deny())
                 .contentTypeOptions(content -> {})
                 .xssProtection(xss -> {})
+                .addHeaderWriter((request, response) -> {
+                    response.setHeader("Content-Security-Policy",
+                        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                        + "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
+                        + "connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'");
+                })
             )
             .authorizeHttpRequests(auth -> auth
                 // 白名单：无需登录即可访问
@@ -41,7 +56,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/monitor/**").permitAll()      // 监控面板
                 .requestMatchers("/ws/**").permitAll()                  // WebSocket
                 .requestMatchers("/internal/**").permitAll()            // 内部API（chat-web调用）
-                .requestMatchers("/actuator/health").permitAll()        // 健康检查
+                .requestMatchers("/actuator/**").permitAll()            // 健康检查+metrics+prometheus
+                .requestMatchers("/error").permitAll()                    // 错误页面（async dispatch）
                 // 管理接口（自有 X-Admin-Password 密码鉴权）
                 .requestMatchers("/api/v1/admin/**").permitAll()
                 // 其余接口需登录
@@ -54,6 +70,26 @@ public class SecurityConfig {
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "http://112.124.106.108:*",           // 生产环境主服务器
+                "http://*.yangsy.online",
+                "https://*.yangsy.online"
+        ));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
     @Bean

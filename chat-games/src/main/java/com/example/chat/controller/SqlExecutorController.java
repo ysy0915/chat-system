@@ -16,6 +16,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -90,19 +91,31 @@ public class SqlExecutorController {
         }
 
         String sql = body.get("sql");
+        ResponseEntity<?> validationError = validateSql(sql, clientIp);
+        if (validationError != null) return validationError;
+
+        boolean isReadOnly = READ_ONLY_KEYWORDS.stream().anyMatch(sql.trim().toUpperCase(Locale.ROOT)::startsWith);
+        auditLog.info("[SQL_AUDIT] EXECUTE ip={} readOnly={} sql={}", clientIp, isReadOnly, sql.substring(0, Math.min(200, sql.length())));
+
+        Map<String, Object> result = executeSql(sql, isReadOnly, clientIp);
+        return ResponseEntity.ok(result);
+    }
+
+    private ResponseEntity<?> validateSql(String sql, String clientIp) {
         if (sql == null || sql.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "SQL不能为空"));
         if (sql.length() > 5000) return ResponseEntity.badRequest().body(Map.of("error", "SQL长度不能超过5000字符"));
 
-        String upperSql = sql.trim().toUpperCase();
+        String upperSql = sql.trim().toUpperCase(Locale.ROOT);
         for (String keyword : DANGEROUS_KEYWORDS) {
             if (upperSql.contains(keyword)) {
                 auditLog.warn("[SQL_AUDIT] DANGEROUS_SQL_BLOCKED ip={} sql={}", clientIp, sql.substring(0, Math.min(200, sql.length())));
                 return ResponseEntity.badRequest().body(Map.of("error", "禁止执行危险SQL: " + keyword));
             }
         }
+        return null;
+    }
 
-        boolean isReadOnly = READ_ONLY_KEYWORDS.stream().anyMatch(upperSql::startsWith);
-        auditLog.info("[SQL_AUDIT] EXECUTE ip={} readOnly={} sql={}", clientIp, isReadOnly, sql.substring(0, Math.min(200, sql.length())));
+    private Map<String, Object> executeSql(String sql, boolean isReadOnly, String clientIp) {
 
         List<Map<String, Object>> rows = new ArrayList<>();
         List<String> columns = new ArrayList<>();
@@ -142,6 +155,6 @@ public class SqlExecutorController {
         result.put("rows", rows);
         result.put("affectedRows", affectedRows);
         result.put("error", error);
-        return ResponseEntity.ok(result);
+        return result;
     }
 }

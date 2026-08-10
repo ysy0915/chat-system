@@ -19,7 +19,7 @@ public class ViewConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(ipRateLimitInterceptor)
-                .addPathPatterns("/api/**", "/ws/**")
+                .addPathPatterns("/api/**")
                 .excludePathPatterns(
                         "/chat/assets/**",
                         "/chat/index.html",

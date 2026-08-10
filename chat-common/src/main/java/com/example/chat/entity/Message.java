@@ -1,17 +1,32 @@
 package com.example.chat.entity;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(description = "聊天消息")
 public class Message {
+    @Schema(description = "消息ID")
     public Long id;
+    @Schema(description = "请求追踪ID")
     public String reqId;
+    @Schema(description = "用户ID")
     public Long userId;
+    @Schema(description = "用户提问")
     public String question;
+    @Schema(description = "消息摘要")
     public String summary;
+    @Schema(description = "回答 JSON")
     public String answerJson;
+    @Schema(description = "状态")
     public String status;
+    @Schema(description = "LLM 提供商")
     public String provider;
+    @Schema(description = "使用的模型")
     public String model;
+    @Schema(description = "Token 消耗数")
     public Integer tokens;
+    @Schema(description = "是否私密: 0=公开 / 1=私密")
     public Integer isPrivate = 0;
+    @Schema(description = "创建时间")
     public java.time.Instant createdAt = java.time.Instant.now();
 
     public Long getId() { return id; }

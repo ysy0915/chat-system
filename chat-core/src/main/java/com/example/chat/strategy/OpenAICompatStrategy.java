@@ -162,7 +162,7 @@ public class OpenAICompatStrategy implements LLMStrategy {
                                     }
                                 }
                             } catch (Exception streamErr) {
-                                // 流式解析行失败，跳过
+                                log.debug("[OpenAICompat] 流式行解析失败: {}", streamErr.getMessage());
                             }
                         }
                     });

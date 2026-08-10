@@ -76,12 +76,12 @@ public class RoutingDecision {
         sb.append("\"taskType\":\"").append(taskType != null ? taskType.name() : "").append("\",");
         sb.append("\"selectedModel\":\"").append(escape(selectedModel)).append("\",");
         sb.append("\"selectedProvider\":\"").append(escape(selectedProvider)).append("\",");
-        sb.append("\"selectedModelId\":").append(selectedModelId != null ? selectedModelId : "null").append(",");
+        sb.append("\"selectedModelId\":").append(selectedModelId != null ? selectedModelId : "null").append(',');
         sb.append("\"reason\":\"").append(escape(reason)).append("\",");
         sb.append("\"alternatives\":[");
         for (int i = 0; i < alternatives.size(); i++) {
-            if (i > 0) sb.append(",");
-            sb.append("\"").append(escape(alternatives.get(i))).append("\"");
+            if (i > 0) sb.append(',');
+            sb.append('\"').append(escape(alternatives.get(i))).append('\"');
         }
         sb.append("]}");
         return sb.toString();

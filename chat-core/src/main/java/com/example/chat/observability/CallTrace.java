@@ -76,13 +76,13 @@ public class CallTrace {
         sb.append("\"scene\":\"").append(escape(scene)).append("\",");
         sb.append("\"provider\":\"").append(escape(provider)).append("\",");
         sb.append("\"model\":\"").append(escape(model)).append("\",");
-        sb.append("\"startTime\":").append(startTime).append(",");
-        sb.append("\"endTime\":").append(endTime).append(",");
-        sb.append("\"latency\":").append(latency).append(",");
+        sb.append("\"startTime\":").append(startTime).append(',');
+        sb.append("\"endTime\":").append(endTime).append(',');
+        sb.append("\"latency\":").append(latency).append(',');
         sb.append("\"status\":\"").append(escape(status)).append("\",");
         sb.append("\"errorMessage\":\"").append(escape(errorMessage)).append("\",");
-        sb.append("\"toolCalls\":\"").append(escape(toolCalls)).append("\"");
-        sb.append("}");
+        sb.append("\"toolCalls\":\"").append(escape(toolCalls)).append('"');
+        sb.append('}');
         return sb.toString();
     }
 

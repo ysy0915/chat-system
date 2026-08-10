@@ -80,12 +80,12 @@ public class LLMCallRecorder {
 
             // 构建简单 JSON
             StringBuilder json = new StringBuilder("{");
-            json.append("\"total\":").append(stats.get("total")).append(",");
-            json.append("\"success\":").append(stats.get("success")).append(",");
-            json.append("\"fail\":").append(stats.get("fail")).append(",");
-            json.append("\"totalLatency\":").append(stats.get("totalLatency")).append(",");
+            json.append("\"total\":").append(stats.get("total")).append(',');
+            json.append("\"success\":").append(stats.get("success")).append(',');
+            json.append("\"fail\":").append(stats.get("fail")).append(',');
+            json.append("\"totalLatency\":").append(stats.get("totalLatency")).append(',');
             json.append("\"totalAnswerLen\":").append(stats.get("totalAnswerLen"));
-            json.append("}");
+            json.append('}');
 
             redisTemplate.opsForHash().put(key, field, json.toString());
             // 30 天过期

@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -125,7 +126,7 @@ public class ModelRouter {
     private boolean matchesTaskType(ModelConfig config, TaskType taskType) {
         if (config == null) return false;
         String modelType = config.modelType;
-        String modelName = config.model != null ? config.model.toLowerCase() : "";
+        String modelName = config.model != null ? config.model.toLowerCase(Locale.ROOT) : "";
 
         if (taskType == TaskType.VISION) {
             return "image_parse".equals(modelType)
@@ -133,10 +134,7 @@ public class ModelRouter {
                     || modelName.contains("vision");
         }
         // 非视觉任务排除图像/视频生成模型
-        if ("image".equals(modelType) || "video".equals(modelType)) {
-            return false;
-        }
-        return true;
+        return !"image".equals(modelType) && !"video".equals(modelType);
     }
 
     /**
@@ -166,8 +164,8 @@ public class ModelRouter {
      * 评分规则按需求文档定义
      */
     private int score(ModelConfig config, TaskType taskType) {
-        String model = config.model != null ? config.model.toLowerCase() : "";
-        String provider = config.provider != null ? config.provider.toLowerCase() : "";
+        String model = config.model != null ? config.model.toLowerCase(Locale.ROOT) : "";
+        String provider = config.provider != null ? config.provider.toLowerCase(Locale.ROOT) : "";
 
         switch (taskType) {
             case VISION:

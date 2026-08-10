@@ -94,7 +94,7 @@ public class MessageController {
         msgPayload.put("question", question);
         msgPayload.put("status", "queued");
         msgPayload.put("isPrivate", isPrivate ? 1 : 0);
-        Object insertResult = coreClient.insertMessage(msgPayload);
+        coreClient.insertMessage(msgPayload);
 
         if (!isPrivate) {
             Map<String, Object> broadcastPayload = new HashMap<>();

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -27,12 +28,12 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
 
     private final StringRedisTemplate redis;
 
-    // 全站限流：单 IP 每分钟 60 次
-    private static final int GLOBAL_PER_MINUTE = 60;
-    // 敏感接口限流：单 IP 每分钟 5 次（登录/注册）
-    private static final int SENSITIVE_PER_MINUTE = 5;
-    // 自动拉黑阈值：60 秒内超过 100 次
-    private static final int BLACKLIST_THRESHOLD = 100;
+    // 全站限流：单 IP 每分钟 600 次（多页面+多标签同时访问）
+    private static final int GLOBAL_PER_MINUTE = 600;
+    // 敏感接口限流：单 IP 每分钟 10 次（登录/注册）
+    private static final int SENSITIVE_PER_MINUTE = 10;
+    // 自动拉黑阈值：60 秒内超过 1000 次
+    private static final int BLACKLIST_THRESHOLD = 1000;
     // 拉黑时长：10 分钟
     private static final Duration BLACKLIST_TTL = Duration.ofMinutes(10);
 
@@ -186,7 +187,7 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
      */
     private boolean isBlockedUA(String ua) {
         if (ua == null || ua.isBlank()) return true;
-        String lower = ua.toLowerCase();
+        String lower = ua.toLowerCase(Locale.ROOT);
         // 白名单优先
         for (String allowed : ALLOWED_UA_KEYWORDS) {
             if (lower.contains(allowed)) return false;

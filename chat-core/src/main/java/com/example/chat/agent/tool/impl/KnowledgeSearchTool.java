@@ -92,7 +92,7 @@ public class KnowledgeSearchTool implements Tool {
                 VectorStoreService.SearchResult r = results.get(i);
                 sb.append("--- 结果 ").append(i + 1).append(" (相似度: ")
                   .append(String.format("%.3f", r.score)).append(", 来源: ").append(r.source).append(") ---\n");
-                sb.append(r.text).append("\n");
+                sb.append(r.text).append('\n');
             }
             log.info("[KnowledgeSearchTool] kb={} query=\"{}\" 命中 {}", kbId, query, results.size());
             return sb.toString().trim();

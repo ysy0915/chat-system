@@ -37,6 +37,40 @@ app:
     core: true
   llm:
     api-key: ${LLM_API_KEY:}
+    # ========== LLM Client 运行时配置（支持 Nacos 动态刷新） ==========
+    client:
+      retry:
+        max-attempts: 3
+        backoff-ms: 500
+      timeout:
+        connect-seconds: 10
+        read-seconds: 60
+      scenes:
+        chat:
+          max-tokens: 4096
+          temperature: 0.7
+          top-p: 1.0
+          enable-tools: false
+        debate:
+          max-tokens: 2048
+          temperature: 0.9
+          top-p: 1.0
+          enable-tools: false
+        summary:
+          max-tokens: 1024
+          temperature: 0.3
+          top-p: 1.0
+          enable-tools: false
+        treehole:
+          max-tokens: 2048
+          temperature: 0.8
+          top-p: 1.0
+          enable-tools: false
+        auto:
+          max-tokens: 4096
+          temperature: 0.7
+          top-p: 1.0
+          enable-tools: false
   rag:
     enabled: ${RAG_ENABLED:false}
     milvus:

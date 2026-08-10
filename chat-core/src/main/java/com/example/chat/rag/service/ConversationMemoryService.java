@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -175,7 +174,7 @@ public class ConversationMemoryService {
         if (!shortTerm.isEmpty()) {
             sb.append("【最近对话】\n");
             for (ConversationEntry e : shortTerm) {
-                sb.append("用户: ").append(e.question).append("\n");
+                sb.append("用户: ").append(e.question).append('\n');
                 sb.append("AI: ").append(e.answer).append("\n\n");
             }
         }

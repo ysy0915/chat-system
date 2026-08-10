@@ -13,11 +13,10 @@ public class AuditService {
     public void log(String eventType, String userId, String username, 
                     HttpServletRequest request, String detail, String result) {
         String ip = getClientIp(request);
-        String ua = request.getHeader("User-Agent");
         
         // 输出到专用审计日志文件
-        auditLog.info("[AUDIT] type={} user={}({}) ip={} result={} detail={}", 
-                      eventType, username, userId, ip, result, detail);
+        auditLog.info("[AUDIT] type={} user={}({}) ip={} ua={} result={} detail={}", 
+                      eventType, username, userId, ip, request.getHeader("User-Agent"), result, detail);
     }
     
     private String getClientIp(HttpServletRequest request) {

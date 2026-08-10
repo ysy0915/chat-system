@@ -4,6 +4,7 @@ import com.example.chat.router.TaskType;
 import com.example.chat.strategy.LLMStrategy;
 import com.example.chat.strategy.OpenAICompatStrategy;
 import com.example.chat.strategy.DoubaoStrategy;
+import java.util.Locale;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -33,7 +34,7 @@ public class LLMStrategyFactory {
         if (provider == null) {
             return openAICompatStrategy;
         }
-        switch (provider.toLowerCase()) {
+        switch (provider.toLowerCase(Locale.ROOT)) {
             case "doubao_responses":
                 return doubaoStrategy;
             case "doubao":

@@ -35,7 +35,7 @@ public class ContentSafetyService {
     private String regionId;
 
     private Client client;
-    private boolean clientReady = false;
+    private boolean clientReady;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @PostConstruct

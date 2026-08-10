@@ -49,7 +49,7 @@ public class KnowledgeGraphService {
     private final ExecutorService executor =
             ThreadPoolFactory.create(1, 1, 200, "kg-extractor");
 
-    private volatile boolean importing = false;
+    private volatile boolean importing;
 
     public KnowledgeGraphService(TripleExtractionService tripleExtractionService,
                                   GraphRepositoryService graphRepositoryService,
@@ -105,7 +105,7 @@ public class KnowledgeGraphService {
                     return;
                 }
             } catch (org.springframework.data.redis.RedisSystemException e) {
-                // Redis 不可用时继续，Neo4j MERGE 幂等
+                log.debug("[KnowledgeGraph] Redis 不可用，跳过去重检查: {}", e.getMessage());
             }
         }
 

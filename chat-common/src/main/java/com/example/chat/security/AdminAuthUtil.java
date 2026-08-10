@@ -6,10 +6,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class AdminAuthUtil {
 
-    @Value("${monitor.password:19641025}")
+    @Value("${monitor.password:}")
     private String monitorPassword;
 
-    @Value("${sql-executor.password:LiYuHong@0929}")
+    @Value("${sql-executor.password:}")
     private String sqlExecutorPassword;
 
     public boolean checkMonitorPassword(String password) {

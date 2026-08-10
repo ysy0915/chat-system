@@ -3,7 +3,6 @@ package com.example.chat.service;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
-import com.example.chat.exception.LLMCallException;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;

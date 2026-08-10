@@ -186,3 +186,15 @@ RejectedExecutionHandler handler = (r, executor) -> {
 .requestMatchers("/api/v1/debate/**").permitAll()
 .requestMatchers("/api/v1/monitor/**").permitAll()
 ```
+
+### 6.5 缺失 import 导致编译失败 (2026-08, JDK 26)
+
+**现象**：升级 JDK 26 后 `mvn clean install` 编译失败，`Locale`、`ModelConfig`、`HashMap`、`HashSet` 等符号无法解析
+
+**影响文件**：
+- `ErrorType.java`、`FileContentExtractor.java`、`DocumentParser.java` — 使用 `Locale.ROOT` 但未 import
+- `TreeHoleService.java` — 使用 `ModelConfig` 但未 import
+- `LLMStrategyFactory.java`、`TaskClassifier.java` — 同 `Locale` 问题
+- `MediaGenController.java` — `HashMap`/`ArrayList`/`HashSet`/`Arrays`/`Set` 未 import
+
+**修复**：为所有文件添加显式 `import` 声明。JDK 26 更加严格，不再允许隐式类型引用。

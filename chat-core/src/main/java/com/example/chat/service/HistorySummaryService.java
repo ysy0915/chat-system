@@ -124,7 +124,7 @@ public class HistorySummaryService {
             String text = msg.getTextContent();
             if (text != null) {
                 if (text.length() > 2000) text = text.substring(0, 2000) + "...";
-                conversation.append(role).append(": ").append(text).append("\n");
+                conversation.append(role).append(": ").append(text).append('\n');
             }
         }
 

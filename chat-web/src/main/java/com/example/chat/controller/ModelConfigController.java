@@ -3,11 +3,12 @@ package com.example.chat.controller;
 // @RestController
 // @RequestMapping("/api/v1")
 public class ModelConfigController {
-    private final com.example.chat.repository.ModelConfigRepository repo;
-
-    public ModelConfigController(com.example.chat.repository.ModelConfigRepository repo) {
-        this.repo = repo;
-    }
+    // 整个 Controller 暂未启用，保留备用
+    // private final com.example.chat.repository.ModelConfigRepository repo;
+    //
+    // public ModelConfigController(com.example.chat.repository.ModelConfigRepository repo) {
+    //     this.repo = repo;
+    // }
 
     // // Public: list enabled models for users
     // @GetMapping("/models")

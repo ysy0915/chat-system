@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.util.Locale;
 
 /**
  * 文件内容提取器 — 从 Excel/PPT 文件中提取文本内容。
@@ -17,7 +18,7 @@ public class FileContentExtractor {
 
     public String extract(byte[] bytes, String fileName) {
         if (bytes == null || bytes.length == 0) return "";
-        String lower = fileName != null ? fileName.toLowerCase() : "";
+        String lower = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
         try {
             if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
                 return extractExcel(bytes);
@@ -39,13 +40,13 @@ public class FileContentExtractor {
                 for (var row : sheet) {
                     for (var cell : row) {
                         switch (cell.getCellType()) {
-                            case STRING -> sb.append(cell.getStringCellValue()).append("\t");
-                            case NUMERIC -> sb.append(cell.getNumericCellValue()).append("\t");
-                            case BOOLEAN -> sb.append(cell.getBooleanCellValue()).append("\t");
-                            default -> sb.append("\t");
+                            case STRING -> sb.append(cell.getStringCellValue()).append('\t');
+                            case NUMERIC -> sb.append(cell.getNumericCellValue()).append('\t');
+                            case BOOLEAN -> sb.append(cell.getBooleanCellValue()).append('\t');
+                            default -> sb.append('\t');
                         }
                     }
-                    sb.append("\n");
+                    sb.append('\n');
                 }
             }
         }

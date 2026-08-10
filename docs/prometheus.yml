@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "chat-core"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-core:9090"]
+
+  - job_name: "chat-web"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-web:8081"]
+
+  - job_name: "chat-games"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-games:8083"]
+
+  - job_name: "chat-media"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-media:8084"]

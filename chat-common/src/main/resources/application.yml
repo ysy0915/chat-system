@@ -82,15 +82,53 @@ oss:
   bucket-name: aichat-0915
   public-domain: https://aichat-0915.oss-cn-shanghai.aliyuncs.com
 
-# 限制 actuator 端点
+# Actuator + Prometheus 监控端点
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics,prometheus
   endpoint:
     health:
       show-details: never
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    enabled: false                              # 暂时关闭 tracing（SockJS 兼容性问题）
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:0.1}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://127.0.0.1:9411/api/v2/spans}
+
+# Resilience4j 弹性容错配置
+resilience4j:
+  circuitbreaker:
+    instances:
+      llm-call:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  retry:
+    instances:
+      llm-retry:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.lang.Exception
+  timelimiter:
+    instances:
+      llm-timeout:
+        timeout-duration: 30s
+        cancel-running-future: true
 
 # RAG 知识库配置（默认关闭，需要时设置 app.rag.enabled=true 开启）
 app:

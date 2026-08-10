@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -333,6 +334,7 @@ public class ChatProcessor {
         AtomicBoolean completed = new AtomicBoolean(false);
         AtomicInteger finishedCount = new AtomicInteger(0);
         int totalModels = configs.size();
+        @SuppressWarnings("PMD.UnusedLocalVariable")
         boolean isPrivate = false;
 
         for (ModelConfig config : configs) {
@@ -448,9 +450,11 @@ public class ChatProcessor {
     public void processWithFile(String reqId, Long userId, String question, String fileName, byte[] fileContent, String mimeType) {
         try {
             log.info("[INFO] processWithFile: reqId={}, fileName={}, mimeType={}", reqId, fileName, mimeType);
-            final String lowerName = fileName != null ? fileName.toLowerCase() : "";
+            final String lowerName = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
             final boolean isImage = mimeType != null && mimeType.startsWith("image/");
+            @SuppressWarnings("unused")
             final boolean isExcel = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
+            @SuppressWarnings("unused")
             final boolean isPpt = lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt");
 
             final String fileTextContent;

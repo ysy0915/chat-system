@@ -1,7 +1,6 @@
 package com.example.chat.service;
 
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
@@ -15,14 +14,11 @@ public class CastleSiegeBattlefieldService {
 
     private final ConcurrentHashMap<String, BattlefieldPlayerState> playersBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> sessionByPlayerKey = new ConcurrentHashMap<>();
-    private final SimpMessagingTemplate messagingTemplate;
     private final CastleSiegeLordService lordService;
     private final BroadcastService broadcastService;
 
-    public CastleSiegeBattlefieldService(SimpMessagingTemplate messagingTemplate,
-                                         CastleSiegeLordService lordService,
+    public CastleSiegeBattlefieldService(CastleSiegeLordService lordService,
                                          BroadcastService broadcastService) {
-        this.messagingTemplate = messagingTemplate;
         this.lordService = lordService;
         this.broadcastService = broadcastService;
     }

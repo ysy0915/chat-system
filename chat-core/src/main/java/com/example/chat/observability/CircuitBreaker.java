@@ -34,7 +34,7 @@ public class CircuitBreaker {
     private static class BreakerState {
         volatile String state = "CLOSED"; // CLOSED / OPEN / HALF_OPEN
         final AtomicInteger consecutiveFailures = new AtomicInteger(0);
-        volatile long openedAt = 0; // 熔断打开的时间戳
+        volatile long openedAt; // 熔断打开的时间戳
 
         /**
          * 判断是否允许请求通过
@@ -52,10 +52,7 @@ public class CircuitBreaker {
                 }
                 return false; // 熔断中，拒绝请求
             }
-            if ("HALF_OPEN".equals(state)) {
-                // 半开状态只放行1个探测请求（简化实现：都放行，靠 onSuccess/onFailure纠正）
-                return true;
-            }
+            // HALF_OPEN 或其他状态：都放行（简化实现，靠 onSuccess/onFailure 纠正）
             return true;
         }
 

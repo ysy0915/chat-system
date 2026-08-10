@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -42,7 +43,7 @@ public class BaseUrlResolver {
         }
         // 按 provider 匹配默认地址
         if (config.provider != null) {
-            switch (config.provider.toLowerCase()) {
+            switch (config.provider.toLowerCase(Locale.ROOT)) {
                 case "deepseek":
                     return "https://api.deepseek.com/v1";
                 case "doubao":

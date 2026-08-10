@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -66,7 +67,7 @@ public class TraceRecorder {
             List<Map<String, Object>> result = new ArrayList<>(raw.size());
             for (String json : raw) {
                 Map<String, Object> m = parseSimpleJson(json);
-                if (m != null) result.add(m);
+                if (!m.isEmpty()) result.add(m);
             }
             return result;
         } catch (Exception e) {
@@ -83,14 +84,14 @@ public class TraceRecorder {
             if (keyword == null || keyword.isBlank()) {
                 return getRecentTraces(50);
             }
-            String kw = keyword.toLowerCase();
+            String kw = keyword.toLowerCase(Locale.ROOT);
             List<String> raw = stringRedisTemplate.opsForList().range(todayKey(), 0, -1);
             if (raw == null) return Collections.emptyList();
             List<Map<String, Object>> result = new ArrayList<>();
             for (String json : raw) {
-                if (json.toLowerCase().contains(kw)) {
+                if (json.toLowerCase(Locale.ROOT).contains(kw)) {
                     Map<String, Object> m = parseSimpleJson(json);
-                    if (m != null) result.add(m);
+                    if (!m.isEmpty()) result.add(m);
                 }
             }
             return result;
@@ -104,7 +105,7 @@ public class TraceRecorder {
      * 简易 JSON 解析（不引入 Jackson）
      */
     private static Map<String, Object> parseSimpleJson(String json) {
-        if (json == null || json.isBlank()) return null;
+        if (json == null || json.isBlank()) return Collections.emptyMap();
         Map<String, Object> map = new LinkedHashMap<>();
         String body = json.trim();
         if (body.startsWith("{")) body = body.substring(1);

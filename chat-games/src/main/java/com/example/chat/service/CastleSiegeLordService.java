@@ -82,6 +82,12 @@ public class CastleSiegeLordService {
                 ? Collections.emptyList()
                 : redisTemplate.opsForHash().multiGet(NAME_KEY, hashKeys);
 
+        return buildRanking(validTuples, names, safeLimit);
+    }
+
+    private List<Map<String, Object>> buildRanking(List<ZSetOperations.TypedTuple<String>> validTuples,
+                                                    List<Object> names, int safeLimit) {
+        List<Map<String, Object>> ranking = new ArrayList<>();
         int rank = 1;
         for (int i = 0; i < validTuples.size() && ranking.size() < safeLimit; i++) {
             ZSetOperations.TypedTuple<String> tuple = validTuples.get(i);

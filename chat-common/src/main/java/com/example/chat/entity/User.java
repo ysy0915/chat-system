@@ -1,13 +1,24 @@
 package com.example.chat.entity;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(description = "用户")
 public class User {
+    @Schema(description = "用户ID")
     public Long id;
+    @Schema(description = "邮箱")
     public String email;
+    @Schema(description = "密码哈希", accessMode = Schema.AccessMode.WRITE_ONLY)
     public String passwordHash;
+    @Schema(description = "姓名")
     public String name;
+    @Schema(description = "昵称")
     public String nickname;
+    @Schema(description = "游客名")
     public String guestName;
+    @Schema(description = "角色: user / admin", example = "user")
     public String role = "user";
+    @Schema(description = "创建时间")
     public java.time.Instant createdAt = java.time.Instant.now();
 
     public Long getId() { return id; }

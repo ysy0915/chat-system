@@ -157,8 +157,45 @@ services:
       - chat-network
     profiles: ["dev", "all"]
 
-volumes:
+  volumes:
   mysql-data:
+
+  # ===== 可观测性（开发环境） =====
+
+  prometheus:
+    image: prom/prometheus:v2.47.2
+    container_name: chat-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "monitoring"]
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: chat-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "monitoring"]
+
+  zipkin:
+    image: openzipkin/zipkin:3.1
+    container_name: chat-zipkin
+    ports:
+      - "9411:9411"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "monitoring"]
 
 networks:
   chat-network:

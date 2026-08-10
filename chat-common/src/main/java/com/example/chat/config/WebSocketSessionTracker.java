@@ -32,14 +32,15 @@ public class WebSocketSessionTracker {
     );
 
     private static final String SESSION_PAGE_PREFIX = "ws:page:";
+    private static final String SESSION_PAGE_MAP_KEY = "ws:session:page";
     private static final String KNOWN_PAGES_KEY = "ws:known:pages";
     private static final String SESSION_HEARTBEAT_PREFIX = "ws:heartbeat:";
     private static final long IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 分钟无操作清理
+    private static final int SESSION_PAGE_MAP_TTL_MINUTES = 30;
 
     /** 随机在线人数上限（0-300） */
     private static final int RANDOM_TOTAL_MAX = 301;
 
-    private final ConcurrentHashMap<String, String> localSessions = new ConcurrentHashMap<>();
     private final StringRedisTemplate redisTemplate;
     private final OnlineCountRedisService onlineCountRedisService;
     private final BroadcastService broadcastService;
@@ -187,21 +188,21 @@ public class WebSocketSessionTracker {
                 String hb = redisTemplate.opsForValue().get(SESSION_HEARTBEAT_PREFIX + sid);
                 long lastActive = (hb != null) ? Long.parseLong(hb) : 0;
                 if (now - lastActive > IDLE_TIMEOUT_MS) {
-                    // 超时未活动，清理
+                    // 超时未活动，清理（unregisterUser 会自动清除 Redis Hash + 心跳 + 页面集合）
                     unregisterUser(sid, page);
-                    redisTemplate.delete(SESSION_HEARTBEAT_PREFIX + sid);
                 }
             }
         }
     }
 
     /**
-     * 注册用户会话到指定页面。
+     * 注册用户会话到指定页面（多实例安全）。
      * <p>流程：
      * <ol>
      *   <li>规范化页面标识，并将其加入已知页面集合</li>
-     *   <li>清理该 sessionId 在其他页面的残留（防止 unregister 消息丢失导致只增不减）</li>
-     *   <li>记录本地会话与 Redis 集合，并刷新心跳</li>
+     *   <li>从 Redis 查询该 sessionId 之前所在的页面，清理旧页面残留</li>
+     *   <li>将 sessionId→page 映射写入 Redis Hash（支持多实例共享）</li>
+     *   <li>写入 Redis 页面集合并刷新心跳</li>
      *   <li>若是新访问，则累加页面访问计数</li>
      * </ol>
      * 注：不在每次连接时广播，等定时任务统一刷新（避免频繁广播）。
@@ -218,12 +219,15 @@ public class WebSocketSessionTracker {
         redisTemplate.opsForSet().add(KNOWN_PAGES_KEY, pageKey);
         virtualPageCounts.computeIfAbsent(pageKey, k -> new AtomicInteger(0));
 
-        // 清理该 sessionId 在所有 page 的残留（防止 unregister 消息丢失导致只增不减）
-        String previousPage = localSessions.get(sessionId);
+        // 从 Redis 查询该 session 之前所在的页面（多实例共享，替代本地 localSessions）
+        String previousPage = redisTemplate.opsForHash()
+                .get(SESSION_PAGE_MAP_KEY, sessionId) instanceof String s ? s : null;
+
+        // 清理该 sessionId 在其他页面的残留
         if (previousPage != null && !previousPage.equals(pageKey)) {
             removeSessionFromPage(sessionId, previousPage);
         }
-        // 兜底：扫描所有已知 page，移除可能残留的 sessionId
+        // 兜底：扫描所有已知 page，移除该 sessionId 的残留（覆盖边缘情况）
         Set<String> knownPages = redisTemplate.opsForSet().members(KNOWN_PAGES_KEY);
         if (knownPages != null) {
             for (String p : knownPages) {
@@ -233,7 +237,10 @@ public class WebSocketSessionTracker {
             }
         }
 
-        localSessions.put(sessionId, pageKey);
+        // 将 session→page 映射写入 Redis Hash（多实例共享，带 TTL）
+        redisTemplate.opsForHash().put(SESSION_PAGE_MAP_KEY, sessionId, pageKey);
+        redisTemplate.expire(SESSION_PAGE_MAP_KEY, SESSION_PAGE_MAP_TTL_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
+
         redisTemplate.opsForSet().add(SESSION_PAGE_PREFIX + pageKey, sessionId);
         touchSession(sessionId); // 更新心跳时间
 
@@ -246,16 +253,21 @@ public class WebSocketSessionTracker {
     }
 
     /**
-     * 注销用户会话。
-     * <p>从本地会话表与 Redis 心跳/页面集合中移除该 sessionId。
+     * 注销用户会话（多实例安全）。
+     * <p>从 Redis Hash / 心跳 / 页面集合中移除该 sessionId。
+     * page 为 null 时从 Redis Hash 查询所属页面。
      * 不在断开时广播，等定时任务统一刷新。
      * @param sessionId 会话 ID（空值直接返回）
-     * @param page 页面标识（为空时从本地会话表推断）
+     * @param page 页面标识（为空时从 Redis Hash 推断）
      */
     public void unregisterUser(String sessionId, String page) {
         if (sessionId == null || sessionId.isBlank()) return;
-        String pageKey = (page != null && !page.isBlank()) ? normalizePage(page) : localSessions.get(sessionId);
-        localSessions.remove(sessionId);
+        String pageKey = (page != null && !page.isBlank())
+                ? normalizePage(page)
+                : redisTemplate.opsForHash().get(SESSION_PAGE_MAP_KEY, sessionId) instanceof String s ? s : null;
+
+        // 从 Redis Hash 中移除 session→page 映射
+        redisTemplate.opsForHash().delete(SESSION_PAGE_MAP_KEY, sessionId);
         redisTemplate.delete(SESSION_HEARTBEAT_PREFIX + sessionId);
         if (pageKey != null) {
             removeSessionFromPage(sessionId, pageKey);

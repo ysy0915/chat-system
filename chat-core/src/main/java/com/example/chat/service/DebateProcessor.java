@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Service
 public class DebateProcessor {
@@ -74,7 +73,7 @@ public class DebateProcessor {
         String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
 
         Map<Long, ModelConfig> modelMap = resolveDebateModels(modelConfigRepository.findAllEnabledByType("chat"));
-        if (modelMap == null) {
+        if (modelMap.isEmpty()) {
             broadcastService.broadcast("/topic/debate." + userId,
                     WsMessage.error("需要豆包、千问、DeepSeek 三个 chat 模型均已启用").withReqId(reqId).toMap());
             return;
@@ -105,7 +104,7 @@ public class DebateProcessor {
         ModelConfig doubao = chatModels.stream().filter(m -> "doubao".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
         ModelConfig qwen = chatModels.stream().filter(m -> "qwen".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
         ModelConfig deepseek = chatModels.stream().filter(m -> "deepseek".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
-        if (doubao == null || qwen == null || deepseek == null) return null;
+        if (doubao == null || qwen == null || deepseek == null) return Collections.emptyMap();
 
         Map<Long, ModelConfig> map = new LinkedHashMap<>();
         map.put(1L, doubao);
@@ -132,7 +131,7 @@ public class DebateProcessor {
             try {
                 com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question);
                 String summary = result.getSummary() != null ? result.getSummary() : "";
-                persistDebateResults(reqId, userId, question, summary, summaryModel, debateRecordId, null);
+                persistDebateResults(reqId, question, summary, summaryModel, debateRecordId, null);
             } catch (Exception e) {
                 log.error("[LangGraph4j] 辩论图执行失败: {}", e.getMessage(), e);
                 broadcastService.broadcast("/topic/debate." + userId,
@@ -218,7 +217,7 @@ public class DebateProcessor {
             broadcastService.broadcast("/topic/debate." + userId,
                     WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", finalAnswer).toMap());
 
-            persistDebateResults(reqId, userId, question, finalAnswer, summaryModel, debateRecordId, userName);
+            persistDebateResults(reqId, question, finalAnswer, summaryModel, debateRecordId, userName);
         } catch (Exception e) {
             broadcastService.broadcast("/topic/debate." + userId,
                     WsMessage.error("最终整合失败: " + e.getMessage()).withReqId(reqId).toMap());
@@ -260,7 +259,7 @@ public class DebateProcessor {
     }
 
     /** 持久化辩论结果：更新 Message、DebateRecord，触发知识图谱抽取 */
-    private void persistDebateResults(String reqId, Long userId, String question, String finalAnswer,
+    private void persistDebateResults(String reqId, String question, String finalAnswer,
                                        ModelConfig summaryModel, Long debateRecordId, String userName) {
         try {
             String answerJson = objectMapper.writeValueAsString(Map.of("answer", finalAnswer));

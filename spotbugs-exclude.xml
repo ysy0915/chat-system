@@ -1,0 +1,18 @@
+<FindBugsFilter>
+    <!--
+        SpotBugs 误报排除规则
+        每个条目需写清楚排除原因
+    -->
+
+    <!-- ===== 已知误报 ===== -->
+
+    <!-- 示例：Lombok 生成的 equals/hashCode 误报
+    <Match>
+        <Class name="~.*\.entity\..*"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Or>
+            <Method name="getSomeList"/>
+        </Or>
+    </Match>
+    -->
+</FindBugsFilter>

@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Comparator;
 import java.util.List;
 
@@ -53,7 +54,7 @@ public class ModelRouter {
      */
     public String selectBestProvider(String question) {
         if (question == null || question.isBlank()) return "doubao";
-        String q = question.toLowerCase();
+        String q = question.toLowerCase(Locale.ROOT);
 
         for (String kw : new String[]{"代码", "编程", "算法", "bug", "error", "java", "python", "javascript",
                 "sql", "逻辑", "推理", "数学", "计算", "技术", "架构", "接口", "函数", "正则", "复杂"}) {
@@ -101,7 +102,7 @@ public class ModelRouter {
 
     /** 尝试切换个人模型。命中返回切换成功的 JSON，未命中返回 null。 */
     public String trySwitch(Long userId, String question, List<ModelConfig> allConfigs) {
-        String q = question.trim().toLowerCase();
+        String q = question.trim().toLowerCase(Locale.ROOT);
         if (!q.contains("切换") && !q.contains("换") && !q.contains("改用")) {
             return null;
         }
@@ -118,7 +119,7 @@ public class ModelRouter {
 
     private ModelConfig findTargetModel(String query, List<ModelConfig> configs) {
         for (ModelConfig c : configs) {
-            String p = c.provider != null ? c.provider.toLowerCase() : "";
+            String p = c.provider != null ? c.provider.toLowerCase(Locale.ROOT) : "";
             switch (p) {
                 case "doubao": if (query.contains("豆包") || query.contains("doubao")) return c; break;
                 case "qwen":   if (query.contains("千问") || query.contains("qwen") || query.contains("通义")) return c; break;
@@ -131,7 +132,7 @@ public class ModelRouter {
 
     public static String toDisplayName(String provider) {
         if (provider == null) return "未知";
-        return switch (provider.toLowerCase()) {
+        return switch (provider.toLowerCase(Locale.ROOT)) {
             case "doubao" -> "豆包";
             case "qwen" -> "千问";
             case "deepseek" -> "DeepSeek";

@@ -27,6 +27,7 @@ import java.util.Map;
 /**
  * 多模态生成核心服务 —— 从 MediaGenController 中提取全部业务逻辑。
  */
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity", "PMD.NcssCount", "PMD.CognitiveComplexity"})
 @Service
 public class MediaGenService {
 
@@ -73,7 +74,7 @@ public class MediaGenService {
 
         ModelConfig config = modelConfigRepo.findById(modelId);
         if (config == null) {
-            throw new IllegalArgumentException((type.equals("3d") ? "3D" : "图像") + "模型未配置");
+            throw new IllegalArgumentException(("3d".equals(type) ? "3D" : "图像") + "模型未配置");
         }
         if (config.apiKeyEncrypted == null || config.apiKeyEncrypted.isBlank()) {
             throw new IllegalArgumentException("模型 API Key 未配置");
@@ -116,7 +117,9 @@ public class MediaGenService {
             String ossUrl = ossService.transferToOss(mediaUrl, type);
             mediaUrl = ossUrl;
 
-            String ossGlb = null, ossObj = null, ossPreview = null;
+            String ossGlb = null;
+            String ossObj = null;
+            String ossPreview = null;
             if (extra3D != null) {
                 ossGlb = ossService.transferToOss(extra3D.get("glb"), "3d");
                 ossObj = ossService.transferToOss(extra3D.get("obj"), "3d");

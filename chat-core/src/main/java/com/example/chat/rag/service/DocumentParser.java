@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 /**
  * 文档解析器：从上传的文件中提取纯文本
@@ -30,7 +31,7 @@ public class DocumentParser {
      */
     public String parse(String fileName, byte[] bytes) {
         if (fileName == null) return "";
-        String lower = fileName.toLowerCase();
+        String lower = fileName.toLowerCase(Locale.ROOT);
 
         try {
             if (lower.endsWith(".pdf")) {
@@ -61,7 +62,7 @@ public class DocumentParser {
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(bytes))) {
             StringBuilder sb = new StringBuilder();
             for (XWPFParagraph p : doc.getParagraphs()) {
-                sb.append(p.getText()).append("\n");
+                sb.append(p.getText()).append('\n');
             }
             return sb.toString();
         }

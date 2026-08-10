@@ -2,7 +2,6 @@ package com.example.chat.service;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.TreeHoleMessage;
-import com.example.chat.exception.ChatServiceException;
 import com.example.chat.rag.service.ConversationMemoryService;
 import com.example.chat.repository.TreeHoleRepository;
 import org.slf4j.Logger;

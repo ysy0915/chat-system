@@ -15,7 +15,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Tag(name = "多模态生成", description = "文生图、文生视频、图生视频、文生 3D、图生 3D")
 @RestController
@@ -102,11 +108,11 @@ public class MediaGenController {
                                         @RequestParam(defaultValue = "20") int limit) {
         Long userId = getCurrentUserId();
         if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "未登录"));
-        if (limit > 100) limit = 100;
+        int effectiveLimit = Math.min(limit, 100);
 
         List<MediaGenRecord> records = (type != null && !type.isBlank())
-                ? mediaGenRecordRepository.findByUserIdAndType(userId, type, limit)
-                : mediaGenRecordRepository.findByUserIdOrderByCreatedAtDesc(userId, limit);
+                ? mediaGenRecordRepository.findByUserIdAndType(userId, type, effectiveLimit)
+                : mediaGenRecordRepository.findByUserIdOrderByCreatedAtDesc(userId, effectiveLimit);
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (MediaGenRecord r : records) {
@@ -152,7 +158,7 @@ public class MediaGenController {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User) {
             String subject = ((org.springframework.security.core.userdetails.User) auth.getPrincipal()).getUsername();
-            if (subject != null && subject.contains("@")) return subject.substring(0, subject.indexOf("@"));
+            if (subject != null && subject.contains("@")) return subject.substring(0, subject.indexOf('@'));
             return subject;
         }
         return null;

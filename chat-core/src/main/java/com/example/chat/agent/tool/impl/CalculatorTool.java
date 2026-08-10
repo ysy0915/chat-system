@@ -76,7 +76,7 @@ public class CalculatorTool implements Tool {
      */
     private static class ExprEvaluator {
         private final String s;
-        private int pos = 0;
+        private int pos;
 
         ExprEvaluator(String s) {
             this.s = s.replaceAll("\\s+", "");

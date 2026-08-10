@@ -19,6 +19,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,7 @@ public class ToolDispatcher {
      * @param defaultApiKey  默认 apiKey
      * @return 最终回答（如果触发了工具，则是工具增强后的回答）
      */
+    @SuppressWarnings({"unchecked", "PMD.AvoidBranchingStatementAsLastInLoop"})
     public String dispatch(String userInput, ModelConfig config,
                            List<LLMMessage> messages,
                            double temperature, String scene,
@@ -138,9 +140,8 @@ public class ToolDispatcher {
                     callCount, toolCalls.size(), scene);
 
             // 调用 LLM 生成最终回答（仍带 tools，允许 LLM 继续调用工具直到 maxToolCalls）
-            String finalAnswer = llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
+            return llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
                     defaultBaseUrl, defaultApiKey);
-            return finalAnswer;
         }
 
         log.warn("[ToolDispatcher] 达到最大工具调用次数 {}，停止 (scene={})", maxToolCalls, scene);
@@ -197,9 +198,9 @@ public class ToolDispatcher {
     private List<Map<String, Object>> extractToolCalls(Map<String, Object> llmResp) {
         try {
             List<Map<String, Object>> choices = (List<Map<String, Object>>) llmResp.get("choices");
-            if (choices == null || choices.isEmpty()) return null;
+            if (choices == null || choices.isEmpty()) return Collections.emptyList();
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            if (message == null) return null;
+            if (message == null) return Collections.emptyList();
             Object toolCalls = message.get("tool_calls");
             if (toolCalls instanceof List) {
                 return (List<Map<String, Object>>) toolCalls;
@@ -207,7 +208,7 @@ public class ToolDispatcher {
         } catch (Exception e) {
             log.warn("[ToolDispatcher] 解析 tool_calls 失败: {}", e.getMessage());
         }
-        return null;
+        return Collections.emptyList();
     }
 
     /** 从 LLM 响应中提取 choices[0].message.content */

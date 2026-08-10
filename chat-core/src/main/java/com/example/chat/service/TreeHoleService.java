@@ -6,9 +6,7 @@ import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.TreeHoleMessage;
-import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.repository.TreeHoleRepository;
-import com.example.chat.service.BroadcastService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -17,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -107,7 +106,7 @@ public class TreeHoleService {
                     "发送太频繁，请 " + retry + " 秒后再试");
         }
 
-        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        String lowerName = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
         boolean isImage = lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
                 || lowerName.endsWith(".png") || lowerName.endsWith(".gif")
                 || lowerName.endsWith(".webp");
@@ -151,7 +150,7 @@ public class TreeHoleService {
     private String handleImageFile(String question, String mood, String fileName, byte[] fileBytes) throws Exception {
         ModelConfig config = modelConfigResolver.resolveImageParseOrThrow();
 
-        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        String lowerName = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
         String mimeType = lowerName.endsWith(".png") ? "image/png"
                 : lowerName.endsWith(".gif") ? "image/gif"
                 : lowerName.endsWith(".webp") ? "image/webp"
@@ -177,7 +176,7 @@ public class TreeHoleService {
         ModelConfig zhipu = modelConfigResolver.resolveZhipuOrThrow();
 
         String fileText = "";
-        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        String lowerName = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
         if (fileBytes != null && fileBytes.length > 0) {
             if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") ||
                 lowerName.endsWith(".csv") || lowerName.endsWith(".json") ||
@@ -189,7 +188,7 @@ public class TreeHoleService {
             }
         }
 
-        String lowerQ = question != null ? question.toLowerCase() : "";
+        String lowerQ = question != null ? question.toLowerCase(Locale.ROOT) : "";
         boolean genDoc = lowerQ.contains("生成文档") || lowerQ.contains("生成word") || lowerQ.contains("生成报告");
         boolean genPpt = lowerQ.contains("生成ppt") || lowerQ.contains("生成幻灯片") || lowerQ.contains("做ppt");
 

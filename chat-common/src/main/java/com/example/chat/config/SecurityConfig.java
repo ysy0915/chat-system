@@ -36,8 +36,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**").permitAll()         // 登录/注册
                 .requestMatchers("/api/v1/messages/**").permitAll()     // 发消息/历史消息
                 .requestMatchers("/api/v1/graph/**").permitAll()        // 知识图谱
-                .requestMatchers("/api/v1/games/**").permitAll()      // 游戏（城堡攻防）
-                .requestMatchers("/ws/**").permitAll()                // WebSocket
+                .requestMatchers("/api/v1/games/**").permitAll()        // 游戏（城堡攻防）
+                .requestMatchers("/api/v1/debate/**").permitAll()       // 观点辩论
+                .requestMatchers("/api/v1/monitor/**").permitAll()      // 监控面板
+                .requestMatchers("/ws/**").permitAll()                  // WebSocket
+                .requestMatchers("/internal/**").permitAll()            // 内部API（chat-web调用）
+                .requestMatchers("/actuator/health").permitAll()        // 健康检查
                 // 管理接口（自有 X-Admin-Password 密码鉴权）
                 .requestMatchers("/api/v1/admin/**").permitAll()
                 // 其余接口需登录

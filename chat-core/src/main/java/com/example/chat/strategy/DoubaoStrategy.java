@@ -2,6 +2,8 @@ package com.example.chat.strategy;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.exception.LLMCallException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -25,6 +27,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Component
 @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.module.core", havingValue = "true", matchIfMissing = false)
 public class DoubaoStrategy implements LLMStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(DoubaoStrategy.class);
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -82,7 +86,7 @@ public class DoubaoStrategy implements LLMStrategy {
                     }
                     try {
                         @SuppressWarnings("unchecked")
-                        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+                        Map<String, Object> result = objectMapper.readValue(cleanJson(response.body()), Map.class);
                         // 豆包 /responses 接口返回格式: { output: [ { content: [ { type: "output_text", text: "..." } ] } ] }
                         @SuppressWarnings("unchecked")
                         List<Map<String, Object>> outputList = (List<Map<String, Object>>) result.get("output");
@@ -111,6 +115,10 @@ public class DoubaoStrategy implements LLMStrategy {
                         }
                         return "No response";
                     } catch (Exception e) {
+                        String resp = response.body();
+                        log.error("[Doubao] JSON 解析失败 body前500字={} rootCause={}: {}",
+                                resp != null ? resp.substring(0, Math.min(500, resp.length())) : "null",
+                                e.getClass().getSimpleName(), e.getMessage());
                         throw new LLMCallException("Doubao 响应解析失败", e);
                     }
                 });
@@ -133,5 +141,20 @@ public class DoubaoStrategy implements LLMStrategy {
     @Override
     public boolean supportsStream() {
         return false;  // 豆包不支持真正的流式
+    }
+
+    /**
+     * 清理 LLM 返回 JSON 中的非法控制字符，防止 Jackson 解析失败
+     */
+    private String cleanJson(String raw) {
+        if (raw == null || raw.isEmpty()) return raw;
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (char c : raw.toCharArray()) {
+            // 保留：\t \n \r 和 >= 0x20 的可打印字符
+            if (c == '\t' || c == '\n' || c == '\r' || c >= 0x20) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

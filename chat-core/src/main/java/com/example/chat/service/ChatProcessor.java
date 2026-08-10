@@ -164,14 +164,20 @@ public class ChatProcessor {
      */
     private void handlePersonalChat(String reqId, Long userId, String question,
                                      List<ModelConfig> allConfigs) {
-        if (checkCacheHit(reqId, userId, question)) return;
+        if (checkCacheHit(reqId, userId, question)) {
+            log.info("[handlePersonalChat] req_id={} userId={} cache hit, skip LLM", reqId, userId);
+            return;
+        }
 
         // LangChain4j 模式（AiServices 自动编排记忆+工具）
         if (langChain4jPersonalEnabled && langChain4jPersonalChatService != null) {
+            log.info("[handlePersonalChat] req_id={} userId={} try LangChain4j mode", reqId, userId);
             if (tryLangChain4jChat(reqId, userId, question)) return;
         }
 
         List<ModelConfig> configs = modelRouter.selectForChat(true, userId, question, allConfigs);
+        log.info("[handlePersonalChat] req_id={} userId={} totalModels={} selected={}",
+                reqId, userId, allConfigs.size(), configs.size());
         if (configs.isEmpty()) {
             log.error("用户 {} 没有可用的 chat 模型", userId);
             broadcastService.broadcast("/topic/user." + userId,
@@ -180,6 +186,8 @@ public class ChatProcessor {
         }
 
         List<LLMMessage> historyMessages = chatHistoryBuilder.buildPersonal(userId, question);
+        log.info("[handlePersonalChat] req_id={} userId={} historySize={} model={} => doPersonalStream",
+                reqId, userId, historyMessages.size(), configs.get(0).model);
         doPersonalStream(reqId, userId, question, configs.get(0), historyMessages);
     }
 
@@ -258,6 +266,8 @@ public class ChatProcessor {
                                    ModelConfig config, List<LLMMessage> history) {
         long startTime = System.currentTimeMillis();
         CompletableFuture.runAsync(() -> {
+            log.info("[doPersonalStream] 线程开始 req_id={} userId={} model={}",
+                    reqId, userId, config.model);
             try {
                 broadcastService.broadcast("/topic/user." + userId,
                         WsMessage.of(WsMessage.TYPE_STREAM_START).withReqId(reqId)

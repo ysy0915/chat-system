@@ -2,6 +2,8 @@ package com.example.chat.strategy;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.exception.LLMCallException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -24,6 +26,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Component
 @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.module.core", havingValue = "true", matchIfMissing = false)
 public class OpenAICompatStrategy implements LLMStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenAICompatStrategy.class);
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -61,7 +65,6 @@ public class OpenAICompatStrategy implements LLMStrategy {
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
-                .header("Accept-Encoding", "gzip")
                 .timeout(Duration.ofSeconds(120))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
@@ -73,7 +76,7 @@ public class OpenAICompatStrategy implements LLMStrategy {
                     }
                     try {
                         @SuppressWarnings("unchecked")
-                        Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+                        Map<String, Object> result = objectMapper.readValue(cleanJson(response.body()), Map.class);
                         @SuppressWarnings("unchecked")
                         List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
                         if (choices == null || choices.isEmpty()) {
@@ -83,6 +86,10 @@ public class OpenAICompatStrategy implements LLMStrategy {
                         Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
                         return message != null ? message.get("content").toString() : "No response";
                     } catch (Exception e) {
+                        String resp = response.body();
+                        log.error("[OpenAICompat] JSON 解析失败 body前500字={} rootCause={}: {}",
+                                resp != null ? resp.substring(0, Math.min(500, resp.length())) : "null",
+                                e.getClass().getSimpleName(), e.getMessage());
                         throw new LLMCallException("LLM 响应解析失败", e);
                     }
                 });
@@ -137,7 +144,7 @@ public class OpenAICompatStrategy implements LLMStrategy {
                             if ("[DONE]".equals(data)) return;
                             try {
                                 @SuppressWarnings("unchecked")
-                                Map<String, Object> chunk = objectMapper.readValue(data, Map.class);
+                                Map<String, Object> chunk = objectMapper.readValue(cleanJson(data), Map.class);
                                 @SuppressWarnings("unchecked")
                                 List<Map<String, Object>> choices = (List<Map<String, Object>>) chunk.get("choices");
                                 if (choices != null && !choices.isEmpty()) {
@@ -161,5 +168,19 @@ public class OpenAICompatStrategy implements LLMStrategy {
                     });
                     return fullAnswer.toString();
                 });
+    }
+
+    /**
+     * 清洗 LLM 返回的 JSON，移除非法控制字符（如 CTRL-CHAR code 31）
+     */
+    private static String cleanJson(String raw) {
+        if (raw == null || raw.isEmpty()) return raw;
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (char c : raw.toCharArray()) {
+            if (c == '\t' || c == '\n' || c == '\r' || c >= 0x20) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

@@ -66,6 +66,7 @@ public class DirectLLMClient {
             body.put("max_tokens", maxTokens);
         }
 
+        String responseBody = null;
         try {
             String jsonBody = objectMapper.writeValueAsString(body);
             HttpRequest request = HttpRequest.newBuilder()
@@ -85,7 +86,8 @@ public class DirectLLMClient {
                         "LLM API 返回 " + response.statusCode() + ": " + truncateBody(response.body()));
             }
 
-            Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+            responseBody = cleanJson(response.body());
+            Map<String, Object> result = objectMapper.readValue(responseBody, Map.class);
             List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
             if (choices == null || choices.isEmpty()) {
                 throw new LLMCallException(model, "LLM API 返回空 choices", null);
@@ -100,6 +102,9 @@ public class DirectLLMClient {
         } catch (LLMCallException e) {
             throw e;
         } catch (Exception e) {
+            log.error("[DirectLLMClient] 调用失败 model={} rootCause={}: {} body前500字={}",
+                    model, e.getClass().getSimpleName(), e.getMessage(),
+                    responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null");
             throw new LLMCallException(model, "LLM 直接调用失败: " + e.getMessage(), e);
         }
     }
@@ -107,5 +112,19 @@ public class DirectLLMClient {
     private static String truncateBody(String body) {
         if (body == null) return "";
         return body.length() > 500 ? body.substring(0, 500) + "..." : body;
+    }
+
+    /**
+     * 清理 LLM 返回 JSON 中的非法控制字符，防止 Jackson 解析失败
+     */
+    private static String cleanJson(String raw) {
+        if (raw == null || raw.isEmpty()) return raw;
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (char c : raw.toCharArray()) {
+            if (c == '\t' || c == '\n' || c == '\r' || c >= 0x20) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

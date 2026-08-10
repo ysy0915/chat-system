@@ -170,8 +170,10 @@ public class LLMInvoker {
         long latency = System.currentTimeMillis() - startTime;
         if (circuitBreaker != null) circuitBreaker.recordFailure(config.provider);
         callRecorder.record(config.provider, config.model, scene, false, latency, 0);
-        log.error("[LLMInvoker] {} 调用失败 provider={} model={} latency={}ms error={}",
-                scene, config.provider, config.model, latency, e.getMessage());
+        Throwable root = e;
+        while (root.getCause() != null) root = root.getCause();
+        log.error("[LLMInvoker] {} 调用失败 provider={} model={} latency={}ms error={} rootCause={}",
+                scene, config.provider, config.model, latency, e.getMessage(), root.toString());
         ErrorType errorType = ErrorType.fromException(e);
         recordTrace(trace.traceId, scene, config, startTime, latency, "FAIL", e.getMessage());
         if (errorAggregator != null) {

@@ -21,12 +21,13 @@
 chat-system-project/
 ├── chat-common/       # 公共库（实体、DTO、安全、工具、拦截器）
 ├── chat-core/         # 核心 AI 服务（LLM调用、RAG、Agent工具、策略路由） 端口 9090
-├── chat-web/          # Web 接入层（Controller、WebSocket、API网关）      端口 8080
-├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                   端口 8083
-├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）               端口 8084
+├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081(生产)
+├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
+├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
 ├── flink-log-analyzer/# 日志分析（Kafka → Flink → ES 实时流式处理）
 ├── frontend/          # 前端 SPA（React + Vite）
-└── docs/              # 文档（架构说明、API设计、SQL迁移、复盘报告）
+├── scripts/           # 运维脚本（部署、重启、监控、迁移）
+└── docs/              # 完整文档（5份核心文档 + SQL迁移 + Nginx配置）
 ```
 
 ## 快速开始
@@ -133,12 +134,30 @@ mvn clean install -DskipTests
 
 ## 文档索引
 
+### 架构与设计
+
 | 文档 | 内容 |
 |------|------|
-| [docs/系统架构说明.md](docs/系统架构说明.md) | 后端模块架构、数据流、部署拓扑 |
+| [docs/系统架构说明.md](docs/系统架构说明.md) | 前后端架构、数据流、调用链 |
 | [docs/api-design.md](docs/api-design.md) | 全部 REST API 设计 |
-| [docs/frontend.md](docs/frontend.md) | 前端路由、状态管理、WebSocket |
-| [docs/review/](docs/review/) | 项目复盘报告 |
+| [docs/数据库设计说明.md](docs/数据库设计说明.md) | MySQL 表结构、Redis Key、索引策略 |
+| [docs/LLM策略与路由说明.md](docs/LLM策略与路由说明.md) | LLM 策略、路由、容错、已知问题 |
+| [docs/安全配置说明.md](docs/安全配置说明.md) | JWT 鉴权、白名单、限流、内容安全 |
+
+### 运维与排错
+
+| 文档 | 内容 |
+|------|------|
+| [docs/部署运维手册.md](docs/部署运维手册.md) | 本机/服务器/Docker 部署全流程 |
+| [docs/故障排查指南.md](docs/故障排查指南.md) | 常见问题现象→根因→修复步骤 |
+
+### 其他
+
+| 文档 | 内容 |
+|------|------|
+| [docs/nginx.conf](docs/nginx.conf) | Nginx 反向代理完整配置 |
+| [docs/db-migrations/](docs/db-migrations/) | 数据库版本化迁移脚本 |
+| [docs/sql/](docs/sql/) | 功能模块 DDL 脚本 |
 
 ---
 

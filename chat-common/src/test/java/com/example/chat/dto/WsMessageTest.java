@@ -104,4 +104,47 @@ class WsMessageTest {
         WsMessage msg = WsMessage.done().withReqId("abc");
         assertTrue(msg.toString().contains("done"));
     }
+
+    // ==================== 思考链消息 ====================
+
+    @Test
+    @DisplayName("静态工厂 thinkingStart")
+    void testThinkingStart() {
+        WsMessage msg = WsMessage.thinkingStart();
+        assertEquals(WsMessage.TYPE_THINKING_START, msg.getType());
+        Map<String, Object> map = msg.toMap();
+        assertEquals("thinking_start", map.get("type"));
+    }
+
+    @Test
+    @DisplayName("静态工厂 thinkingToken")
+    void testThinkingToken() {
+        WsMessage msg = WsMessage.thinkingToken("分析第一步：确认问题域");
+        assertEquals(WsMessage.TYPE_THINKING_TOKEN, msg.getType());
+        Map<String, Object> map = msg.toMap();
+        assertEquals("分析第一步：确认问题域", map.get("token"));
+        assertEquals("thinking_token", map.get("type"));
+    }
+
+    @Test
+    @DisplayName("thinkingToken 空 token → 仍然正常发送")
+    void testThinkingTokenEmpty() {
+        WsMessage msg = WsMessage.thinkingToken("");
+        assertEquals(WsMessage.TYPE_THINKING_TOKEN, msg.getType());
+        assertEquals("", msg.toMap().get("token"));
+    }
+
+    @Test
+    @DisplayName("thinkingToken 与 streamToken 字段一致")
+    void testThinkingTokenStructureMatchesStreamToken() {
+        WsMessage streamMsg = WsMessage.streamToken("hello");
+        WsMessage thinkMsg = WsMessage.thinkingToken("world");
+
+        assertEquals("stream_token", streamMsg.toMap().get("type"));
+        assertEquals("thinking_token", thinkMsg.toMap().get("type"));
+
+        // 两者都有 "token" 字段
+        assertNotNull(streamMsg.toMap().get("token"));
+        assertNotNull(thinkMsg.toMap().get("token"));
+    }
 }

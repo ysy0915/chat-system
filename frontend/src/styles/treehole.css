@@ -239,6 +239,21 @@
     margin-bottom: 0;
 }
 
+/* 思考链展示 — 灰色斜体，分析路径与推理过程 */
+.treehole-bubble-ai .thinking-block {
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    border-left: 2px solid #d1d5db;
+    background: rgba(156, 163, 175, 0.06);
+    border-radius: 0 6px 6px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .treehole-msg-meta {
     font-size: 11px;
     color: rgba(74, 32, 64, 0.35);

@@ -24,21 +24,23 @@ public class WsMessage {
 
     // ====== 消息类型常量 ======
 
-    public static final String TYPE_DONE          = "done";
-    public static final String TYPE_STREAM_START  = "stream_start";
-    public static final String TYPE_STREAM_TOKEN  = "stream_token";
-    public static final String TYPE_STREAM_END    = "stream_end";
-    public static final String TYPE_ERROR         = "error";
-    public static final String TYPE_STOPPED       = "stopped";
-    public static final String TYPE_TYPING        = "typing";
-    public static final String TYPE_MESSAGE       = "message";
-    public static final String TYPE_ANSWER        = "answer";
-    public static final String TYPE_MODEL_CHANGE  = "model_change";
-    public static final String TYPE_ROUND_START   = "round_start";
-    public static final String TYPE_ROUND_END     = "round_end";
-    public static final String TYPE_DEBATE_START  = "debate_start";
-    public static final String TYPE_MODEL_START   = "model_start";
-    public static final String TYPE_MODEL_END     = "model_end";
+    public static final String TYPE_DONE           = "done";
+    public static final String TYPE_STREAM_START   = "stream_start";
+    public static final String TYPE_STREAM_TOKEN   = "stream_token";
+    public static final String TYPE_STREAM_END     = "stream_end";
+    public static final String TYPE_ERROR          = "error";
+    public static final String TYPE_STOPPED        = "stopped";
+    public static final String TYPE_TYPING         = "typing";
+    public static final String TYPE_MESSAGE        = "message";
+    public static final String TYPE_ANSWER         = "answer";
+    public static final String TYPE_MODEL_CHANGE   = "model_change";
+    public static final String TYPE_ROUND_START    = "round_start";
+    public static final String TYPE_ROUND_END      = "round_end";
+    public static final String TYPE_DEBATE_START   = "debate_start";
+    public static final String TYPE_MODEL_START    = "model_start";
+    public static final String TYPE_MODEL_END      = "model_end";
+    public static final String TYPE_THINKING_START = "thinking_start";
+    public static final String TYPE_THINKING_TOKEN = "thinking_token";
 
     // ====== 字段 ======
 
@@ -98,6 +100,16 @@ public class WsMessage {
     public static WsMessage typing(boolean typing) {
         WsMessage msg = new WsMessage(TYPE_TYPING);
         msg.extra.put("typing", typing);
+        return msg;
+    }
+
+    public static WsMessage thinkingStart() {
+        return new WsMessage(TYPE_THINKING_START);
+    }
+
+    public static WsMessage thinkingToken(String token) {
+        WsMessage msg = new WsMessage(TYPE_THINKING_TOKEN);
+        msg.extra.put("token", token);
         return msg;
     }
 

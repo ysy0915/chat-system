@@ -184,6 +184,21 @@
     color: var(--text-primary);
 }
 
+/* 思考链展示 — 灰色斜体，分析路径与推理过程 */
+.thinking-block {
+    color: #6b7280;
+    font-style: italic;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    border-left: 2px solid #d1d5db;
+    background: rgba(107,114,128,0.05);
+    border-radius: 0 6px 6px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .msg.system {
     align-self: center;
     background: rgba(244,63,94,0.1);

@@ -150,7 +150,18 @@ export default function TreeHole() {
                         if (payload.type === 'stream_start') {
                             setTyping(false)
                             streamingReqIdRef.current = payload.req_id
-                            setMessages(prev => [...prev, { role: 'ai', text: '', streaming: true, reqId: payload.req_id, time: new Date().toISOString() }])
+                            setMessages(prev => [...prev, { role: 'ai', text: '', thinking: '', streaming: true, reqId: payload.req_id, time: new Date().toISOString() }])
+                        } else if (payload.type === 'thinking_token') {
+                            setMessages(prev => {
+                                const updated = [...prev]
+                                for (let i = updated.length - 1; i >= 0; i--) {
+                                    if (updated[i].role === 'ai' && updated[i].streaming) {
+                                        updated[i] = { ...updated[i], thinking: (updated[i].thinking || '') + payload.token }
+                                        break
+                                    }
+                                }
+                                return updated
+                            })
                         } else if (payload.type === 'stream_token') {
                             setMessages(prev => {
                                 const updated = [...prev]
@@ -171,6 +182,7 @@ export default function TreeHole() {
                                     const updated = [...prev]
                                     updated[updated.length - 1] = {
                                         role: 'ai', text: answer || last.text, streaming: false,
+                                        thinking: last.thinking,
                                         time: new Date().toISOString(),
                                         latency: payload.latency, tokens: payload.tokens,
                                         reqId: last.reqId
@@ -192,6 +204,7 @@ export default function TreeHole() {
                                     const updated = [...prev]
                                     updated[updated.length - 1] = {
                                         role: 'ai', text: answer || last.text, streaming: false, stopped: true,
+                                        thinking: last.thinking,
                                         time: new Date().toISOString(),
                                         reqId: last.reqId
                                     }
@@ -415,6 +428,14 @@ export default function TreeHole() {
                                 ) : (
                                     <>
                                         <div className="treehole-bubble-ai">
+                                            {msg.thinking && (
+                                                <div className="thinking-block">
+                                                    {msg.thinking}
+                                                    {msg.streaming && msg.thinking && !msg.text && (
+                                                        <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'#6b7280'}}>▋</span>
+                                                    )}
+                                                </div>
+                                            )}
                                             {formatAnswer(msg.text).map((line, i) => (
                                                 <p key={i}>{line}</p>
                                             ))}

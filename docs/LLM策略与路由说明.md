@@ -64,9 +64,44 @@ LLMStrategyFactory (策略工厂)
 
 ---
 
-## 三、模型路由
+## 三、意图识别驱动 LLM 路由
 
-### 3.1 `ModelRouter` (关键词智能路由)
+### 3.1 三层漏斗（IntentFunnelEngine）
+
+意图识别不是简单的 LLM 分类，而是**三层漏斗**架构，越上层越快、越下层越聪明：
+
+| 层 | 引擎 | 速度 | 命中率 | 处理什么 |
+|---|------|------|--------|---------|
+| L1 | RuleBasedMatcher | 0-1ms | 5-15% | 固定的明确命令 (Trie + Regex) |
+| L2 | ContextMatcher | 30-80ms | 70-85% | 常规意图 (Embedding + Milvus) |
+| L3 | ToolIntentMatcher | 200-1000ms | <10% | 复杂语义 + 工具执行 (LLM + MCP) |
+
+### 3.2 意图 → LLM Temperature
+
+识别出意图后，`IntentRoutingHelper` 动态调整主模型参数：
+
+| 意图 | Temperature | 原因 |
+|------|------------|------|
+| CODE_GENERATION | 0.2 | 代码需稳定输出 |
+| REASONING | 0.2 | 逻辑推理需一致性 |
+| SUMMARIZATION | 0.1 | 摘要需精确 |
+| TRANSLATION | 0.1 | 翻译需精确 |
+| KNOWLEDGE_QA | 0.3 | 问答需准确 |
+| TASK_EXECUTION | 0.3 | 任务需可控 |
+| GENERAL_CHAT | 0.7 | 闲聊自然 |
+| EMOTIONAL_SUPPORT | 0.85 | 情感需多样 |
+| CREATIVE_WRITING | 0.95 | 创作需想象力 |
+
+### 3.3 关系：意图识别 vs 模型路由
+
+- **意图识别**（IntentFunnelEngine）：判断用户**想做什么**
+- **模型路由**（ModelRouter）：判断**用哪个模型**去完成
+
+两者独立工作：先识别意图 → 根据意图调 temperature → 再按任务类型路由模型。
+
+## 四、模型路由
+
+### 4.1 `ModelRouter` (关键词智能路由)
 
 根据用户输入的关键词和场景规则，自动选择合适的 LLM 模型。
 
@@ -79,7 +114,7 @@ LLMStrategyFactory (策略工厂)
 | 数学/计算 | 算, 计算, 多少 | 优先 DeepSeek |
 | 通用 | 其他 | 轮询或默认 |
 
-### 3.2 `TaskClassifier`
+### 4.2 `TaskClassifier`
 
 基于关键词和场景分类用户任务类型，帮助路由器做决策。分类维度包括：
 - 任务复杂度 (简单/中等/复杂)
@@ -89,7 +124,7 @@ LLMStrategyFactory (策略工厂)
 
 ---
 
-## 四、容错机制
+## 五、容错机制
 
 ### 4.1 熔断器 (`CircuitBreaker`)
 
@@ -134,7 +169,7 @@ LLMStrategyFactory (策略工厂)
 
 ---
 
-## 五、关键依赖
+## 六、关键依赖
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
@@ -145,7 +180,7 @@ LLMStrategyFactory (策略工厂)
 
 ---
 
-## 六、已知问题与修复记录
+## 七、已知问题与修复记录
 
 ### 6.1 JSON 控制字符导致解析失败
 
@@ -198,3 +233,118 @@ RejectedExecutionHandler handler = (r, executor) -> {
 - `MediaGenController.java` — `HashMap`/`ArrayList`/`HashSet`/`Arrays`/`Set` 未 import
 
 **修复**：为所有文件添加显式 `import` 声明。JDK 26 更加严格，不再允许隐式类型引用。
+
+---
+
+## 八、思考链展示 (Thinking Chain Display)
+
+### 8.1 功能说明
+
+当用户提出复杂问题时，系统自动记录 LLM 的分析路径与推理过程，以灰色字展示在最终答案之前，让用户不仅看到结果，也能看懂得出答案的逻辑。
+
+**适用场景**：个人对话空间（ChatProcessor）+ 情绪树洞（TreeHoleService）
+
+### 8.2 触发机制
+
+思考链由**意图识别结果**自动驱动。以下四种复杂意图会启用思考链模式：
+
+| 意图 | 触发条件 | 说明 |
+|------|---------|------|
+| `REASONING` | 数学/逻辑推理 | 需要分步推导 |
+| `CODE_GENERATION` | 代码生成/调试 | 需要分析需求 |
+| `KNOWLEDGE_QA` | 知识问答 | 需要知识检索与综合 |
+| `TASK_EXECUTION` | 工具调用/任务编排 | 需要规划步骤 |
+
+简单意图（`GENERAL_CHAT`、`EMOTIONAL_SUPPORT`、`CREATIVE_WRITING`、`SUMMARIZATION`、`TRANSLATION`、`UNKNOWN`）不启用思考链，LLM 直接输出。
+
+> **注意**：情绪树洞（TreeHoleService）**始终**启用思考链，不依赖意图判定，确保情感类回复的推理过程对用户可见。
+
+### 8.3 核心组件：ThinkingStreamParser
+
+`ThinkingStreamParser` 是一个**状态机**，逐 token 解析 LLM 流式输出，分离 `<thinking>` 标签内外的内容：
+
+```
+                    feed("hello")
+    ┌─────────┐ ────────────────► ┌─────────┐
+    │ NORMAL  │                   │ NORMAL  │ → onAnswerToken("hello")
+    └────┬─────┘                   └─────────┘
+         │ feed("<thinking>")
+         ▼
+    ┌─────────┐                   ┌─────────────┐
+    │ IN_TAG  │ ─── feed("分析") ──► │ IN_TAG     │ → onThinkingToken("分析")
+    └────┬─────┘                   └─────────────┘
+         │ feed("</thinking>")
+         ▼
+    ┌────────────┐                 ┌────────────┐
+    │ TAG_CLOSED │ ─ feed("答案") ─► │ TAG_CLOSED │ → onAnswerToken("答案")
+    └────────────┘                 └────────────┘
+```
+
+**状态机三态**：
+- `NORMAL`：未检测到 `<thinking>` 标签，直接输出为 answer
+- `IN_TAG`：在 `<thinking>` 标签内，输出为 thinking token
+- `TAG_CLOSED`：已闭合 `</thinking>`，后续输出为 answer
+
+**安全降级机制**：
+- LLM 在 300 字符后仍未输出 `<thinking>` 标签 → 自动标记为非思考模式，避免无限等待
+- `markAsNonThinking()` 可手动强制关闭思考模式
+- 缓冲最后 11 字符防止标签被跨 chunk 切断
+
+### 8.4 WebSocket 消息流
+
+```
+Client                          ChatProcessor                    LLM
+  │                                  │                             │
+  │──── stream_start ───────────────►│                             │
+  │                                  │──── prompt + system ───────►│
+  │                                  │                             │
+  │◄─── thinking_start ─────────────│  (检测到<thinking>)         │
+  │◄─── thinking_token("分析步骤1")─│                             │
+  │◄─── thinking_token("分析步骤2")─│                             │
+  │◄─── thinking_token("结论...")───│                             │
+  │                                  │◄──── </thinking> ──────────│
+  │◄─── stream_token("答案：42")────│                             │
+  │◄─── done ─────────────────────│                             │
+  │                                  │                             │
+```
+
+新增 WebSocket 消息类型：
+
+| 消息类型 | 方法 | payload |
+|---------|------|---------|
+| `thinking_start` | `WsMessage.thinkingStart()` | `{"type":"thinking_start"}` |
+| `thinking_token` | `WsMessage.thinkingToken(token)` | `{"type":"thinking_token","token":"..."}` |
+
+### 8.5 LLM Prompt 注入
+
+复杂意图场景下，system prompt 末尾追加：
+
+```
+如果问题复杂需要推理分析，请先把分析路径写在 <thinking>...</thinking> 标签中，
+然后再给出最终答案。如果问题简单则直接回答。
+```
+
+LLM **自主决定**是否输出 `<thinking>` 标签：
+- 复杂问题 → 生成标签 → `ThinkingStreamParser` 分离 → 前端灰色展示
+- 简单问题 → 不生成标签 → 直接流式输出答案（零额外开销）
+
+### 8.6 前端渲染
+
+```css
+.thinking-block {
+    color: #6b7280;                    /* 灰色 */
+    font-style: italic;                /* 斜体 */
+    font-size: 13px;                   /* 小号字 */
+    border-left: 2px solid #d1d5db;    /* 左边框 */
+    background: rgba(107,114,128,0.05); /* 淡灰背景 */
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+```
+
+`PersonalChat.jsx` 和 `TreeHole.jsx` 处理 `thinking_token` 消息，将 token 累积到当前消息的 `thinking` 字段，渲染在 AI 气泡顶部。
+
+### 8.7 数据存储
+
+- 思考链内容（`<thinking>` 标签内）**不存入数据库**，仅作为实时展示
+- `answerCollector` 分离纯回答文本存入 DB，确保历史记录干净

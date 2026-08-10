@@ -171,7 +171,18 @@ export default function PersonalChat() {
               setTyping(false)
               failCountRef.current = 0
               streamingReqIdRef.current = payload.req_id
-              setMessages(prev => [...prev, { role: 'ai', content: '', streaming: true, reqId: payload.req_id }])
+              setMessages(prev => [...prev, { role: 'ai', content: '', thinking: '', streaming: true, reqId: payload.req_id }])
+            } else if (payload.type === 'thinking_token') {
+              setMessages(prev => {
+                const updated = [...prev]
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].role === 'ai' && updated[i].streaming) {
+                    updated[i] = { ...updated[i], thinking: (updated[i].thinking || '') + payload.token }
+                    break
+                  }
+                }
+                return updated
+              })
             } else if (payload.type === 'stream_token') {
               setMessages(prev => {
                 const updated = [...prev]
@@ -194,6 +205,7 @@ export default function PersonalChat() {
                   const updated = [...prev]
                   updated[updated.length - 1] = {
                     role: 'ai', content: answer || last.content, streaming: false,
+                    thinking: last.thinking,
                     latency: payload.latency, tokens: payload.tokens, model: payload.model,
                     reqId: last.reqId
                   }
@@ -215,6 +227,7 @@ export default function PersonalChat() {
                   const updated = [...prev]
                   updated[updated.length - 1] = {
                     role: 'ai', content: answer || last.content, streaming: false, stopped: true,
+                    thinking: last.thinking,
                     reqId: last.reqId
                   }
                   return updated
@@ -664,6 +677,14 @@ export default function PersonalChat() {
                 <img src="/chat/logo.png" alt="AI" className="avatar-img" />
               </div>
               <div className="msg ai">
+                {m.thinking && (
+                  <div className="thinking-block">
+                    {m.thinking}
+                    {m.streaming && m.thinking && !m.content && (
+                      <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'#6b7280'}}>▋</span>
+                    )}
+                  </div>
+                )}
                 {formatAnswer(m.content).map((sentence, i) => (
                   <span key={i} style={{display:'block'}}>{sentence}</span>
                 ))}

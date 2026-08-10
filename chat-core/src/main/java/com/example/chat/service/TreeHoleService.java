@@ -6,6 +6,7 @@ import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.TreeHoleMessage;
+import com.example.chat.intent.funnel.ThinkingStreamParser;
 import com.example.chat.repository.TreeHoleRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -234,7 +235,8 @@ public class TreeHoleService {
         // 构建历史上下文
         TreeHoleHistoryBuilder.HistoryContext ctx = historyBuilder.build(userId, question);
         List<LLMMessage> messages = new ArrayList<>();
-        messages.add(LLMMessage.system(ctx.systemPrompt()));
+        messages.add(LLMMessage.system(ctx.systemPrompt()
+                + "\n\n如果问题复杂需要分析，先把分析推理写在 <thinking>...</thinking> 标签中，再给出最终回应。简单问题直接回应。"));
         messages.addAll(ctx.messages());
 
         String fullQuestion = (mood != null && !mood.isBlank())
@@ -269,17 +271,37 @@ public class TreeHoleService {
     private void executeStreamCall(ModelConfig config, String effectiveApiKey,
                                     List<LLMMessage> messages, String reqId,
                                     Long fUserId, String question, TreeHoleMessage m, long startTime) {
+        StringBuilder answerCollector = new StringBuilder();
+        String topic = "/topic/treehole." + fUserId;
+        ThinkingStreamParser parser = new ThinkingStreamParser(
+                t -> broadcastService.broadcast(topic,
+                        WsMessage.thinkingToken(t).withReqId(reqId).toMap()),
+                t -> {
+                    answerCollector.append(t);
+                    broadcastService.broadcast(topic,
+                            WsMessage.streamToken(t).withReqId(reqId).toMap());
+                },
+                () -> broadcastService.broadcast(topic,
+                        WsMessage.thinkingStart().withReqId(reqId).toMap())
+        );
+
         try {
-            String answer;
+            String rawAnswer;
             if (ragService != null && treeholeKbId > 0) {
-                answer = ragService.invokeWithRAGStream(config, treeholeKbId, question, messages,
+                rawAnswer = ragService.invokeWithRAGStream(config, treeholeKbId, question, messages,
                         0.85, "treehole", llmConfig.getBaseUrl(), effectiveApiKey,
-                        token -> sendToken(fUserId, reqId, token));
+                        token -> parser.feed(token));
             } else {
-                answer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
+                rawAnswer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
                         llmConfig.getBaseUrl(), effectiveApiKey,
-                        token -> sendToken(fUserId, reqId, token));
+                        token -> parser.feed(token));
             }
+            parser.flush();
+
+            // 使用只含回答部分的文本（不含思考过程）
+            String answer = (!answerCollector.isEmpty())
+                    ? answerCollector.toString()
+                    : (rawAnswer != null ? rawAnswer : "");
 
             long latency = System.currentTimeMillis() - startTime;
             int estimatedTokens = Math.max(1, (answer != null ? answer.length() : 0) / 2);
@@ -292,10 +314,10 @@ public class TreeHoleService {
             treeHoleRepository.updateByReqId(m);
 
             if (isStopped(reqId)) {
-                broadcastService.broadcast("/topic/treehole." + fUserId,
+                broadcastService.broadcast(topic,
                         WsMessage.stopped(answer).withReqId(reqId).toMap());
             } else {
-                broadcastService.broadcast("/topic/treehole." + fUserId,
+                broadcastService.broadcast(topic,
                         WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId)
                                 .with("answer", answer).with("latency", latency)
                                 .with("tokens", estimatedTokens).toMap());
@@ -306,7 +328,7 @@ public class TreeHoleService {
             m.answerJson = "{\"answer\":\"树洞暂时出了点小问题，请稍后再试...\"}";
             m.status = "error";
             treeHoleRepository.updateByReqId(m);
-            broadcastService.broadcast("/topic/treehole." + fUserId,
+            broadcastService.broadcast(topic,
                     WsMessage.error("生成失败: " + e.getMessage()).withReqId(reqId).toMap());
         } finally {
             streamStopManager.remove(reqId);
@@ -375,7 +397,8 @@ public class TreeHoleService {
         // 构建历史上下文
         TreeHoleHistoryBuilder.HistoryContext ctx = historyBuilder.build(userId, question);
         List<LLMMessage> messages = new ArrayList<>();
-        messages.add(LLMMessage.system(ctx.systemPrompt()));
+        messages.add(LLMMessage.system(ctx.systemPrompt()
+                + "\n\n如果问题复杂需要分析，先把分析推理写在 <thinking>...</thinking> 标签中，再给出最终回应。简单问题直接回应。"));
         messages.addAll(ctx.messages());
 
         String fullQuestion = (mood != null && !mood.isBlank())

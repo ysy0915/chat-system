@@ -1,0 +1,102 @@
+[
+  {
+    "id": 1,
+    "matchType": "KEYWORD",
+    "pattern": "怎么写代码",
+    "intentCategory": "CODE_GENERATION",
+    "priority": 8,
+    "enabled": true,
+    "description": "coding keyword",
+    "source": "MANUAL"
+  },
+  {
+    "id": 2,
+    "matchType": "KEYWORD",
+    "pattern": "帮我写",
+    "intentCategory": "CODE_GENERATION",
+    "priority": 7,
+    "enabled": true,
+    "description": "write code request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 3,
+    "matchType": "KEYWORD",
+    "pattern": "翻译",
+    "intentCategory": "TRANSLATION",
+    "priority": 10,
+    "enabled": true,
+    "description": "translation request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 4,
+    "matchType": "KEYWORD",
+    "pattern": "总结一下",
+    "intentCategory": "SUMMARIZATION",
+    "priority": 10,
+    "enabled": true,
+    "description": "summarization request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 5,
+    "matchType": "KEYWORD",
+    "pattern": "帮我总结",
+    "intentCategory": "SUMMARIZATION",
+    "priority": 9,
+    "enabled": true,
+    "description": "summarize request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 10,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(写|生成|帮我|写个|做个)(代码|程序|脚本|函数|算法|接口|方法).*",
+    "intentCategory": "CODE_GENERATION",
+    "priority": 5,
+    "enabled": true,
+    "description": "code generation regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 11,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(翻译|translate|翻成|译成).*",
+    "intentCategory": "TRANSLATION",
+    "priority": 5,
+    "enabled": true,
+    "description": "translation regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 12,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(总结|概括|归纳|摘要).*",
+    "intentCategory": "SUMMARIZATION",
+    "priority": 5,
+    "enabled": true,
+    "description": "summarization regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 13,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(你好|早上好|下午好|晚上好|再见|拜拜|谢谢|hi|hello|hey).*",
+    "intentCategory": "GENERAL_CHAT",
+    "priority": 3,
+    "enabled": true,
+    "description": "greeting regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 14,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(分析|推理|证明|计算|为什么|原因|逻辑).*",
+    "intentCategory": "REASONING",
+    "priority": 4,
+    "enabled": true,
+    "description": "reasoning regex",
+    "source": "MANUAL"
+  }
+]

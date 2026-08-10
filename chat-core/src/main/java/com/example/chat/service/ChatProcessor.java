@@ -7,6 +7,11 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.Message;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
+import com.example.chat.intent.IntentResult;
+import com.example.chat.intent.IntentRoutingHelper;
+import com.example.chat.intent.IntentCategory;
+import com.example.chat.intent.funnel.IntentFunnelEngine;
+import com.example.chat.intent.funnel.ThinkingStreamParser;
 import com.example.chat.repository.MessageRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -70,6 +75,14 @@ public class ChatProcessor {
     /** 工具调度器（可选注入，仅在 app.agent.enabled=true 时存在） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.agent.tool.ToolDispatcher toolDispatcher;
+
+    /** 意图识别 — 三层漏斗引擎 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private IntentFunnelEngine funnelEngine;
+
+    /** 意图路由辅助 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private IntentRoutingHelper intentRouting;
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
 
@@ -170,6 +183,9 @@ public class ChatProcessor {
             return;
         }
 
+        // 意图识别（异步非阻塞，超时自动降级为 UNKNOWN）
+        IntentResult intent = recognizeIntent(question, "personal");
+
         // LangChain4j 模式（AiServices 自动编排记忆+工具）
         if (langChain4jPersonalEnabled && langChain4jPersonalChatService != null) {
             log.info("[handlePersonalChat] req_id={} userId={} try LangChain4j mode", reqId, userId);
@@ -177,8 +193,8 @@ public class ChatProcessor {
         }
 
         List<ModelConfig> configs = modelRouter.selectForChat(true, userId, question, allConfigs);
-        log.info("[handlePersonalChat] req_id={} userId={} totalModels={} selected={}",
-                reqId, userId, allConfigs.size(), configs.size());
+        log.info("[handlePersonalChat] req_id={} userId={} totalModels={} selected={} intent={}",
+                reqId, userId, allConfigs.size(), configs.size(), intentLabel(intent));
         if (configs.isEmpty()) {
             log.error("用户 {} 没有可用的 chat 模型", userId);
             broadcastService.broadcast("/topic/user." + userId,
@@ -189,7 +205,7 @@ public class ChatProcessor {
         List<LLMMessage> historyMessages = chatHistoryBuilder.buildPersonal(userId, question);
         log.info("[handlePersonalChat] req_id={} userId={} historySize={} model={} => doPersonalStream",
                 reqId, userId, historyMessages.size(), configs.get(0).model);
-        doPersonalStream(reqId, userId, question, configs.get(0), historyMessages);
+        doPersonalStream(reqId, userId, question, configs.get(0), historyMessages, intent);
     }
 
     // ───────────── 群聊 / 非个人场景 ─────────────
@@ -199,6 +215,9 @@ public class ChatProcessor {
      */
     private void handleGroupChat(String reqId, Long userId, String question,
                                   List<ModelConfig> allConfigs, long startTime) {
+        // 意图识别（异步非阻塞）
+        IntentResult intent = recognizeIntent(question, "group");
+
         List<ModelConfig> configs = modelRouter.selectForChat(false, userId, question, allConfigs);
         if (configs.isEmpty()) {
             log.error("用户 {} 没有可用的 chat 模型", userId);
@@ -208,7 +227,7 @@ public class ChatProcessor {
         }
 
         List<LLMMessage> historyMessages = chatHistoryBuilder.buildGroup(userId, question);
-        doGroupConcurrent(reqId, userId, question, configs, historyMessages, startTime);
+        doGroupConcurrent(reqId, userId, question, configs, historyMessages, startTime, intent);
     }
 
     // ───────────── 子流程 ─────────────
@@ -261,25 +280,29 @@ public class ChatProcessor {
     }
 
     /**
-     * 个人对话流式输出（含工具调度 + 停止管理）。
+     * 个人对话流式输出（含工具调度 + 停止管理 + 意图驱动温度）。
      */
     private void doPersonalStream(String reqId, Long userId, String question,
-                                   ModelConfig config, List<LLMMessage> history) {
+                                   ModelConfig config, List<LLMMessage> history,
+                                   IntentResult intent) {
         long startTime = System.currentTimeMillis();
+        double temperature = intent != null ? intentRouting.temperatureFor(intent.category()) : 0.7;
         CompletableFuture.runAsync(() -> {
-            log.info("[doPersonalStream] 线程开始 req_id={} userId={} model={}",
-                    reqId, userId, config.model);
+            log.info("[doPersonalStream] 线程开始 req_id={} userId={} model={} intent={} temp={}",
+                    reqId, userId, config.model, intentLabel(intent), temperature);
             try {
                 broadcastService.broadcast("/topic/user." + userId,
                         WsMessage.of(WsMessage.TYPE_STREAM_START).withReqId(reqId)
-                                .with("model", config.model).toMap());
+                                .with("model", config.model)
+                                .with("intent", intent != null ? intent.category().name() : "UNKNOWN")
+                                .toMap());
 
                 // 工具调度：命中则推送增强后的回答（非流式）
                 if (toolDispatcher != null) {
                     String toolAnswer = null;
                     try {
                         toolAnswer = toolDispatcher.dispatch(question, config, history,
-                                0.7, "personal", llmConfig.getBaseUrl(), llmConfig.getApiKey());
+                                temperature, "personal", llmConfig.getBaseUrl(), llmConfig.getApiKey());
                     } catch (Exception toolEx) {
                         log.warn("工具调度失败，回退到普通流式: {}", toolEx.getMessage());
                     }
@@ -298,21 +321,70 @@ public class ChatProcessor {
                     }
                 }
 
-                // LLM 流式调用
-                String fullAnswer = llmInvoker.invokeStream(config, history, 0.7, "personal",
-                        llmConfig.getBaseUrl(), llmConfig.getApiKey(),
-                        token -> {
-                            if (streamStopManager.getOrDefault(reqId).get()) return;
-                            broadcastService.broadcast("/topic/user." + userId,
-                                    WsMessage.streamToken(token).withReqId(reqId).toMap());
-                        });
+                // LLM 流式调用（意图驱动温度 + 思考链展示）
+                boolean enableThinking = isComplexIntent(intent);
+                List<LLMMessage> effectiveHistory = history;
+                if (enableThinking) {
+                    effectiveHistory = new java.util.ArrayList<>(history);
+                    effectiveHistory.add(0, new LLMMessage("system",
+                            "如果问题复杂需要推理分析，请先把分析路径写在 <thinking>...</thinking> 标签中，"
+                            + "再给出最终回答。简单问题直接回答即可，不需要 <thinking> 标签。"));
+                }
+
+                final String topic = "/topic/user." + userId;
+                StringBuilder answerCollector = new StringBuilder();
+
+                String fullAnswer;
+                if (enableThinking) {
+                    // 思考链模式：用 ThinkingStreamParser 分离思考过程与回答
+                    ThinkingStreamParser parser = new ThinkingStreamParser(
+                            thinkingToken -> {
+                                if (streamStopManager.getOrDefault(reqId).get()) return;
+                                broadcastService.broadcast(topic,
+                                        WsMessage.thinkingToken(thinkingToken).withReqId(reqId).toMap());
+                            },
+                            answerToken -> {
+                                if (streamStopManager.getOrDefault(reqId).get()) return;
+                                answerCollector.append(answerToken);
+                                broadcastService.broadcast(topic,
+                                        WsMessage.streamToken(answerToken).withReqId(reqId).toMap());
+                            },
+                            () -> {
+                                broadcastService.broadcast(topic,
+                                        WsMessage.thinkingStart().withReqId(reqId).toMap());
+                            }
+                    );
+
+                    fullAnswer = llmInvoker.invokeStream(config, effectiveHistory, temperature,
+                            "personal", llmConfig.getBaseUrl(), llmConfig.getApiKey(),
+                            token -> {
+                                if (streamStopManager.getOrDefault(reqId).get()) return;
+                                parser.feed(token);
+                            });
+                    parser.flush();
+                } else {
+                    // 非思考链模式：直接流式输出（无延迟）
+                    fullAnswer = llmInvoker.invokeStream(config, effectiveHistory, temperature,
+                            "personal", llmConfig.getBaseUrl(), llmConfig.getApiKey(),
+                            token -> {
+                                if (streamStopManager.getOrDefault(reqId).get()) return;
+                                answerCollector.append(token);
+                                broadcastService.broadcast(topic,
+                                        WsMessage.streamToken(token).withReqId(reqId).toMap());
+                            });
+                }
+
+                // 思考链模式下 fullAnswer 含 <thinking> 标签，用 answerCollector 获取纯净回答
+                String cleanAnswer = (!answerCollector.isEmpty())
+                        ? answerCollector.toString()
+                        : fullAnswer;
 
                 if (isStopped(reqId)) {
                     broadcastService.broadcast("/topic/user." + userId,
-                            WsMessage.stopped(fullAnswer).withReqId(reqId).toMap());
-                    updateMessageStatus(reqId, "stopped", fullAnswer);
+                            WsMessage.stopped(cleanAnswer).withReqId(reqId).toMap());
+                    updateMessageStatus(reqId, "stopped", cleanAnswer);
                 } else {
-                    completeWithAnswer(reqId, userId, question, fullAnswer,
+                    completeWithAnswer(reqId, userId, question, cleanAnswer,
                             config.provider, config.model, startTime);
                 }
             } catch (Exception ex) {
@@ -326,26 +398,29 @@ public class ChatProcessor {
     }
 
     /**
-     * 群聊并发竞速：多个模型并发调用，首个完成者推送结果。
+     * 群聊并发竞速：多个模型并发调用，首个完成者推送结果（意图驱动温度）。
      */
     private void doGroupConcurrent(String reqId, Long userId, String question,
                                     List<ModelConfig> configs, List<LLMMessage> history,
-                                    long startTime) {
+                                    long startTime, IntentResult intent) {
         AtomicBoolean completed = new AtomicBoolean(false);
         AtomicInteger finishedCount = new AtomicInteger(0);
         int totalModels = configs.size();
         @SuppressWarnings("PMD.UnusedLocalVariable")
         boolean isPrivate = false;
+        double temperature = intent != null ? intentRouting.temperatureFor(intent.category()) : 0.7;
+        log.info("[doGroupConcurrent] req_id={} userId={} models={} intent={} temp={}",
+                reqId, userId, totalModels, intentLabel(intent), temperature);
 
         for (ModelConfig config : configs) {
             CompletableFuture<LLMResult> future = CompletableFuture.supplyAsync(() -> {
                 try {
                     String answer;
                     if (history != null) {
-                        answer = llmInvoker.invoke(config, history, 0.7, "chat",
+                        answer = llmInvoker.invoke(config, history, temperature, "chat",
                                 llmConfig.getBaseUrl(), llmConfig.getApiKey());
                     } else {
-                        answer = llmInvoker.invoke(config, question, 0.7, "chat",
+                        answer = llmInvoker.invoke(config, question, temperature, "chat",
                                 llmConfig.getBaseUrl(), llmConfig.getApiKey());
                     }
                     return new LLMResult(config, answer);
@@ -659,6 +734,46 @@ public class ChatProcessor {
      */
     private String buildCacheKey(String question, String provider, String model) {
         return "question:" + sha256(question + "::" + (provider == null ? "" : provider) + "::" + (model == null ? "" : model));
+    }
+
+    // ───────────── 意图识别辅助（三层漏斗） ─────────────
+
+    /**
+     * 通过三层漏斗识别意图：
+     *   L1 规则层（关键词/正则/状态机）→ L2 上下文语义匹配 → L3 LLM 分类
+     * 各层失败自动降级，不阻塞主流程。
+     */
+    private IntentResult recognizeIntent(String question, String scene) {
+        if (funnelEngine == null || question == null || question.isBlank()) {
+            return IntentResult.unknown();
+        }
+        try {
+            var result = funnelEngine.recognize(question, scene, null, null);
+            if (result.isKnown()) {
+                log.debug("[IntentFunnel] scene={} source={} intent={} latency={}ms",
+                         scene, result.source(), result.intent().category(), result.latencyMs());
+            }
+            return result.intent();
+        } catch (Exception e) {
+            log.debug("[IntentFunnel] 识别异常 scene={} error={}", scene, e.getMessage());
+            return IntentResult.unknown();
+        }
+    }
+
+    /** 意图的日志友好名称 */
+    private String intentLabel(IntentResult intent) {
+        if (intent == null || intentRouting == null) return "N/A";
+        return intentRouting.label(intent.category());
+    }
+
+    /** 判断意图是否需要展示思考链（复杂推理类） */
+    private boolean isComplexIntent(IntentResult intent) {
+        if (intent == null) return false;
+        IntentCategory c = intent.category();
+        return c == IntentCategory.REASONING
+            || c == IntentCategory.CODE_GENERATION
+            || c == IntentCategory.KNOWLEDGE_QA
+            || c == IntentCategory.TASK_EXECUTION;
     }
 
     /**

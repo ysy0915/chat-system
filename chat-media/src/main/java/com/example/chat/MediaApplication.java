@@ -18,7 +18,8 @@ import org.springframework.context.annotation.ComponentScan;
     "com.example.chat.entity",
     "com.example.chat.repository",
     "com.example.chat.service",
-    "com.example.chat.controller"
+    "com.example.chat.controller",
+    "com.example.chat.util"
 })
 public class MediaApplication {
     public static void main(String[] args) {

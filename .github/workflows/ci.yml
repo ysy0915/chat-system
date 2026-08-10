@@ -1,66 +1,88 @@
-name: CI / CD
+name: CI - Build & Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
     branches: [main]
 
 jobs:
-  # ===== 编译 & 测试 =====
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: 17
-          distribution: temurin
-          cache: maven
-
-      - name: Compile
-        run: mvn compile -q -DskipTests
-
-      - name: Test
-        run: mvn test
-
-  # ===== 打包 & 发布镜像 =====
-  docker:
-    needs: build
-    if: github.ref == 'refs/heads/main'
+    name: Build & Analyze (Java ${{ matrix.java-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        module: [core, web, games, media]
-    steps:
-      - uses: actions/checkout@v4
+        java-version: [17]
 
-      - name: Set up JDK 17
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java-version }}
         uses: actions/setup-java@v4
         with:
-          java-version: 17
-          distribution: temurin
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
           cache: maven
 
-      - name: Package
-        run: mvn package -DskipTests -q
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
 
-      - name: Build Docker image
-        run: docker build -f Dockerfile-${{ matrix.module }} -t chat-${{ matrix.module }}:latest .
+      - name: Build, Test & Verify (JaCoCo + SpotBugs)
+        run: mvn verify -B -Pci
 
-  # ===== 部署到生产（需配置 Secrets） =====
-  # deploy:
-  #   needs: docker
-  #   if: github.ref == 'refs/heads/main'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Deploy via SSH
-  #       uses: appleboy/ssh-action@v1
-  #       with:
-  #         host: ${{ secrets.DEPLOY_HOST }}
-  #         username: root
-  #         key: ${{ secrets.DEPLOY_KEY }}
-  #         script: |
-  #           cd /opt/app && docker compose pull && docker compose up -d
+      - name: Upload JaCoCo Coverage Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-coverage-report
+          path: |
+            chat-common/target/site/jacoco/
+            chat-core/target/site/jacoco/
+            chat-web/target/site/jacoco/
+            chat-games/target/site/jacoco/
+            chat-media/target/site/jacoco/
+          retention-days: 14
+
+      - name: Upload SpotBugs Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spotbugs-report
+          path: |
+            chat-common/target/spotbugsXml.xml
+            chat-core/target/spotbugsXml.xml
+            chat-web/target/spotbugsXml.xml
+            chat-games/target/spotbugsXml.xml
+            chat-media/target/spotbugsXml.xml
+          retention-days: 14
+
+  summary:
+    name: CI Summary
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check build status
+        run: |
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "✅ All checks passed!"
+          else
+            echo "❌ Build failed. Check artifacts for details."
+            exit 1
+          fi

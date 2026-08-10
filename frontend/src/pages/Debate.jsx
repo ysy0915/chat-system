@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
@@ -6,6 +6,7 @@ import { Client } from '@stomp/stompjs'
 import { formatText, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAutoScroll } from '../hooks/useAutoScroll'
+import DebateTreeView from '../components/DebateTreeView'
 
 const MODEL_COLORS = {
   1: { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.3)', accent: '#38bdf8', icon: '🫧' },
@@ -26,6 +27,13 @@ export default function Debate() {
   const [error, setError] = useState(null)
   const [modelNames, setModelNames] = useState({})
   const [wsStatus, setWsStatus] = useState('connecting')
+
+  // ---- 树状模式 ----
+  const [treeMode, setTreeMode] = useState(false)
+  const [treeCompleted, setTreeCompleted] = useState(false)
+  const [treeFinalAnswer, setTreeFinalAnswer] = useState(null)
+  const treeEventBus = useRef({ handlers: [], onMessage(h) { this.handlers.push(h) }, offMessage(h) { this.handlers = this.handlers.filter(x => x !== h) }, emit(msg) { this.handlers.forEach(h => h(msg)) } })
+
   const stompRef = useRef(null)
   const currentRoundRef = useRef(0)
   const modelNamesRef = useRef({})
@@ -33,6 +41,7 @@ export default function Debate() {
 
   useEffect(() => { currentRoundRef.current = currentRound }, [currentRound])
   useEffect(() => { modelNamesRef.current = modelNames }, [modelNames])
+
   const [userId] = useState(() => {
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -51,7 +60,18 @@ export default function Debate() {
         client.subscribe('/topic/debate.' + userId, (msg) => {
           try {
             const p = JSON.parse(msg.body)
-            console.log('[Debate] event:', p.type)
+
+            // 树状模式事件 → 转发给 DebateTreeView
+            if (p.type && (p.type.startsWith('tree_') || (p.type === 'start' && treeMode) || (p.type === 'done' && treeMode) || (p.type === 'error' && treeMode))) {
+              p._question = question
+              treeEventBus.current.emit(p)
+              if (p.type === 'start') {
+                const names = {}
+                p.models?.forEach(m => { names[m.id] = m.name })
+                setModelNames(names)
+              }
+              return
+            }
 
             if (p.type === 'start') {
               const names = {}
@@ -66,11 +86,9 @@ export default function Debate() {
                 return next
               })
             } else if (p.type === 'stream_token') {
-              // 最终整合的流式 token（model_id=4）
               if (p.model_id === 4) {
                 setFinalAnswer(prev => (prev || '') + p.token)
               } else {
-                // 辩论轮次的流式 token
                 setRounds(prev => {
                   const next = [...prev]
                   const roundIdx = currentRoundRef.current - 1
@@ -78,17 +96,12 @@ export default function Debate() {
                   next[roundIdx] = next[roundIdx] || []
                   const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
                   if (existingIdx === -1) {
-                    // 新建一条流式回答
                     const provider = modelNamesRef.current[p.model_id] || ''
                     next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider, answer: p.token, streaming: true }]
                     setThinking(prev => prev.filter(id => id !== p.model_id))
                   } else {
-                    // 追加 token（创建新对象触发重渲染）
                     const updated = [...next[roundIdx]]
-                    updated[existingIdx] = {
-                      ...updated[existingIdx],
-                      answer: (updated[existingIdx].answer || '') + p.token
-                    }
+                    updated[existingIdx] = { ...updated[existingIdx], answer: (updated[existingIdx].answer || '') + p.token }
                     next[roundIdx] = updated
                   }
                   return [...next]
@@ -102,21 +115,12 @@ export default function Debate() {
                 next[roundIdx] = next[roundIdx] || []
                 const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
                 if (existingIdx !== -1) {
-                  // 更新已有条目
                   const updated = [...next[roundIdx]]
-                  updated[existingIdx] = {
-                    ...updated[existingIdx],
-                    answer: extractAnswer(p.answer),
-                    streaming: false
-                  }
+                  updated[existingIdx] = { ...updated[existingIdx], answer: extractAnswer(p.answer), streaming: false }
                   next[roundIdx] = updated
                   return [...next]
                 }
-                next[roundIdx] = [...next[roundIdx], {
-                  modelId: p.model_id,
-                  provider: p.provider,
-                  answer: extractAnswer(p.answer)
-                }]
+                next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider: p.provider, answer: extractAnswer(p.answer) }]
                 return next
               })
             } else if (p.type === 'synthesizing') {
@@ -124,10 +128,12 @@ export default function Debate() {
               setSynthesizing(true)
               setSynthesizer(p.synthesizer || '千问')
             } else if (p.type === 'done') {
-              setFinalAnswer(extractAnswer(p.answer))
-              setDebating(false)
-              setSynthesizing(false)
-              setThinking([])
+              if (!treeMode) {
+                setFinalAnswer(extractAnswer(p.answer))
+                setDebating(false)
+                setSynthesizing(false)
+                setThinking([])
+              }
             } else if (p.type === 'error') {
               setError(p.message)
               setDebating(false)
@@ -143,10 +149,10 @@ export default function Debate() {
     stompRef.current = client
     client.activate()
     return () => { try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {} }
-  }, [userId])
+  }, [userId, treeMode])
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!treeMode) scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [rounds, finalAnswer, synthesizing])
 
   const sendQuestion = async (e) => {
@@ -163,10 +169,15 @@ export default function Debate() {
     setThinking([])
     setError(null)
     setModelNames({})
+    setTreeCompleted(false)
+    setTreeFinalAnswer(null)
 
     const reqId = generateId()
     try {
-      await axios.post('/api/v1/debate', { req_id: reqId, question: text, user_id: userId })
+      await axios.post('/api/v1/debate', {
+        req_id: reqId, question: text, user_id: userId,
+        ...(treeMode ? { mode: 'tree' } : {}),
+      })
     } catch (err) {
       if (err.response?.status === 400) {
         setError(err.response.data?.error || '问题包含敏感内容，请修改后重试')
@@ -193,10 +204,14 @@ export default function Debate() {
   return (
     <div className="debate-container">
       <Link to="/home" className="btn-back-home">← 返回首页</Link>
-      {!debating && !finalAnswer && rounds.length === 0 && !error && (
+
+      {!debating && !finalAnswer && !treeCompleted && rounds.length === 0 && !error && (
         <div className="chat-welcome">
-          <h1>⚔️ AI 博弈</h1>
-          <p>三个大模型围绕你的问题展开辩论，3轮讨论后由千问整合结论</p>
+          <h1>{treeMode ? '🌳 树状观点博弈' : '⚔️ AI 博弈'}</h1>
+          <p>{treeMode
+            ? '语义拆解 → 多视角并行辩论 → DAG 汇总。可拖拽画布浏览全过程'
+            : '三个大模型围绕你的问题展开辩论，3轮讨论后由千问整合结论'
+          }</p>
           <div className="debate-models-preview">
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>
               {MODEL_COLORS[1].icon} {modelNames[1] || '豆包'}
@@ -211,93 +226,126 @@ export default function Debate() {
         </div>
       )}
 
-      <div className="debate-content">
-        {currentRound > 0 && (
-          <div className="debate-progress">
-            {[1, 2, 3].map(r => (
-              <div key={r} className={`debate-progress-step ${r < currentRound ? 'done' : r === currentRound ? 'active' : ''}`}>
-                <div className="debate-progress-dot">{r}</div>
-                <span className="debate-progress-label">第 {r} 轮</span>
-              </div>
-            ))}
-            <div className={`debate-progress-step ${synthesizing ? 'active' : finalAnswer ? 'done' : ''}`}>
-              <div className="debate-progress-dot">✦</div>
-              <span className="debate-progress-label">整合</span>
-            </div>
-          </div>
-        )}
+      {/* ---- 树状模式渲染 ---- */}
+      {treeMode && (debating || treeCompleted) && (
+        <DebateTreeView
+          websocketEvents={treeEventBus.current}
+          onDone={(answer) => {
+            setTreeFinalAnswer(answer)
+            setDebating(false)
+            setTreeCompleted(true)
+          }}
+        />
+      )}
 
-        {rounds.map((round, rIdx) => (
-          <div key={rIdx} className="debate-round">
-            <div className="debate-round-header">
-              <span className="debate-round-badge">第 {rIdx + 1} 轮讨论</span>
-            </div>
-            <div className="debate-responses">
-              {round.map((resp, respIdx) => {
-                const color = getModelColor(resp.modelId)
-                return (
-                  <div key={respIdx} className="debate-response-card" style={{ borderColor: color.border, background: color.bg }}>
-                    <div className="debate-response-header" style={{ color: color.accent }}>
-                      {getModelLabel(resp.modelId, resp.provider)}
-                    </div>
-                    <div className="debate-response-body">
-                      {formatText(resp.answer).map((line, i) => (
-                        <p key={i}>{line}</p>
-                      ))}
-                      <span className="ai-generated-tag">AI生成</span>
-                    </div>
-                  </div>
-                )
-              })}
-              {rIdx === currentRound - 1 && thinking.map(modelId => {
-                const color = getModelColor(modelId)
-                return (
-                  <div key={'thinking-' + modelId} className="debate-response-card debate-thinking-card" style={{ borderColor: color.border, background: color.bg }}>
-                    <div className="debate-response-header" style={{ color: color.accent }}>
-                      {getModelLabel(modelId, modelNames[modelId] || ('模型' + modelId))}
-                    </div>
-                    <div className="debate-thinking-body">
-                      <span className="debate-thinking-dot"></span>
-                      <span className="debate-thinking-dot"></span>
-                      <span className="debate-thinking-dot"></span>
-                      <span className="debate-thinking-text">思考中。。</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-
-        {synthesizing && (
-          <div className="debate-synthesizing">
-            <div className="debate-synth-spinner"></div>
-            <span>{synthesizer || '千问'} 正在整合各方观点，生成最终结论...</span>
-          </div>
-        )}
-
-        {finalAnswer && (
-          <div className="debate-final">
-            <div className="debate-final-header">
-              <span className="debate-final-icon">✦</span>
-              <span>最终整合结论</span>
-            </div>
-            <div className="debate-final-body">
-              {formatText(finalAnswer).map((line, i) => (
-                <p key={i}>{line}</p>
+      {/* ---- 线性模式渲染 ---- */}
+      {!treeMode && (
+        <div className="debate-content">
+          {currentRound > 0 && (
+            <div className="debate-progress">
+              {[1, 2, 3].map(r => (
+                <div key={r} className={`debate-progress-step ${r < currentRound ? 'done' : r === currentRound ? 'active' : ''}`}>
+                  <div className="debate-progress-dot">{r}</div>
+                  <span className="debate-progress-label">第 {r} 轮</span>
+                </div>
               ))}
-              <span className="ai-generated-tag">AI生成</span>
+              <div className={`debate-progress-step ${synthesizing ? 'active' : finalAnswer ? 'done' : ''}`}>
+                <div className="debate-progress-dot">✦</div>
+                <span className="debate-progress-label">整合</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <div className="debate-error">
-            <span>❌</span> {error}
-          </div>
-        )}
+          {rounds.map((round, rIdx) => (
+            <div key={rIdx} className="debate-round">
+              <div className="debate-round-header">
+                <span className="debate-round-badge">第 {rIdx + 1} 轮讨论</span>
+              </div>
+              <div className="debate-responses">
+                {round.map((resp, respIdx) => {
+                  const color = getModelColor(resp.modelId)
+                  return (
+                    <div key={respIdx} className="debate-response-card" style={{ borderColor: color.border, background: color.bg }}>
+                      <div className="debate-response-header" style={{ color: color.accent }}>
+                        {getModelLabel(resp.modelId, resp.provider)}
+                      </div>
+                      <div className="debate-response-body">
+                        {formatText(resp.answer).map((line, i) => <p key={i}>{line}</p>)}
+                        <span className="ai-generated-tag">AI生成</span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {rIdx === currentRound - 1 && thinking.map(modelId => {
+                  const color = getModelColor(modelId)
+                  return (
+                    <div key={'thinking-' + modelId} className="debate-response-card debate-thinking-card" style={{ borderColor: color.border, background: color.bg }}>
+                      <div className="debate-response-header" style={{ color: color.accent }}>
+                        {getModelLabel(modelId, modelNames[modelId] || ('模型' + modelId))}
+                      </div>
+                      <div className="debate-thinking-body">
+                        <span className="debate-thinking-dot"></span>
+                        <span className="debate-thinking-dot"></span>
+                        <span className="debate-thinking-dot"></span>
+                        <span className="debate-thinking-text">思考中。。</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
 
-        <div ref={scrollRef} />
+          {synthesizing && (
+            <div className="debate-synthesizing">
+              <div className="debate-synth-spinner"></div>
+              <span>{synthesizer || '千问'} 正在整合各方观点，生成最终结论...</span>
+            </div>
+          )}
+
+          {finalAnswer && (
+            <div className="debate-final">
+              <div className="debate-final-header">
+                <span className="debate-final-icon">✦</span>
+                <span>最终整合结论</span>
+              </div>
+              <div className="debate-final-body">
+                {formatText(finalAnswer).map((line, i) => <p key={i}>{line}</p>)}
+                <span className="ai-generated-tag">AI生成</span>
+              </div>
+            </div>
+          )}
+
+          {error && <div className="debate-error"><span>❌</span> {error}</div>}
+          <div ref={scrollRef} />
+        </div>
+      )}
+
+      {/* 树状模式下的错误 */}
+      {treeMode && error && (
+        <div className="debate-error" style={{ textAlign: 'center', padding: 40 }}>
+          <span>❌</span> {error}
+        </div>
+      )}
+
+      {/* 模式切换 — 输入框上方 */}
+      <div className="debate-mode-tabs">
+        <button
+          onClick={() => { setTreeMode(false); setError(null) }}
+          className={`debate-mode-tab ${!treeMode ? 'active' : ''}`}
+          disabled={debating}
+        >
+          <span className="tab-icon">⚔️</span>
+          <span>线性博弈</span>
+        </button>
+        <button
+          onClick={() => { setTreeMode(true); setError(null) }}
+          className={`debate-mode-tab ${treeMode ? 'active' : ''}`}
+          disabled={debating}
+        >
+          <span className="tab-icon">🌳</span>
+          <span>树状博弈</span>
+        </button>
       </div>
 
       <div className="chat-input-area">
@@ -306,7 +354,7 @@ export default function Debate() {
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="输入一个问题，让三个AI展开辩论..."
+            placeholder={treeMode ? '输入问题，自动拆解为多视角树状博弈...' : '输入一个问题，让三个AI展开辩论...'}
             disabled={debating}
           />
           <button type="submit" className="send-btn" disabled={debating}>

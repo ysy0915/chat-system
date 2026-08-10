@@ -38,6 +38,10 @@ public class DebateProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.langgraph4j.DebateGraphService debateGraphService;
 
+    /** 树状辩论处理器 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DebateTreeProcessor debateTreeProcessor;
+
     /** 知识图谱服务（可选注入，失败不阻塞主流程） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private KnowledgeGraphService knowledgeGraphService;
@@ -71,6 +75,7 @@ public class DebateProcessor {
         String question = payload.get("question") == null ? "" : payload.get("question").toString();
         Long debateRecordId = payload.get("debate_record_id") == null ? null : Long.parseLong(payload.get("debate_record_id").toString());
         String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
+        String mode = payload.get("mode") != null ? payload.get("mode").toString() : "";
 
         Map<Long, ModelConfig> modelMap = resolveDebateModels(modelConfigRepository.findAllEnabledByType("chat"));
         if (modelMap.isEmpty()) {
@@ -81,6 +86,12 @@ public class DebateProcessor {
         final ModelConfig summaryModel = modelMap.get(2L); // 千问为整合模型
 
         broadcastModelInfo(userId, reqId, modelMap, summaryModel);
+
+        // 树状模式：语义拆解 → 多视角并行辩论 → 汇总
+        if ("tree".equals(mode)) {
+            debateTreeProcessor.process(reqId, userId, question, modelMap, summaryModel);
+            return;
+        }
 
         // LangGraph4j 模式：图式工作流编排辩论
         if (langGraph4jDebateEnabled && debateGraphService != null) {

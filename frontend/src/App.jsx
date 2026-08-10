@@ -376,18 +376,37 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         >✕</button>
                         <h3 className="announcement-title">📢 系统公告</h3>
                         <div className="announcement-content">
-                            <p><strong>🎉 博思AI智能体 v2.1 更新上线！</strong></p>
-                            <p>本次更新带来 8 项全新功能，全面提升 AI 对话体验。</p>
-                            <p><strong>🆕 本次更新内容：</strong></p>
-                            <p>🧠 <strong>对话记忆持久化</strong> — AI 现在能记住你之前说过的话，短期记忆 24 小时，长期记忆永久保存，跨会话也能回忆相关历史</p>
-                            <p>📚 <strong>知识库管理（RAG）</strong> — 上传 PDF/Word/TXT 文档，AI 回答时自动检索知识库内容，回答更精准、有据可查</p>
-                            <p>🔁 <strong>重新生成</strong> — 对 AI 的回答不满意？点击"重新生成"按钮，AI 会重新作答</p>
-                            <p>⏹️ <strong>停止生成</strong> — 流式输出时可随时点击"停止"，不必等待完整回答</p>
-                            <p>📝 <strong>对话摘要</strong> — 每次对话自动生成 15 字摘要，历史列表一目了然</p>
-                            <p>🖱️ <strong>图片拖拽上传</strong> — 个人对话空间支持拖拽图片，AI 自动识别图片内容</p>
-                            <p>🎤 <strong>语音输入</strong> — 点击麦克风按钮，说出你的问题（iOS 需 HTTPS 访问）</p>
-                            <p>🔊 <strong>语音朗读</strong> — 点击 AI 回答旁的喇叭按钮，AI 朗读回答内容</p>
-                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月8日 · 博思AI团队</p>
+                            <p><strong>博思AI智能体 v3.0 重磅更新！</strong></p>
+                            <p>架构全面升级，带来 9 大核心能力跃迁。</p>
+
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🌳 树状辩论模式</p>
+                            <p>复杂问题 LLM 自动拆解为多个视角，豆包、DeepSeek、千问三方辩论后综合汇总。前端可拖拽 DAG 画布，缩放流畅，结论逐句展示。</p>
+
+                            <p style={{ fontWeight: 700 }}>🎯 意图识别三层漏斗</p>
+                            <p>L1 规则 (0-1ms) → L2 语义 (30-80ms) → L3 LLM 兜底，自动匹配最佳 Temperature 和模型参数，告别硬编码。</p>
+
+                            <p style={{ fontWeight: 700 }}>💭 思考链实时展示</p>
+                            <p>复杂问题的 AI 推理过程以灰色斜体实时展现，了解 AI 的思考路径。</p>
+
+                            <p style={{ fontWeight: 700 }}>🛡️ 多层安全防护</p>
+                            <p>IP 全局限流 600次/分钟、用户级 20次/分钟、自动拉黑机制、CORS 白名单、UA 爬虫过滤。</p>
+
+                            <p style={{ fontWeight: 700 }}>🩺 AI 错误自愈</p>
+                            <p>LLM 调用失败不再直接报错——自动切换模型、降温、重试，按错误类型智能恢复。</p>
+
+                            <p style={{ fontWeight: 700 }}>⚡ 500 并发性能优化</p>
+                            <p>全链路调优后，AI 模式下 500 并发 P50 从 4.3s 降至 154ms，零失败。</p>
+
+                            <p style={{ fontWeight: 700 }}>🔌 LLM Fluent Builder API</p>
+                            <p>场景化调用 + Nacos 动态配置，修改 Temperature/模型参数无需重启。</p>
+
+                            <p style={{ fontWeight: 700 }}>📡 无状态化水平扩展</p>
+                            <p>WebSocket Session 迁移 Redis，chat-web 支持多实例部署，随时扩容。</p>
+
+                            <p style={{ fontWeight: 700 }}>🔧 全面修复与增强</p>
+                            <p>缩放按钮响应提至毫秒级、移动端双指缩放、前端报错日志、IP 管理面板。</p>
+
+                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月11日 · 博思AI团队</p>
                         </div>
                     </div>
                 </div>

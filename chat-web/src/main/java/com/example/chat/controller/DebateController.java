@@ -62,6 +62,9 @@ public class DebateController {
         debatePayload.put("req_id", reqId);
         debatePayload.put("question", question);
         debatePayload.put("user_id", userId);
+        // 树状模式：语义拆解 → 多视角并行辩论 → DAG 汇总
+        String mode = body.get("mode") != null ? body.get("mode").toString() : "";
+        debatePayload.put("mode", mode);
         coreClient.debateStart(debatePayload);
 
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "debating"));

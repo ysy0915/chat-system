@@ -3,10 +3,10 @@ server:
   port: 9090
   tomcat:
     threads:
-      max: 100
+      max: 200
       min-spare: 20
-    accept-count: 100
-    max-connections: 1000
+    accept-count: 200
+    max-connections: 2000
     connection-timeout: 5000
 
 spring:
@@ -28,8 +28,8 @@ spring:
   datasource:
     url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+      maximum-pool-size: 30
+      minimum-idle: 5
       connection-timeout: 10000
       idle-timeout: 300000
       max-lifetime: 600000

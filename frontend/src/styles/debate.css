@@ -370,3 +370,56 @@
     40% { opacity: 1; transform: scale(1.2); }
 }
 
+/* ─── 模式切换标签 ─── */
+.debate-mode-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin: 0 auto 0;
+    padding: 6px;
+    max-width: 320px;
+    width: 100%;
+    background: var(--bg-card);
+    border-radius: 14px;
+    border: 1px solid var(--border-glow);
+}
+
+.debate-mode-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s;
+    white-space: nowrap;
+}
+
+.debate-mode-tab:hover:not(.active):not(:disabled) {
+    color: var(--text-primary);
+    background: rgba(148, 163, 184, 0.06);
+}
+
+.debate-mode-tab.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(99, 102, 241, 0.12));
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(56, 189, 248, 0.15);
+}
+
+.debate-mode-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.debate-mode-tab .tab-icon {
+    font-size: 15px;
+}
+

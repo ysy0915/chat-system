@@ -69,7 +69,7 @@ public class BatchImportService {
             offset += BATCH_SIZE;
             log.info("[KG-Batch] 进度: offset={}, 三元组={}", offset, msgTriples);
 
-            try { Thread.sleep(500); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            try { java.util.concurrent.TimeUnit.MILLISECONDS.sleep(500); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
         }
         totalTriples += msgTriples;
 

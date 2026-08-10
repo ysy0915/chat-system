@@ -205,7 +205,7 @@ public class MediaGenService {
         log.info("[MediaGen-Video] task_id={}", taskId);
         String pollUrl = baseUrl.replaceAll("/+$", "") + "/api/v1/tasks/" + taskId;
         for (int i = 0; i < VIDEO_MAX_POLL_COUNT; i++) {
-            Thread.sleep(VIDEO_POLL_INTERVAL_MS);
+            java.util.concurrent.TimeUnit.MILLISECONDS.sleep(VIDEO_POLL_INTERVAL_MS);
             HttpResponse<String> pr = httpGet(pollUrl, apiKey, Duration.ofSeconds(15));
             if (pr.statusCode() != 200) continue;
 
@@ -247,7 +247,7 @@ public class MediaGenService {
         log.info("[MediaGen-3D] task_id={}", taskId);
         String queryUrl = baseUrl.replaceAll("/+$", "") + "/v1/api/3d/query";
         for (int i = 0; i < MODEL3D_MAX_POLL_COUNT; i++) {
-            Thread.sleep(MODEL3D_POLL_INTERVAL_MS);
+            java.util.concurrent.TimeUnit.MILLISECONDS.sleep(MODEL3D_POLL_INTERVAL_MS);
             String qJson = objectMapper.writeValueAsString(Map.of("model", model, "id", taskId));
             HttpResponse<String> qr = httpPost(queryUrl, apiKey, qJson, Duration.ofSeconds(30));
             if (qr.statusCode() != 200) continue;

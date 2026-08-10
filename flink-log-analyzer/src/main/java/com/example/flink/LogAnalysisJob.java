@@ -11,6 +11,8 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.connectors.elasticsearch7.ElasticsearchSink;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.http.HttpHost;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 
@@ -26,6 +28,8 @@ import java.util.Collections;
  * 4. 按服务统计日志量（30秒窗口）→ app-stats 索引
  */
 public class LogAnalysisJob {
+
+    private static final Logger log = LoggerFactory.getLogger(LogAnalysisJob.class);
 
     public static void main(String[] args) throws Exception {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -114,8 +118,9 @@ public class LogAnalysisJob {
                                         new org.elasticsearch.action.index.IndexRequest("app-stats")
                                                 .source(element, json)
                                 );
-                            } catch (Exception ignored) {
+                            } catch (Exception e) {
                                 // ES 索引写入失败不阻塞主流程
+                                log.warn("ES索引写入失败: {}", e.getMessage());
                             }
                         }
                 ).build()).name("ES Sink - Stats");
@@ -203,8 +208,9 @@ public class LogAnalysisJob {
                 try {
                     writer.flush();
                     writer.close();
-                } catch (Exception ignored) {
+                } catch (Exception e) {
                     // 关闭 Writer 失败不影响主流程
+                    log.warn("关闭Writer失败: {}", e.getMessage());
                 }
                 writer = null;
             }

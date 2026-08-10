@@ -153,7 +153,7 @@ public class SelfHealingService {
                                    String defaultBaseUrl, String defaultApiKey,
                                    Exception lastError) throws Exception {
         try {
-            Thread.sleep(1000);
+            java.util.concurrent.TimeUnit.SECONDS.sleep(1);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
         }

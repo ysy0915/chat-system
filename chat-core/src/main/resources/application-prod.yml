@@ -46,7 +46,7 @@ spring:
     host: 172.18.160.222
     port: 5672
     username: chatapp
-    password: ${RABBITMQ_PASSWORD:}
+    password: ${RABBITMQ_PASSWORD:chatapp2024}
   neo4j:
     uri: bolt://127.0.0.1:7687
     authentication:

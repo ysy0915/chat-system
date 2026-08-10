@@ -124,7 +124,7 @@ export default function PersonalChat() {
   useEffect(() => {
     if (redirectCountdown <= 0) return
     if (redirectCountdown === 1) {
-      const timer = setTimeout(() => { window.location.href = '/chat/' }, 1000)
+      const timer = setTimeout(() => { window.location.href = '/chat/home' }, 1000)
       return () => clearTimeout(timer)
     }
     const timer = setTimeout(() => setRedirectCountdown(c => c - 1), 1000)

@@ -60,86 +60,7 @@ export default function Debate() {
         client.subscribe('/topic/debate.' + userId, (msg) => {
           try {
             const p = JSON.parse(msg.body)
-
-            // 树状模式事件 → 转发给 DebateTreeView
-            if (p.type && (p.type.startsWith('tree_') || (p.type === 'start' && treeMode) || (p.type === 'done' && treeMode) || (p.type === 'error' && treeMode))) {
-              p._question = question
-              treeEventBus.current.emit(p)
-              if (p.type === 'start') {
-                const names = {}
-                p.models?.forEach(m => { names[m.id] = m.name })
-                setModelNames(names)
-              }
-              return
-            }
-
-            if (p.type === 'start') {
-              const names = {}
-              p.models.forEach(m => { names[m.id] = m.name })
-              setModelNames(names)
-            } else if (p.type === 'round_start') {
-              setCurrentRound(p.round)
-              setThinking([1, 2, 3])
-              setRounds(prev => {
-                const next = [...prev]
-                next[p.round - 1] = next[p.round - 1] || []
-                return next
-              })
-            } else if (p.type === 'stream_token') {
-              if (p.model_id === 4) {
-                setFinalAnswer(prev => (prev || '') + p.token)
-              } else {
-                setRounds(prev => {
-                  const next = [...prev]
-                  const roundIdx = currentRoundRef.current - 1
-                  if (roundIdx < 0) return prev
-                  next[roundIdx] = next[roundIdx] || []
-                  const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
-                  if (existingIdx === -1) {
-                    const provider = modelNamesRef.current[p.model_id] || ''
-                    next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider, answer: p.token, streaming: true }]
-                    setThinking(prev => prev.filter(id => id !== p.model_id))
-                  } else {
-                    const updated = [...next[roundIdx]]
-                    updated[existingIdx] = { ...updated[existingIdx], answer: (updated[existingIdx].answer || '') + p.token }
-                    next[roundIdx] = updated
-                  }
-                  return [...next]
-                })
-              }
-            } else if (p.type === 'round_response') {
-              setThinking(prev => prev.filter(id => id !== p.model_id))
-              setRounds(prev => {
-                const next = [...prev]
-                const roundIdx = p.round - 1
-                next[roundIdx] = next[roundIdx] || []
-                const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
-                if (existingIdx !== -1) {
-                  const updated = [...next[roundIdx]]
-                  updated[existingIdx] = { ...updated[existingIdx], answer: extractAnswer(p.answer), streaming: false }
-                  next[roundIdx] = updated
-                  return [...next]
-                }
-                next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider: p.provider, answer: extractAnswer(p.answer) }]
-                return next
-              })
-            } else if (p.type === 'synthesizing') {
-              setThinking([])
-              setSynthesizing(true)
-              setSynthesizer(p.synthesizer || '千问')
-            } else if (p.type === 'done') {
-              if (!treeMode) {
-                setFinalAnswer(extractAnswer(p.answer))
-                setDebating(false)
-                setSynthesizing(false)
-                setThinking([])
-              }
-            } else if (p.type === 'error') {
-              setError(p.message)
-              setDebating(false)
-              setSynthesizing(false)
-              setThinking([])
-            }
+            throttledEmit(p)
           } catch (e) { console.error(e) }
         })
       },
@@ -150,6 +71,118 @@ export default function Debate() {
     client.activate()
     return () => { try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {} }
   }, [userId, treeMode])
+
+  // ---- 帧节流分发 ----
+  // token 事件频率很高（每个 token 一条 WS 消息），直接每条 setState 会导致
+  // 高频全量重渲染 → 一卡一卡。这里把 token 事件按帧合并：同一帧内到达的
+  // token 一次性分发（React 自动批处理 → 每帧最多渲染一次），状态事件即时分发。
+  const queueRef = useRef([])
+  const rafRef = useRef(null)
+  // 用 ref 持有最新的事件处理器，避免节流器闭包捕获过期的 treeMode/question
+  const handleDebateEventRef = useRef(null)
+  handleDebateEventRef.current = (p) => {
+    // 树状模式事件 → 转发给 DebateTreeView
+    if (p.type && (p.type.startsWith('tree_') || (p.type === 'start' && treeMode) || (p.type === 'done' && treeMode) || (p.type === 'error' && treeMode))) {
+      p._question = question
+      treeEventBus.current.emit(p)
+      if (p.type === 'start') {
+        const names = {}
+        p.models?.forEach(m => { names[m.id] = m.name })
+        setModelNames(names)
+      }
+      // 树状最终结论区实时流式显示
+      if (p.type === 'tree_stream_token' && p.role === 'aggregate') {
+        setTreeFinalAnswer(prev => (prev || '') + (p.token || ''))
+      } else if (p.type === 'tree_aggregate_result' || (p.type === 'done' && treeMode)) {
+        setTreeFinalAnswer(p.answer || '辩论完成')
+      }
+      return
+    }
+
+    if (p.type === 'start') {
+      const names = {}
+      p.models.forEach(m => { names[m.id] = m.name })
+      setModelNames(names)
+    } else if (p.type === 'round_start') {
+      setCurrentRound(p.round)
+      setThinking([1, 2, 3])
+      setRounds(prev => {
+        const next = [...prev]
+        next[p.round - 1] = next[p.round - 1] || []
+        return next
+      })
+    } else if (p.type === 'stream_token') {
+      if (p.model_id === 4) {
+        setFinalAnswer(prev => (prev || '') + p.token)
+      } else {
+        setRounds(prev => {
+          const next = [...prev]
+          const roundIdx = currentRoundRef.current - 1
+          if (roundIdx < 0) return prev
+          next[roundIdx] = next[roundIdx] || []
+          const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
+          if (existingIdx === -1) {
+            const provider = modelNamesRef.current[p.model_id] || ''
+            next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider, answer: p.token, streaming: true }]
+            setThinking(prev => prev.filter(id => id !== p.model_id))
+          } else {
+            const updated = [...next[roundIdx]]
+            updated[existingIdx] = { ...updated[existingIdx], answer: (updated[existingIdx].answer || '') + p.token }
+            next[roundIdx] = updated
+          }
+          return [...next]
+        })
+      }
+    } else if (p.type === 'round_response') {
+      setThinking(prev => prev.filter(id => id !== p.model_id))
+      setRounds(prev => {
+        const next = [...prev]
+        const roundIdx = p.round - 1
+        next[roundIdx] = next[roundIdx] || []
+        const existingIdx = next[roundIdx].findIndex(r => r.modelId === p.model_id)
+        if (existingIdx !== -1) {
+          const updated = [...next[roundIdx]]
+          updated[existingIdx] = { ...updated[existingIdx], answer: extractAnswer(p.answer), streaming: false }
+          next[roundIdx] = updated
+          return [...next]
+        }
+        next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider: p.provider, answer: extractAnswer(p.answer) }]
+        return next
+      })
+    } else if (p.type === 'synthesizing') {
+      setThinking([])
+      setSynthesizing(true)
+      setSynthesizer(p.synthesizer || '千问')
+    } else if (p.type === 'done') {
+      if (!treeMode) {
+        setFinalAnswer(extractAnswer(p.answer))
+        setDebating(false)
+        setSynthesizing(false)
+        setThinking([])
+      }
+    } else if (p.type === 'error') {
+      setError(p.message)
+      setDebating(false)
+      setSynthesizing(false)
+      setThinking([])
+    }
+  }
+  const throttledEmit = useCallback((p) => {
+    const isToken = p.type === 'stream_token' || p.type === 'tree_stream_token'
+    if (!isToken) {
+      handleDebateEventRef.current(p)
+      return
+    }
+    queueRef.current.push(p)
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        const batch = queueRef.current
+        queueRef.current = []
+        batch.forEach(handleDebateEventRef.current)
+      })
+    }
+  }, [])
 
   useEffect(() => {
     if (!treeMode) scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -244,7 +277,10 @@ export default function Debate() {
           <div className="debate-tree-conclusion-title">📊 最终结论</div>
           <div className="debate-tree-conclusion-text">
             {treeFinalAnswer
-              ? formatText(treeFinalAnswer).map((line, i) => <p key={i}>{line}</p>)
+              ? <>
+                  {formatText(treeFinalAnswer).map((line, i) => <p key={i}>{line}</p>)}
+                  {debating && <span className="debate-tree-conclusion-cursor">▌</span>}
+                </>
               : <span className="debate-tree-conclusion-pending">辩论进行中，结论即将生成…</span>
             }
           </div>
@@ -284,6 +320,7 @@ export default function Debate() {
                       </div>
                       <div className="debate-response-body">
                         {formatText(resp.answer).map((line, i) => <p key={i}>{line}</p>)}
+                        {resp.streaming && <span className="debate-streaming-cursor">▌</span>}
                         <span className="ai-generated-tag">AI生成</span>
                       </div>
                     </div>
@@ -324,6 +361,7 @@ export default function Debate() {
               </div>
               <div className="debate-final-body">
                 {formatText(finalAnswer).map((line, i) => <p key={i}>{line}</p>)}
+                {synthesizing && <span className="debate-streaming-cursor">▌</span>}
                 <span className="ai-generated-tag">AI生成</span>
               </div>
             </div>

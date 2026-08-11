@@ -1,55 +1,50 @@
 package com.example.chat.langgraph4j;
 
 import org.junit.jupiter.api.Test;
-import java.util.HashMap;
-import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DebateStateTest {
 
     @Test
-    void shouldInstantiateWithInitData() {
-        Map<String, Object> initData = new HashMap<>();
-        initData.put(DebateState.TOPIC, "测试话题");
-        DebateState state = new DebateState(initData);
+    void shouldInstantiateWithSetters() {
+        DebateState state = new DebateState();
+        state.setTopic("测试话题");
         assertNotNull(state);
         assertEquals("测试话题", state.getTopic());
     }
 
     @Test
     void shouldReturnDefaultTopic() {
-        DebateState state = new DebateState(new HashMap<>());
+        DebateState state = new DebateState();
         assertEquals("", state.getTopic());
     }
 
     @Test
     void shouldReturnDefaultUserId() {
-        DebateState state = new DebateState(new HashMap<>());
+        DebateState state = new DebateState();
         assertEquals(0L, state.getUserId());
     }
 
     @Test
     void shouldReturnDefaultRounds() {
-        DebateState state = new DebateState(new HashMap<>());
+        DebateState state = new DebateState();
         assertEquals(0, state.getCurrentRound());
         assertEquals(3, state.getMaxRounds());
     }
 
     @Test
     void shouldNeedMoreRounds() {
-        Map<String, Object> initData = new HashMap<>();
-        initData.put(DebateState.MAX_ROUNDS, 3);
-        initData.put(DebateState.CURRENT_ROUND, 1);
-        DebateState state = new DebateState(initData);
+        DebateState state = new DebateState();
+        state.setMaxRounds(3);
+        state.setCurrentRound(1);
         assertTrue(state.needMoreRounds());
     }
 
     @Test
     void shouldNotNeedMoreRoundsWhenReached() {
-        Map<String, Object> initData = new HashMap<>();
-        initData.put(DebateState.MAX_ROUNDS, 3);
-        initData.put(DebateState.CURRENT_ROUND, 3);
-        DebateState state = new DebateState(initData);
+        DebateState state = new DebateState();
+        state.setMaxRounds(3);
+        state.setCurrentRound(3);
         assertFalse(state.needMoreRounds());
     }
 }

@@ -1,9 +1,12 @@
 package com.example.chat.service;
 
+import com.example.chat.client.LlmBundleClient;
+import com.example.chat.config.BundleLlmProperties;
+import com.example.chat.dto.LangChainRequest;
+import com.example.chat.dto.LangChainResponse;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
-import com.example.chat.factory.LLMStrategyFactory;
 import com.example.chat.observability.CallTrace;
 import com.example.chat.observability.CircuitBreaker;
 import com.example.chat.observability.ErrorAggregator;
@@ -15,7 +18,6 @@ import com.example.chat.router.ModelRouter;
 import com.example.chat.router.RoutingDecision;
 import com.example.chat.router.TaskClassifier;
 import com.example.chat.router.TaskType;
-import com.example.chat.strategy.LLMStrategy;
 import com.example.chat.util.BaseUrlResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +26,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -38,9 +42,9 @@ public class LLMInvoker {
 
     private static final Logger log = LoggerFactory.getLogger(LLMInvoker.class);
 
-    private final LLMStrategyFactory strategyFactory;
     private final BaseUrlResolver baseUrlResolver;
     private final LLMCallRecorder callRecorder;
+    private final DirectLLMClient directLLMClient;
 
     @Autowired(required = false)
     private TraceRecorder traceRecorder;
@@ -67,12 +71,20 @@ public class LLMInvoker {
     @Autowired(required = false)
     private CircuitBreaker circuitBreaker;
 
-    public LLMInvoker(LLMStrategyFactory strategyFactory,
-                       BaseUrlResolver baseUrlResolver,
-                       LLMCallRecorder callRecorder) {
-        this.strategyFactory = strategyFactory;
+    /** LLM Bundle 统一网关客户端（可选注入，app.llm.bundle.enabled=true 时启用） */
+    @Autowired(required = false)
+    private LlmBundleClient llmBundleClient;
+
+    /** LLM Bundle 接入配置 */
+    @Autowired(required = false)
+    private BundleLlmProperties bundleLlmProperties;
+
+    public LLMInvoker(BaseUrlResolver baseUrlResolver,
+                       LLMCallRecorder callRecorder,
+                       DirectLLMClient directLLMClient) {
         this.baseUrlResolver = baseUrlResolver;
         this.callRecorder = callRecorder;
+        this.directLLMClient = directLLMClient;
     }
 
     /**
@@ -93,12 +105,28 @@ public class LLMInvoker {
 
         long startTime = System.currentTimeMillis();
         TraceHolder trace = startTrace();
-        LLMStrategy strategy = strategyFactory.getStrategy(config.provider);
-        String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
-        String apiKey = resolveApiKey(config, defaultApiKey);
 
+        // === LLM Bundle 模式：优先走 chat-llm 统一网关，失败自动回退直连 ===
+        if (bundleEnabled()) {
+            try {
+                LangChainResponse resp = invokeViaBundle(config, messages, temperature, scene,
+                        defaultBaseUrl, defaultApiKey, trace.traceId);
+                if (resp.isSuccess()) {
+                    recordSuccess(scene, config, startTime, resp.getContent(), trace);
+                    clearTraceIfNeeded(trace);
+                    return resp.getContent();
+                }
+                log.warn("[LLMInvoker] bundle 调用失败, 回退直连 scene={} provider={} error={}",
+                        scene, config.provider, resp.getError());
+            } catch (Exception e) {
+                log.warn("[LLMInvoker] bundle 调用异常, 回退直连 scene={} provider={} error={}",
+                        scene, config.provider, e.getMessage());
+            }
+        }
+
+        // Bundle 未启用或调用失败：降级 DirectLLMClient 直连兜底
         try {
-            String answer = strategy.invoke(baseUrl, apiKey, config.model, messages, temperature);
+            String answer = invokeDirect(config, messages, temperature, defaultBaseUrl, defaultApiKey, null);
             recordSuccess(scene, config, startTime, answer, trace);
             return answer;
         } catch (Exception e) {
@@ -143,6 +171,22 @@ public class LLMInvoker {
     private String resolveApiKey(ModelConfig config, String defaultApiKey) {
         return (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                 ? config.apiKeyEncrypted : defaultApiKey;
+    }
+
+    /**
+     * DirectLLMClient 直连兜底（OpenAI /chat/completions 兼容接口）。
+     * streamCallback 为 null 时走非流式；非空时取完整答案后一次性回调（模拟流式降级）。
+     */
+    private String invokeDirect(ModelConfig config, List<LLMMessage> messages,
+                                double temperature, String defaultBaseUrl, String defaultApiKey,
+                                Consumer<String> streamCallback) {
+        String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
+        String apiKey = resolveApiKey(config, defaultApiKey);
+        String answer = directLLMClient.call(baseUrl, apiKey, config.model, messages, temperature, -1);
+        if (streamCallback != null && answer != null && !answer.isEmpty()) {
+            streamCallback.accept(answer);
+        }
+        return answer;
     }
 
     /**
@@ -212,6 +256,58 @@ public class LLMInvoker {
         }
     }
 
+    // ============ LLM Bundle (chat-llm 统一网关) 支持 ============
+
+    /**
+     * bundle 模式是否启用：客户端与配置注入齐备且显式开启。
+     */
+    private boolean bundleEnabled() {
+        return llmBundleClient != null && bundleLlmProperties != null
+                && bundleLlmProperties.isEnabled();
+    }
+
+    /**
+     * 构造发送给 chat-llm 的 LangChainRequest。
+     * ModelConfig 动态配置的 baseUrl/apiKey 通过 extra 透传（chat-llm 侧消费覆盖）。
+     */
+    private LangChainRequest buildBundleRequest(ModelConfig config, List<LLMMessage> messages,
+                                                double temperature, String scene,
+                                                String defaultBaseUrl, String defaultApiKey,
+                                                String traceId) {
+        LangChainRequest req = new LangChainRequest();
+        req.setProvider(config.provider);
+        req.setModel(config.model);
+        req.setMessages(LLMMessage.toMapList(messages));
+        req.setTemperature(temperature);
+        req.setBizType("CHAT");
+        req.setTraceId(traceId);
+        Map<String, Object> extra = new HashMap<>();
+        String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
+        String apiKey = resolveApiKey(config, defaultApiKey);
+        if (baseUrl != null && !baseUrl.isBlank()) extra.put("baseUrl", baseUrl);
+        if (apiKey != null && !apiKey.isBlank()) extra.put("apiKey", apiKey);
+        if (!extra.isEmpty()) req.setExtra(extra);
+        return req;
+    }
+
+    private LangChainResponse invokeViaBundle(ModelConfig config, List<LLMMessage> messages,
+                                              double temperature, String scene,
+                                              String defaultBaseUrl, String defaultApiKey,
+                                              String traceId) {
+        LangChainRequest req = buildBundleRequest(config, messages, temperature, scene,
+                defaultBaseUrl, defaultApiKey, traceId);
+        return llmBundleClient.invoke(req);
+    }
+
+    private LangChainResponse invokeViaBundleStream(ModelConfig config, List<LLMMessage> messages,
+                                                    double temperature, String scene,
+                                                    String defaultBaseUrl, String defaultApiKey,
+                                                    String traceId, Consumer<String> callback) {
+        LangChainRequest req = buildBundleRequest(config, messages, temperature, scene,
+                defaultBaseUrl, defaultApiKey, traceId);
+        return llmBundleClient.invokeStream(req, callback);
+    }
+
     /**
      * trace 上下文持有者：封装 traceId 与是否由本次调用启动。
      */
@@ -244,12 +340,28 @@ public class LLMInvoker {
 
         long startTime = System.currentTimeMillis();
         TraceHolder trace = startTrace();
-        LLMStrategy strategy = strategyFactory.getStrategy(config.provider);
-        String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
-        String apiKey = resolveApiKey(config, defaultApiKey);
 
+        // === LLM Bundle 模式：优先走 chat-llm 统一网关，失败自动回退直连 ===
+        if (bundleEnabled()) {
+            try {
+                LangChainResponse resp = invokeViaBundleStream(config, messages, temperature, scene,
+                        defaultBaseUrl, defaultApiKey, trace.traceId, callback);
+                if (resp.isSuccess()) {
+                    recordStreamSuccess(scene, config, startTime, resp.getContent(), trace);
+                    clearTraceIfNeeded(trace);
+                    return resp.getContent();
+                }
+                log.warn("[LLMInvoker] bundle stream 失败, 回退直连 scene={} provider={} error={}",
+                        scene, config.provider, resp.getError());
+            } catch (Exception e) {
+                log.warn("[LLMInvoker] bundle stream 异常, 回退直连 scene={} provider={} error={}",
+                        scene, config.provider, e.getMessage());
+            }
+        }
+
+        // Bundle 未启用或调用失败：降级 DirectLLMClient 直连兜底（完整答案一次性回调）
         try {
-            String answer = strategy.invokeStream(baseUrl, apiKey, config.model, messages, temperature, callback);
+            String answer = invokeDirect(config, messages, temperature, defaultBaseUrl, defaultApiKey, callback);
             recordStreamSuccess(scene, config, startTime, answer, trace);
             return answer;
         } catch (Exception e) {

@@ -1,17 +1,14 @@
 package com.example.chat.langgraph4j;
 
-import org.bsc.langgraph4j.state.AgentState;
-
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 辩论图状态（LangGraph4j 的 AgentState）
+ * 辩论图状态（普通 POJO，不依赖 langgraph4j）
  *
- * 使用 AgentState 的 data() 和 value() 方法访问状态数据
+ * <p>由 {@link DebateGraphService} 在数据化图执行后组装。</p>
  */
-public class DebateState extends AgentState {
+public class DebateState {
 
     public static final String TOPIC = "topic";
     public static final String USER_ID = "userId";
@@ -24,42 +21,50 @@ public class DebateState extends AgentState {
     public static final String MAX_ROUNDS = "maxRounds";
     public static final String NEXT = "next";
 
-    public DebateState(Map<String, Object> initData) {
-        super(initData);
-    }
+    private String topic = "";
+    private Long userId = 0L;
+    private String reqId = "";
+    private List<String> proArguments = new ArrayList<>();
+    private List<String> conArguments = new ArrayList<>();
+    private List<String> neutralArguments = new ArrayList<>();
+    private int currentRound = 0;
+    private int maxRounds = 3;
+    private String summary;
+    private String next = "summary";
 
-    public String getTopic() { return value(TOPIC).map(v -> v.toString()).orElse(""); }
-    public Long getUserId() { return value(USER_ID).map(v -> ((Number) v).longValue()).orElse(0L); }
-    public String getReqId() { return value(REQ_ID).map(v -> v.toString()).orElse(""); }
+    // getters / setters
 
-    @SuppressWarnings("unchecked")
-    public List<String> getProArguments() {
-        return value(PRO_ARGUMENTS).map(v -> (List<String>) v).orElseGet(ArrayList::new);
-    }
+    public String getTopic() { return topic; }
+    public void setTopic(String topic) { this.topic = topic; }
 
-    @SuppressWarnings("unchecked")
-    public List<String> getConArguments() {
-        return value(CON_ARGUMENTS).map(v -> (List<String>) v).orElseGet(ArrayList::new);
-    }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
 
-    @SuppressWarnings("unchecked")
-    public List<String> getNeutralArguments() {
-        return value(NEUTRAL_ARGUMENTS).map(v -> (List<String>) v).orElseGet(ArrayList::new);
-    }
+    public String getReqId() { return reqId; }
+    public void setReqId(String reqId) { this.reqId = reqId; }
 
-    public int getCurrentRound() {
-        return value(CURRENT_ROUND).map(v -> ((Number) v).intValue()).orElse(0);
-    }
+    public List<String> getProArguments() { return proArguments; }
+    public void setProArguments(List<String> proArguments) { this.proArguments = proArguments; }
 
-    public int getMaxRounds() {
-        return value(MAX_ROUNDS).map(v -> ((Number) v).intValue()).orElse(3);
-    }
+    public List<String> getConArguments() { return conArguments; }
+    public void setConArguments(List<String> conArguments) { this.conArguments = conArguments; }
 
-    public String getSummary() { return value(SUMMARY).map(v -> v.toString()).orElse(null); }
+    public List<String> getNeutralArguments() { return neutralArguments; }
+    public void setNeutralArguments(List<String> neutralArguments) { this.neutralArguments = neutralArguments; }
 
-    public String getNext() { return value(NEXT).map(v -> v.toString()).orElse("summary"); }
+    public int getCurrentRound() { return currentRound; }
+    public void setCurrentRound(int currentRound) { this.currentRound = currentRound; }
+
+    public int getMaxRounds() { return maxRounds; }
+    public void setMaxRounds(int maxRounds) { this.maxRounds = maxRounds; }
+
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
+
+    public String getNext() { return next; }
+    public void setNext(String next) { this.next = next; }
 
     public boolean needMoreRounds() {
-        return getCurrentRound() < getMaxRounds();
+        return currentRound < maxRounds;
     }
 }

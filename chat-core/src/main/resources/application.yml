@@ -37,6 +37,11 @@ app:
     core: true
   llm:
     api-key: ${LLM_API_KEY:}
+    # LLM Bundle (chat-llm 统一网关) 接入：模型调用优先走 chat-llm，失败自动回退直连
+    bundle:
+      enabled: ${LLM_BUNDLE_ENABLED:false}
+      base-url: ${LLM_BUNDLE_BASE_URL:http://127.0.0.1:9095}
+      timeout: ${LLM_BUNDLE_TIMEOUT:120s}
     # ========== LLM Client 运行时配置（支持 Nacos 动态刷新） ==========
     client:
       retry:

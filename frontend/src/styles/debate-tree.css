@@ -202,6 +202,9 @@
 .tree-summary-node .summary-text {
   font-size: 12px; color: #cbd5e1; margin-top: 6px; line-height: 1.5;
 }
+.tree-summary-node .summary-text.streaming::after {
+  content: '▌'; animation: blink 0.8s infinite; color: #22d3ee;
+}
 
 /* 最终汇总 */
 .tree-final-node {
@@ -225,6 +228,9 @@
   overflow-wrap: break-word;
   max-height: 360px;
   overflow-y: auto;
+}
+.tree-final-node .final-text.streaming::after {
+  content: '▌'; animation: blink 0.8s infinite; color: #34d399;
 }
 
 /* ==================== 控件 ==================== */

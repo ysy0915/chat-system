@@ -479,6 +479,20 @@
     font-style: italic;
 }
 
+/* === 流式打印机光标 === */
+.debate-streaming-cursor,
+.debate-tree-conclusion-cursor {
+    display: inline-block;
+    margin-left: 2px;
+    color: var(--accent, #38bdf8);
+    font-weight: bold;
+    animation: debateBlink 0.8s infinite;
+}
+
+@keyframes debateBlink {
+    50% { opacity: 0; }
+}
+
 @media (max-width: 768px) {
     .debate-tree-conclusion {
         margin: 8px 8px 4px;

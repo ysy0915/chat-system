@@ -4,6 +4,7 @@
     <file url="file://$PROJECT_DIR$/chat-common/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/chat-core/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/chat-games/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/chat-llm/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/chat-media/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/chat-web/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />

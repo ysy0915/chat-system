@@ -1,20 +1,14 @@
 package com.example.chat.langgraph4j;
 
-import org.bsc.langgraph4j.state.AgentState;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * 树状辩论中单个视角的 LangGraph 状态
+ * 树状辩论单视角状态（普通 POJO，不依赖 langgraph4j）
  *
- * 图结构: debate → shouldContinue ⇄ debate → summary → END
- *
- * 状态流转:
- *   round 1: debate → shouldContinue("debate")
- *   round 2: debate → shouldContinue("debate")
- *   round 3: debate → shouldContinue("summary") → summary → END
+ * <p>由 {@link TreePerspectiveGraphService} 在数据化图执行后组装。</p>
  */
-public class TreePerspectiveState extends AgentState {
+public class TreePerspectiveState {
 
     // ---- 键名 ----
     public static final String PERSPECTIVE_ID = "perspectiveId";
@@ -25,59 +19,82 @@ public class TreePerspectiveState extends AgentState {
     public static final String REQ_ID = "reqId";
     public static final String CURRENT_ROUND = "currentRound";
     public static final String MAX_ROUNDS = "maxRounds";
-    public static final String ROUND_HISTORY = "roundHistory";     // List<Map<String,String>>
-    public static final String MODEL_1_ANSWERS = "model1Answers";   // 正方 (豆包) 逐轮答案
-    public static final String MODEL_2_ANSWERS = "model2Answers";   // 中立 (千问) 逐轮答案
-    public static final String MODEL_3_ANSWERS = "model3Answers";   // 反方 (DeepSeek) 逐轮答案
-    public static final String CONCLUSION = "conclusion";          // 视角总结
-    public static final String NEXT = "next";                       // "debate" | "summary"
+    public static final String ROUND_HISTORY = "roundHistory";
+    public static final String MODEL_1_ANSWERS = "model1Answers";
+    public static final String MODEL_2_ANSWERS = "model2Answers";
+    public static final String MODEL_3_ANSWERS = "model3Answers";
+    public static final String CONCLUSION = "conclusion";
+    public static final String NEXT = "next";
 
-    public TreePerspectiveState(Map<String, Object> initData) {
-        super(initData);
-    }
+    private String perspectiveId;
+    private String perspectiveLabel;
+    private String perspectiveFocus;
+    private String question;
+    private Long userId = 0L;
+    private String reqId;
+    private int currentRound = 0;
+    private int maxRounds = 3;
+    private List<String> model1Answers = new ArrayList<>();
+    private List<String> model2Answers = new ArrayList<>();
+    private List<String> model3Answers = new ArrayList<>();
+    private String conclusion;
+    private String next = "summary";
 
-    // ---- 类型化访问器 ----
+    // ---- getters / setters ----
 
-    public String getPerspectiveId() { return str(PERSPECTIVE_ID); }
-    public String getPerspectiveLabel() { return str(PERSPECTIVE_LABEL); }
-    public String getPerspectiveFocus() { return str(PERSPECTIVE_FOCUS); }
-    public String getQuestion() { return str(QUESTION); }
-    public Long getUserId() { return num(USER_ID).longValue(); }
-    public String getReqId() { return str(REQ_ID); }
-    public int getCurrentRound() { return num(CURRENT_ROUND).intValue(); }
-    public int getMaxRounds() { return num(MAX_ROUNDS).intValue(); }
+    public String getPerspectiveId() { return perspectiveId; }
+    public void setPerspectiveId(String perspectiveId) { this.perspectiveId = perspectiveId; }
 
-    @SuppressWarnings("unchecked")
-    public List<Map<String, String>> getRoundHistory() {
-        return value(ROUND_HISTORY).map(v -> (List<Map<String, String>>) v)
-                .orElseGet(ArrayList::new);
-    }
+    public String getPerspectiveLabel() { return perspectiveLabel; }
+    public void setPerspectiveLabel(String perspectiveLabel) { this.perspectiveLabel = perspectiveLabel; }
 
-    @SuppressWarnings("unchecked")
-    public List<String> getModel1Answers() {
-        return value(MODEL_1_ANSWERS).map(v -> (List<String>) v).orElseGet(ArrayList::new);
-    }
+    public String getPerspectiveFocus() { return perspectiveFocus; }
+    public void setPerspectiveFocus(String perspectiveFocus) { this.perspectiveFocus = perspectiveFocus; }
 
-    @SuppressWarnings("unchecked")
-    public List<String> getModel2Answers() {
-        return value(MODEL_2_ANSWERS).map(v -> (List<String>) v).orElseGet(ArrayList::new);
-    }
+    public String getQuestion() { return question; }
+    public void setQuestion(String question) { this.question = question; }
 
-    @SuppressWarnings("unchecked")
-    public List<String> getModel3Answers() {
-        return value(MODEL_3_ANSWERS).map(v -> (List<String>) v).orElseGet(ArrayList::new);
-    }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
 
-    public String getConclusion() { return str(CONCLUSION); }
-    public String getNext() { return str(NEXT); }
+    public String getReqId() { return reqId; }
+    public void setReqId(String reqId) { this.reqId = reqId; }
 
-    // ---- 便利方法 ----
+    public int getCurrentRound() { return currentRound; }
+    public void setCurrentRound(int currentRound) { this.currentRound = currentRound; }
 
-    private String str(String key) {
-        return value(key).map(Object::toString).orElse("");
-    }
+    public int getMaxRounds() { return maxRounds; }
+    public void setMaxRounds(int maxRounds) { this.maxRounds = maxRounds; }
 
-    private Number num(String key) {
-        return value(key).map(v -> (Number) v).orElse(0);
+    public List<String> getModel1Answers() { return model1Answers; }
+    public void setModel1Answers(List<String> model1Answers) { this.model1Answers = model1Answers; }
+
+    public List<String> getModel2Answers() { return model2Answers; }
+    public void setModel2Answers(List<String> model2Answers) { this.model2Answers = model2Answers; }
+
+    public List<String> getModel3Answers() { return model3Answers; }
+    public void setModel3Answers(List<String> model3Answers) { this.model3Answers = model3Answers; }
+
+    public String getConclusion() { return conclusion; }
+    public void setConclusion(String conclusion) { this.conclusion = conclusion; }
+
+    public String getNext() { return next; }
+    public void setNext(String next) { this.next = next; }
+
+    /**
+     * 由三个模型的逐轮答案重建逐轮历史（角色 → 答案）
+     */
+    public List<java.util.Map<String, String>> getRoundHistory() {
+        List<java.util.Map<String, String>> history = new ArrayList<>();
+        int rounds = Math.max(model1Answers.size(),
+                Math.max(model2Answers.size(), model3Answers.size()));
+        for (int i = 0; i < rounds; i++) {
+            java.util.Map<String, String> round = new java.util.LinkedHashMap<>();
+            if (i < model1Answers.size()) round.put("正方", model1Answers.get(i));
+            if (i < model2Answers.size()) round.put("中立", model2Answers.get(i));
+            if (i < model3Answers.size()) round.put("反方", model3Answers.get(i));
+            history.add(round);
+        }
+        return history;
     }
 }

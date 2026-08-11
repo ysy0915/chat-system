@@ -1,6 +1,5 @@
 package com.example.chat.service;
 
-import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.MediaGenRecord;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
@@ -158,9 +157,11 @@ public class MediaGenService {
 
     private String callImageGeneration(String baseUrl, String apiKey, String model, String prompt) throws Exception {
         String url = baseUrl.replaceAll("/+$", "") + "/api/v1/services/aigc/multimodal-generation/generation";
+        // qwen-image 要求 input.messages[].content 为 list（多模态格式），纯文本也需 [{text: ...}]
         Map<String, Object> body = Map.of(
                 "model", model,
-                "input", Map.of("messages", List.of(LLMMessage.user(prompt).toMap())),
+                "input", Map.of("messages", List.of(
+                        Map.of("role", "user", "content", List.of(Map.of("text", prompt))))),
                 "parameters", Map.of("size", "1024*1024", "n", 1));
         HttpResponse<String> resp = httpPost(url, apiKey, objectMapper.writeValueAsString(body), IMAGE_TIMEOUT);
         if (resp.statusCode() != 200)

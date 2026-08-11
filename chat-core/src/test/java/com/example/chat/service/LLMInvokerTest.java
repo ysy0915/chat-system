@@ -2,8 +2,6 @@ package com.example.chat.service;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
-import com.example.chat.factory.LLMStrategyFactory;
-import com.example.chat.strategy.LLMStrategy;
 import com.example.chat.util.BaseUrlResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,10 +21,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class LLMInvokerTest {
 
-    @Mock private LLMStrategyFactory strategyFactory;
     @Mock private BaseUrlResolver baseUrlResolver;
     @Mock private LLMCallRecorder callRecorder;
-    @Mock private LLMStrategy strategy;
+    @Mock private DirectLLMClient directLLMClient;
 
     private static final String DEFAULT_URL = "https://default.api.com";
     private static final String DEFAULT_KEY = "sk-default";
@@ -35,8 +32,7 @@ class LLMInvokerTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(strategyFactory.getStrategy(anyString())).thenReturn(strategy);
-        invoker = new LLMInvoker(strategyFactory, baseUrlResolver, callRecorder);
+        invoker = new LLMInvoker(baseUrlResolver, callRecorder, directLLMClient);
     }
 
     // ---- invoke() 成功 ----
@@ -45,8 +41,8 @@ class LLMInvokerTest {
     void shouldInvokeSuccessfully() throws Exception {
         ModelConfig config = buildConfig("deepseek", "deepseek-chat", "https://api.ds.com", "sk-xxx");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://api.ds.com");
-        when(strategy.invoke(eq("https://api.ds.com"), eq("sk-xxx"), eq("deepseek-chat"),
-                anyList(), eq(0.7))).thenReturn("Response text");
+        when(directLLMClient.call(eq("https://api.ds.com"), eq("sk-xxx"), eq("deepseek-chat"),
+                anyList(), eq(0.7), anyInt())).thenReturn("Response text");
 
         String result = invoker.invoke(config,
                 List.of(LLMMessage.user("Hi")), 0.7, "chat", DEFAULT_URL, DEFAULT_KEY);
@@ -60,12 +56,12 @@ class LLMInvokerTest {
     void shouldUseConfigApiKeyOverDefault() throws Exception {
         ModelConfig config = buildConfig("qwen", "qwen-plus", "https://dashscope.aliyuncs.com", "sk-custom");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://dashscope.aliyuncs.com");
-        when(strategy.invoke(anyString(), eq("sk-custom"), anyString(), anyList(), anyDouble()))
+        when(directLLMClient.call(anyString(), eq("sk-custom"), anyString(), anyList(), anyDouble(), anyInt()))
                 .thenReturn("OK");
 
         invoker.invoke(config, List.of(LLMMessage.user("test")), 0.3, "chat", DEFAULT_URL, DEFAULT_KEY);
 
-        verify(strategy).invoke(anyString(), eq("sk-custom"), anyString(), anyList(), anyDouble());
+        verify(directLLMClient).call(anyString(), eq("sk-custom"), anyString(), anyList(), anyDouble(), anyInt());
     }
 
     // ---- invoke() 失败 ----
@@ -74,7 +70,7 @@ class LLMInvokerTest {
     void shouldThrowOnInvokeFailure() throws Exception {
         ModelConfig config = buildConfig("deepseek", "deepseek-chat", "https://api.ds.com", "sk-xxx");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://api.ds.com");
-        when(strategy.invoke(anyString(), anyString(), anyString(), anyList(), anyDouble()))
+        when(directLLMClient.call(anyString(), anyString(), anyString(), anyList(), anyDouble(), anyInt()))
                 .thenThrow(new RuntimeException("timeout"));
 
         try {
@@ -94,7 +90,7 @@ class LLMInvokerTest {
     void shouldInvokeStreamSuccessfully() throws Exception {
         ModelConfig config = buildConfig("deepseek", "deepseek-chat", "https://api.ds.com", "sk-xxx");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://api.ds.com");
-        when(strategy.invokeStream(anyString(), anyString(), anyString(), anyList(), anyDouble(), any()))
+        when(directLLMClient.call(anyString(), anyString(), anyString(), anyList(), anyDouble(), anyInt()))
                 .thenReturn("streamed response");
 
         StringBuilder sb = new StringBuilder();
@@ -102,6 +98,7 @@ class LLMInvokerTest {
                 0.7, "treehole", DEFAULT_URL, DEFAULT_KEY, sb::append);
 
         assertEquals("streamed response", result);
+        assertEquals("streamed response", sb.toString());
         verify(callRecorder).record(eq("deepseek"), eq("deepseek-chat"), eq("treehole"), eq(true),
                 anyLong(), eq(17));
     }
@@ -110,7 +107,7 @@ class LLMInvokerTest {
     void shouldThrowOnStreamFailure() throws Exception {
         ModelConfig config = buildConfig("deepseek", "deepseek-chat", "https://api.ds.com", "sk-xxx");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://api.ds.com");
-        when(strategy.invokeStream(anyString(), anyString(), anyString(), anyList(), anyDouble(), any()))
+        when(directLLMClient.call(anyString(), anyString(), anyString(), anyList(), anyDouble(), anyInt()))
                 .thenThrow(new RuntimeException("stream error"));
 
         try {
@@ -129,7 +126,7 @@ class LLMInvokerTest {
 
     @Test
     void shouldThrowWhenRoutingNotEnabled() {
-        LLMInvoker noRouter = new LLMInvoker(strategyFactory, baseUrlResolver, callRecorder);
+        LLMInvoker noRouter = new LLMInvoker(baseUrlResolver, callRecorder, directLLMClient);
 
         assertThrows(IllegalStateException.class, () ->
             noRouter.invokeWithRouting("hello", "chat", null,
@@ -142,7 +139,7 @@ class LLMInvokerTest {
     void shouldRecordCorrectSceneOnSuccess() throws Exception {
         ModelConfig config = buildConfig("deepseek", "deepseek-chat", "https://api.ds.com", "sk-xxx");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://api.ds.com");
-        when(strategy.invoke(anyString(), anyString(), anyString(), anyList(), anyDouble()))
+        when(directLLMClient.call(anyString(), anyString(), anyString(), anyList(), anyDouble(), anyInt()))
                 .thenReturn("ok");
 
         invoker.invoke(config, List.of(LLMMessage.user("x")), 0.5, "debate", DEFAULT_URL, DEFAULT_KEY);
@@ -155,7 +152,7 @@ class LLMInvokerTest {
     void shouldRecordCorrectSceneOnStream() throws Exception {
         ModelConfig config = buildConfig("qwen", "qwen-plus", "https://dashscope.aliyuncs.com", "sk-xxx");
         when(baseUrlResolver.resolve(config, DEFAULT_URL)).thenReturn("https://dashscope.aliyuncs.com");
-        when(strategy.invokeStream(anyString(), anyString(), anyString(), anyList(), anyDouble(), any()))
+        when(directLLMClient.call(anyString(), anyString(), anyString(), anyList(), anyDouble(), anyInt()))
                 .thenReturn("ok");
 
         invoker.invokeStream(config, List.of(LLMMessage.user("x")),

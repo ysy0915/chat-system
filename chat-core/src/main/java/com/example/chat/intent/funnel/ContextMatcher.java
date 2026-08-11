@@ -3,7 +3,6 @@ package com.example.chat.intent.funnel;
 import com.example.chat.intent.IntentResult;
 import com.example.chat.intent.IntentCategory;
 import com.example.chat.rag.service.EmbeddingService;
-import com.example.chat.rag.service.VectorStoreService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.milvus.client.MilvusServiceClient;
@@ -27,9 +26,14 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.io.InputStream;
-import java.util.*;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 

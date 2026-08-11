@@ -12,7 +12,7 @@
 
     <artifactId>chat-core</artifactId>
     <name>chat-core</name>
-    <description>核心 AI 服务：Chat/TreeHole/Debate/Monitor/KnowledgeBase/LangChain4j/LangGraph4j</description>
+    <description>核心 AI 服务：Chat/TreeHole/Debate/Monitor/KnowledgeBase</description>
 
     <dependencies>
         <!-- 内部公共模块 -->
@@ -65,30 +65,6 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>3.0.1</version>
-        </dependency>
-
-        <!-- LangChain4j -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j</artifactId>
-            <version>0.34.0</version>
-        </dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-open-ai</artifactId>
-            <version>0.34.0</version>
-        </dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-milvus</artifactId>
-            <version>0.34.0</version>
-        </dependency>
-
-        <!-- LangGraph4j -->
-        <dependency>
-            <groupId>org.bsc.langgraph4j</groupId>
-            <artifactId>langgraph4j-core-jdk8</artifactId>
-            <version>1.0-beta1</version>
         </dependency>
 
         <!-- Alibaba Cloud OSS（附件上传） -->

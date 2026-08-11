@@ -9,12 +9,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 树状观点博弈处理器
@@ -61,6 +67,17 @@ public class DebateTreeProcessor {
 
     // ----- 入口 -----
 
+    /**
+     * 入口：启动一次树状观点博弈。
+     * <p>流程：LLM 语义拆解 → 多视角并行（每视角 3 轮三方辩论）→ 汇总。
+     * 全程通过 WS 广播 tree_* 事件驱动前端 DAG 画布渲染；异常时兜底发送 done 解锁前端。</p>
+     *
+     * @param reqId      请求 ID
+     * @param userId     用户 ID（WS 主题拼接用）
+     * @param question   辩论议题
+     * @param modelMap   1=豆包 / 2=千问 / 3=DeepSeek 模型配置
+     * @param summaryModel 千问整合模型
+     */
     public void process(String reqId, Long userId, String question,
                          Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
         treeExecutor.submit(() -> {
@@ -340,7 +357,7 @@ public class DebateTreeProcessor {
                 });
     }
 
-    // ===================== 最终汇总 (非流式，直接返回) =====================
+    // ===================== 最终汇总 (流式逐字推送) =====================
 
     private String aggregate(String reqId, Long userId, String question,
                               List<Perspective> perspectives,
@@ -362,12 +379,20 @@ public class DebateTreeProcessor {
         psb.append("**【理由】** 逐条列出分析依据（每条单独一行，每条以数字序号或短横线开头）\n");
         psb.append("**【建议】** 行动建议");
 
-        // 直接用非流式 invoke，不通过 invokeStream 逐个 token 推送
-        String result = llmInvoker.invoke(summaryModel,
+        // 流式 invoke：逐 token 推送给前端，实现“打印机”效果
+        StringBuilder resultSb = new StringBuilder();
+        String result = llmInvoker.invokeStream(summaryModel,
                 List.of(LLMMessage.user(psb.toString())),
-                0.5, "debate-tree", null, defaultApiKey);
+                0.5, "debate-tree", null, defaultApiKey,
+                token -> {
+                    resultSb.append(token);
+                    send("/topic/debate." + userId,
+                            treeMsg("tree_stream_token", reqId)
+                                    .with("role", "aggregate")
+                                    .with("token", token));
+                });
 
-        // 一次性把汇总结果推给前端
+        // 兜底：把完整汇总结果推给前端（若流式已逐字展示，此处覆盖为完整文本）
         send("/topic/debate." + userId,
                 treeMsg("tree_aggregate_result", reqId).with("answer", result));
 

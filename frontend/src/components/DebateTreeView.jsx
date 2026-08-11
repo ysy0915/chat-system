@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import '../styles/debate-tree.css'
 
 // ---- 布局常量 ----
@@ -50,6 +50,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
   const [perspectives, setPerspectives] = useState([])  // [{id, label, focus, rounds:[], summary, status}]
   const [rootQuestion, setRootQuestion] = useState('')
   const [finalAnswer, setFinalAnswer] = useState('')
+  const [finalStreaming, setFinalStreaming] = useState(false)  // 最终汇总是否正在流式打印
   const [svgs, setSvgs] = useState([])
   const [scale, setScale] = useState(1)
   const scaleRef = useRef(1)  // 保持最新 scale，避免闭包过期
@@ -123,7 +124,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
         }
         case 'tree_decompose_result': {
           const perps = (msg.perspectives || []).map(p => ({
-            ...p, rounds: [], summary: '', status: 'pending',
+            ...p, rounds: [], summary: '', status: 'pending', summaryStreaming: false,
           }))
           setPerspectives(perps)
           break
@@ -145,6 +146,23 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
           break
         }
         case 'tree_stream_token': {
+          // 视角结论流式 token（role=conclusion，无 round 字段）
+          if (msg.role === 'conclusion') {
+            setPerspectives(prev =>
+              prev.map(p => p.id === msg.perspectiveId
+                ? { ...p, summary: (p.summary || '') + (msg.token || ''), summaryStreaming: true }
+                : p))
+            break
+          }
+          // 最终汇总流式 token（role=aggregate，无 perspectiveId）
+          if (msg.role === 'aggregate') {
+            setFinalAnswer(prev => {
+              const base = prev && prev !== '...' ? prev : ''
+              return base + (msg.token || '')
+            })
+            break
+          }
+          // 轮次论点流式 token（有 round 字段）
           setPerspectives(prev =>
             prev.map(p => {
               if (p.id !== msg.perspectiveId) return p
@@ -205,15 +223,17 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
         case 'tree_perspective_summary': {
           setPerspectives(prev =>
             prev.map(p => p.id === msg.perspectiveId
-              ? { ...p, summary: msg.summary, status: 'done' } : p))
+              ? { ...p, summary: msg.summary, summaryStreaming: false, status: 'done' } : p))
           break
         }
         case 'tree_aggregate_start': {
           setFinalAnswer('...')
+          setFinalStreaming(true)
           break
         }
         case 'tree_aggregate_result': {
           setFinalAnswer(msg.answer || '汇总完成')
+          setFinalStreaming(false)
           break
         }
         case 'tree_perspective_error': {
@@ -225,6 +245,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
         case 'done': {
           const answer = msg.answer || '辩论完成'
           setFinalAnswer(answer)
+          setFinalStreaming(false)
           // 延迟通知父组件，让 finalAnswer 先渲染出来
           setTimeout(() => onDone?.(answer), 200)
           break
@@ -236,11 +257,17 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
   }, [websocketEvents])
 
   // ---- 更新 SVG 连线 ----
+  // 连线只依赖树的结构（视角状态 / 轮次数 / 结论是否出现）。token 流式更新时
+  // perspectives 引用每次都会变，但结构签名不变 → 不再全量重建 SVG 连线，
+  // 避免每 token 触发一次 O(视角数×轮次) 的重算，这是树状模式卡顿的主因之一。
+  const treeStructureKey = perspectives
+    .map(p => `${p.status}|${p.rounds.length}|${p.summary ? 1 : 0}`)
+    .join(';')
 
   useEffect(() => {
     const newSvgs = buildConnectors(perspectives)
     setSvgs(newSvgs)
-  }, [perspectives, finalAnswer])
+  }, [treeStructureKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- 拖拽 ----
 
@@ -375,6 +402,8 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
   const maxRounds = Math.max(0, ...perspectives.map(p => p.rounds.length))
   const finalY = ROUND_START_Y + maxRounds * ROUND_HEIGHT + SUMMARY_OFFSET + FINAL_Y_OFFSET
   const totalHeight = finalY + 200
+  // 最终结论格式化结果缓存：流式 token 追加时只重算文本变化的那次渲染
+  const finalFormatted = useMemo(() => formatFinalText(finalAnswer), [finalAnswer])
 
   return (
     <div
@@ -453,11 +482,11 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
                 <div className="tree-node new-node tree-summary-node"
                   style={{ left: pX, top: ROUND_START_Y + p.rounds.length * ROUND_HEIGHT + SUMMARY_OFFSET }}>
                   <div className="summary-label">📋 视角结论</div>
-                  <div className="summary-text">{p.summary}</div>
+                  <div className={`summary-text${p.summaryStreaming ? ' streaming' : ''}`}>{p.summary}</div>
                 </div>
               )}
 
-              {p.status === 'concluding' && (
+              {p.status === 'concluding' && !p.summary && (
                 <div className="tree-node tree-summary-node"
                   style={{ left: pX, top: ROUND_START_Y + p.rounds.length * ROUND_HEIGHT + SUMMARY_OFFSET }}>
                   <div className="summary-label">📋 正在归纳...</div>
@@ -479,7 +508,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
           <div className="tree-node new-node tree-final-node"
             style={{ left: ROOT_X, top: finalY }}>
             <div className="final-icon">📊 最终结论</div>
-            <div className="final-text">{formatFinalText(finalAnswer)}</div>
+            <div className={`final-text${finalStreaming ? ' streaming' : ''}`}>{finalFormatted}</div>
           </div>
         )}
         {finalAnswer === '...' && (

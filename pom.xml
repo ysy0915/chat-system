@@ -23,6 +23,7 @@
         <module>chat-web</module>
         <module>chat-media</module>
         <module>chat-games</module>
+        <module>chat-llm</module>
     </modules>
 
     <properties>
@@ -42,6 +43,10 @@
         <!-- 升级 Mockito + ByteBuddy 兼容 JDK 26 -->
         <mockito.version>5.14.2</mockito.version>
         <byte-buddy.version>1.15.11</byte-buddy.version>
+        <grpc.version>1.68.1</grpc.version>
+        <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
+        <protobuf.version>3.25.5</protobuf.version>
+        <milvus.version>2.3.4</milvus.version>
     </properties>
 
     <dependencyManagement>
@@ -178,6 +183,32 @@
                 <artifactId>byte-buddy-agent</artifactId>
                 <version>${byte-buddy.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <!-- gRPC BOM 统一版本管理 -->
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- gRPC Spring Boot Starter -->
+            <dependency>
+                <groupId>net.devh</groupId>
+                <artifactId>grpc-server-spring-boot-starter</artifactId>
+                <version>${grpc-spring-boot.version}</version>
+            </dependency>
+            <!-- protobuf-java 版本不受 grpc-bom 管理，单独声明 -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.version}</version>
+            </dependency>
+            <!-- Milvus 向量数据库 -->
+            <dependency>
+                <groupId>io.milvus</groupId>
+                <artifactId>milvus-sdk-java</artifactId>
+                <version>${milvus.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

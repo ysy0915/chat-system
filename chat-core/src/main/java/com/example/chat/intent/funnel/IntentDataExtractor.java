@@ -2,13 +2,17 @@ package com.example.chat.intent.funnel;
 
 import com.example.chat.intent.IntentRecognitionService;
 import com.example.chat.intent.IntentResult;
-import com.example.chat.rag.service.EmbeddingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 意图数据挖掘 —— 从历史对话中自动提取规则和语义示例。

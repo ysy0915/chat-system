@@ -3,7 +3,8 @@ package com.example.chat.langgraph4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,18 +16,16 @@ class TreePerspectiveStateTest {
     @Test
     @DisplayName("状态初始化及读写")
     void initAndRead() {
-        Map<String, Object> data = new HashMap<>();
-        data.put(TreePerspectiveState.PERSPECTIVE_ID, "p1");
-        data.put(TreePerspectiveState.PERSPECTIVE_LABEL, "经济效益");
-        data.put(TreePerspectiveState.PERSPECTIVE_FOCUS, "成本收益");
-        data.put(TreePerspectiveState.QUESTION, "AI 应该开源吗");
-        data.put(TreePerspectiveState.USER_ID, 42L);
-        data.put(TreePerspectiveState.REQ_ID, "req-001");
-        data.put(TreePerspectiveState.CURRENT_ROUND, 0);
-        data.put(TreePerspectiveState.MAX_ROUNDS, 3);
-        data.put(TreePerspectiveState.CONCLUSION, "之后填写");
-
-        TreePerspectiveState state = new TreePerspectiveState(data);
+        TreePerspectiveState state = new TreePerspectiveState();
+        state.setPerspectiveId("p1");
+        state.setPerspectiveLabel("经济效益");
+        state.setPerspectiveFocus("成本收益");
+        state.setQuestion("AI 应该开源吗");
+        state.setUserId(42L);
+        state.setReqId("req-001");
+        state.setCurrentRound(0);
+        state.setMaxRounds(3);
+        state.setConclusion("之后填写");
 
         assertThat(state.getPerspectiveId()).isEqualTo("p1");
         assertThat(state.getPerspectiveLabel()).isEqualTo("经济效益");
@@ -42,40 +41,39 @@ class TreePerspectiveStateTest {
     @Test
     @DisplayName("空/默认值处理")
     void emptyDefaults() {
-        TreePerspectiveState state = new TreePerspectiveState(Map.of());
+        TreePerspectiveState state = new TreePerspectiveState();
 
         assertThat(state.getPerspectiveId()).isEmpty();
         assertThat(state.getCurrentRound()).isZero();
-        assertThat(state.getMaxRounds()).isZero();
+        assertThat(state.getMaxRounds()).isEqualTo(3);
         assertThat(state.getRoundHistory()).isEmpty();
         assertThat(state.getModel1Answers()).isEmpty();
-        assertThat(state.getConclusion()).isEmpty();
-        assertThat(state.getNext()).isEmpty();
+        assertThat(state.getConclusion()).isNull();
     }
 
     @Test
-    @DisplayName("轮次历史读写")
+    @DisplayName("轮次历史重建（由三方答案列表）")
     void roundHistory() {
-        List<Map<String, String>> history = new ArrayList<>();
-        history.add(Map.of("正方", "支持", "反方", "反对"));
+        TreePerspectiveState state = new TreePerspectiveState();
+        state.setModel1Answers(new ArrayList<>(List.of("支持")));
+        state.setModel2Answers(new ArrayList<>(List.of("中立意见")));
+        state.setModel3Answers(new ArrayList<>(List.of("反对")));
 
-        Map<String, Object> data = new HashMap<>();
-        data.put(TreePerspectiveState.ROUND_HISTORY, history);
-
-        TreePerspectiveState state = new TreePerspectiveState(data);
         assertThat(state.getRoundHistory()).hasSize(1);
         assertThat(state.getRoundHistory().get(0)).containsEntry("正方", "支持");
+        assertThat(state.getRoundHistory().get(0)).containsEntry("中立", "中立意见");
+        assertThat(state.getRoundHistory().get(0)).containsEntry("反方", "反对");
     }
 
     @Test
     @DisplayName("next 字段 → shouldContinue 路由")
     void nextRouting() {
-        TreePerspectiveState state = new TreePerspectiveState(
-                Map.of(TreePerspectiveState.NEXT, "debate"));
+        TreePerspectiveState state = new TreePerspectiveState();
+        state.setNext("debate");
         assertThat(state.getNext()).isEqualTo("debate");
 
-        state = new TreePerspectiveState(
-                Map.of(TreePerspectiveState.NEXT, "summary"));
+        state = new TreePerspectiveState();
+        state.setNext("summary");
         assertThat(state.getNext()).isEqualTo("summary");
     }
 }

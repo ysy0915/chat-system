@@ -1,0 +1,209 @@
+server:
+  port: 9095
+
+spring:
+  application:
+    name: chat-llm
+
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:chat_system}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 10000
+
+  # ── gRPC ──────────────────────────────────────────────
+grpc:
+  server:
+    port: 9195
+
+# ── LLM 配置 ──────────────────────────────────────────────
+llm:
+  invoke-timeout-seconds: 120   # 单次 LLM 调用超时 (秒)
+  max-retries: 2                # 最大重试次数
+  retry-backoff-millis: 1000    # 重试退避 (毫秒)
+
+  providers:
+    - name: deepseek
+      type: rest          # rest (HTTP REST API) / sdk (OpenAI SDK)
+      base-url: https://api.deepseek.com
+      path: /chat/completions   # DeepSeek 官方端点不带 /v1
+      api-key: ${DEEPSEEK_API_KEY:}
+      models:
+        - deepseek-chat
+        - deepseek-reasoner
+    - name: qwen
+      type: rest
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      path: /v1/chat/completions
+      api-key: ${QWEN_API_KEY:}
+      models:
+        - qwen-plus
+        - qwen-max
+        - qwen-turbo
+    - name: doubao
+      type: rest
+      base-url: https://ark.cn-beijing.volces.com/api/v3
+      path: /chat/completions   # base-url 已含 /api/v3，不再拼 /v1
+      api-key: ${DOUBAO_API_KEY:}
+      models:
+        - doubao-seed-2-0-pro-260215
+        - doubao-seed-2-0-lite-260215
+    # ── 示例: OpenAI SDK 方式 (type: sdk) ──
+    # - name: openai
+    #   type: sdk               # sdk → 走 OpenAI Java SDK
+    #   base-url: https://api.openai.com
+    #   api-key: ${OPENAI_API_KEY:}
+    #   models:
+    #     - gpt-4o
+    #     - gpt-4o-mini
+    # - name: azure-openai
+    #   type: sdk
+    #   base-url: https://your-resource.openai.azure.com
+    #   api-key: ${AZURE_OPENAI_KEY:}
+    #   models:
+    #     - gpt-4o
+
+# ── Resilience4j 弹性能力 ──────────────────────────────────
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 30s
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+    instances:
+      llm-cb-default:
+        base-config: default
+      llm-cb-deepseek:
+        base-config: default
+      llm-cb-qwen:
+        base-config: default
+      llm-cb-doubao:
+        base-config: default
+
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+    instances:
+      llm-retry-deepseek:
+        base-config: default
+      llm-retry-qwen:
+        base-config: default
+      llm-retry-doubao:
+        base-config: default
+      llm-retry-graph:
+        max-attempts: 2
+        wait-duration: 1s
+        retry-exceptions:
+          - java.lang.RuntimeException
+
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 10
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+    instances:
+      llm-rate-deepseek:
+        base-config: default
+      llm-rate-qwen:
+        base-config: default
+      llm-rate-doubao:
+        base-config: default
+      # 业务域维度限流 — 命名规则 llm-biz-rate-{biz}-{provider}
+      # 未显式配置的实例自动继承 default，可按业务域单独调优
+      llm-biz-rate-chat-deepseek:
+        base-config: default
+      llm-biz-rate-chat-qwen:
+        base-config: default
+      llm-biz-rate-chat-doubao:
+        base-config: default
+      llm-biz-rate-media-deepseek:
+        base-config: default
+      llm-biz-rate-rag-deepseek:
+        base-config: default
+      llm-biz-rate-graph-deepseek:
+        base-config: default
+
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 120s
+        cancel-running-future: true
+    instances:
+      llm-time-deepseek:
+        base-config: default
+      llm-time-qwen:
+        base-config: default
+      llm-time-doubao:
+        base-config: default
+
+# ── Management / Actuator ──────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers,retries,ratelimiters
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+    circuitbreakers:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 30s
+    distribution:
+      percentiles-histogram:
+        "[llm.invoke.duration]": true
+        "[llm.graph.duration]": true
+        "[llm.graph.node.duration]": true
+      slo:
+        "[llm.invoke.duration]": 500ms, 1s, 2s, 5s, 10s, 30s
+        "[llm.graph.duration]": 1s, 5s, 10s, 30s, 60s
+
+# ── Logging (含 TraceId) ───────────────────────────────────
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
+  level:
+    com.example.chat.llm: DEBUG
+    io.github.resilience4j: INFO
+    io.micrometer: INFO

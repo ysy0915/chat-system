@@ -2,7 +2,13 @@ package com.example.chat.rag.repository;
 
 import com.example.chat.rag.entity.KnowledgeBase;
 import com.example.chat.rag.entity.KnowledgeDocument;
-import org.apache.ibatis.annotations.*;
+import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 

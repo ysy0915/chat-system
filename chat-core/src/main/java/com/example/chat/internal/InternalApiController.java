@@ -1,8 +1,27 @@
 package com.example.chat.internal;
 
-import com.example.chat.entity.*;
-import com.example.chat.repository.*;
-import com.example.chat.service.*;
+import com.example.chat.entity.DebateRecord;
+import com.example.chat.repository.DebateRecordRepository;
+import com.example.chat.service.ChatProcessor;
+import com.example.chat.service.DebateProcessor;
+import com.example.chat.service.KnowledgeGraphService;
+import com.example.chat.service.TreeHoleQueryService;
+import com.example.chat.service.TreeHoleService;
+import com.example.chat.repository.ModelConfigRepository;
+import com.example.chat.repository.TreeHoleRepository;
+import com.example.chat.repository.UserRepository;
+import com.example.chat.entity.ModelConfig;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.example.chat.entity.Message;
+import com.example.chat.entity.TreeHoleMessage;
+import com.example.chat.entity.User;
+import com.example.chat.repository.MessageRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -11,7 +30,6 @@ import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
 
 import java.util.Base64;
 import java.util.Collections;

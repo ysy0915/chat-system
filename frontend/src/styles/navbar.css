@@ -71,6 +71,12 @@
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     flex-shrink: 0;
+    position: relative;           /* 为红点 badge 定位 */
+}
+
+/* 桌面端公告按钮: 在 navbar-auth 中可见 */
+.navbar-announcement-desktop {
+    display: flex;
 }
 
 .navbar-announcement-btn:hover {
@@ -83,6 +89,32 @@
     background: rgba(56, 189, 248, 0.25);
     transform: scale(0.92);
     border-color: rgba(56, 189, 248, 0.5);
+}
+
+/* 公告未读红点 */
+.navbar-announcement-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 17px;
+    height: 17px;
+    border-radius: 9px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    line-height: 1;
+    box-shadow: 0 0 0 2px #fff;
+    animation: badgePulse 0.4s ease-out;
+}
+
+@keyframes badgePulse {
+    0%   { transform: scale(1.3); }
+    100% { transform: scale(1); }
 }
 
 .navbar-hamburger {

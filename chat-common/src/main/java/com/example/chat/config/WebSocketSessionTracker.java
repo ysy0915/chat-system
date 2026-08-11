@@ -345,8 +345,9 @@ public class WebSocketSessionTracker {
      */
     private void broadcastPage(String pageKey) {
         int count = getCount(pageKey);
+        int hourlyActive = onlineCountRedisService.getHourlyActiveCount();
         broadcastService.broadcast("/topic/online-count/" + pageKey,
-                Map.of("count", count, "page", pageKey));
+                Map.of("count", count, "page", pageKey, "hourlyActive", hourlyActive));
     }
 
     /**

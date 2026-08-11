@@ -8,14 +8,14 @@ import { Client } from '@stomp/stompjs'
 export default function Landing() {
   const animRef = useRef(null)
   const lastTimeRef = useRef(null)
-  const [onlineCount, setOnlineCount] = useState(() => Math.floor(Math.random() * 300) + 1)
+  const [onlineCount, setOnlineCount] = useState(0)
   const [totalUsage, setTotalUsage] = useState(0)
   const stompRef = useRef(null)
 
   useEffect(() => {
-    // 从后端获取虚拟在线数（0-300 随机）
+    // 获取 1 小时内活跃人数
     axios.get('/api/v1/messages/online-count', { params: { page: 'landing' } })
-      .then(res => { if (res.data?.count > 0) setOnlineCount(res.data.count) })
+      .then(res => { if (res.data?.hourlyActive != null) setOnlineCount(res.data.hourlyActive) })
       .catch(() => {})
 
     // 订阅 WebSocket，接收定时刷新的在线数
@@ -32,7 +32,7 @@ export default function Landing() {
         client.subscribe('/topic/online-count/landing', (msg) => {
           try {
             const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count > 0 ? payload.count : onlineCount)
+            if (payload.hourlyActive != null) setOnlineCount(payload.hourlyActive)
           } catch {}
         })
       }
@@ -57,7 +57,7 @@ export default function Landing() {
         <div className="hero-stats-row">
           <div className="hero-online-badge">
             <span className="online-dot"></span>
-            {onlineCount} 人在线
+            {onlineCount} 人 1 小时内在线
           </div>
           <div className="hero-usage-badge">
             <span className="usage-icon">📈</span>

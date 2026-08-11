@@ -167,6 +167,9 @@
 
 /* ===== Mobile Announcement Button ===== */
 @media (max-width: 768px) {
+    .navbar-announcement-desktop {
+        display: none !important;   /* 桌面按钮在手机上隐藏 */
+    }
     .navbar-mobile-actions {
         display: flex !important;
     }

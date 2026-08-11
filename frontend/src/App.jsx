@@ -252,6 +252,19 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [announcementOpen, setAnnouncementOpen] = useState(false)
 
+    // 公告未读红点：用户首次看到公告前显示
+    const userId = authUser?.id || localStorage.getItem('online_presence_guest_id') || 'guest'
+    const seenKey = `announcement_seen_v1_${userId}`
+    const [announcementUnread, setAnnouncementUnread] = useState(() => !localStorage.getItem(seenKey))
+
+    const handleOpenAnnouncement = () => {
+        setAnnouncementOpen(true)
+        if (announcementUnread) {
+            localStorage.setItem(seenKey, String(Date.now()))
+            setAnnouncementUnread(false)
+        }
+    }
+
     const closeMobile = () => setMobileOpen(false)
 
     useEffect(() => { closeMobile() }, [location.pathname])
@@ -325,6 +338,15 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                     ))}
                 </div>
                 <div className="navbar-auth">
+                    <button
+                        className="navbar-announcement-btn navbar-announcement-desktop"
+                        onClick={handleOpenAnnouncement}
+                        type="button"
+                        title="公告"
+                    >
+                        📢
+                        {announcementUnread && <span className="navbar-announcement-badge">1</span>}
+                    </button>
                     {authUser ? (
                         <>
                             <Link to="/profile" className="navbar-user navbar-user-link">👋 {authUser.name}</Link>
@@ -341,11 +363,12 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                 <div className="navbar-mobile-actions">
                     <button
                         className="navbar-announcement-btn"
-                        onClick={() => setAnnouncementOpen(true)}
+                        onClick={handleOpenAnnouncement}
                         type="button"
                         title="公告"
                     >
                         📢
+                        {announcementUnread && <span className="navbar-announcement-badge">1</span>}
                     </button>
                     <button
                         className="navbar-hamburger"

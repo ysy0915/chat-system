@@ -5,6 +5,7 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.User;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.ContentSafetyService;
+import com.example.chat.service.OnlineCountRedisService;
 import com.example.chat.service.RateLimitService;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,6 +37,7 @@ public class MessageController {
     private final RateLimitService rateLimitService;
     private final ContentSafetyService contentSafetyService;
     private final BroadcastService broadcastService;
+    private final OnlineCountRedisService onlineCountRedisService;
     private final ObjectMapper objectMapper;
 
     public MessageController(CoreClient coreClient,
@@ -44,6 +46,7 @@ public class MessageController {
                              RateLimitService rateLimitService,
                              ContentSafetyService contentSafetyService,
                              BroadcastService broadcastService,
+                             OnlineCountRedisService onlineCountRedisService,
                              ObjectMapper objectMapper) {
         this.coreClient = coreClient;
         this.simpMessagingTemplate = simpMessagingTemplate;
@@ -51,6 +54,7 @@ public class MessageController {
         this.rateLimitService = rateLimitService;
         this.contentSafetyService = contentSafetyService;
         this.broadcastService = broadcastService;
+        this.onlineCountRedisService = onlineCountRedisService;
         this.objectMapper = objectMapper;
     }
 
@@ -249,7 +253,8 @@ public class MessageController {
     @Operation(summary = "在线人数", description = "查询当前页面的在线用户数")
     @GetMapping("/online-count")
     public ResponseEntity<?> getOnlineCount(@RequestParam(value = "page", defaultValue = "global") String page) {
-        return ResponseEntity.ok(Map.of("count", sessionTracker.getCount(page)));
+        int hourlyActive = onlineCountRedisService.getHourlyActiveCount();
+        return ResponseEntity.ok(Map.of("count", sessionTracker.getCount(page), "hourlyActive", hourlyActive));
     }
 
     @Operation(summary = "重新生成回答", description = "根据 req_id 和 user_id 触发 AI 重新生成")

@@ -40,8 +40,10 @@ public class GraphRepositoryService {
                     tx.run("""
                             MATCH (s:Entity {name: $subject}), (o:Entity {name: $object})
                             MERGE (s)-[r:RELATION {type: $relType}]->(o)
-                            SET r.source = $source, r.messageId = $msgId,
+                            ON CREATE SET r.count = 1, r.source = $source, r.messageId = $msgId,
                                 r.question = $question, r.updatedAt = datetime()
+                            ON MATCH SET r.count = coalesce(r.count, 1) + 1, r.updatedAt = datetime(),
+                                r.source = coalesce(r.source, $source), r.messageId = $msgId
                             """,
                             Map.of("subject", subject, "object", object,
                                     "relType", relation, "source", source,
@@ -54,14 +56,15 @@ public class GraphRepositoryService {
         }
     }
 
-    /** 图谱可视化查询：返回 top N 节点及其间的边 */
-    public Map<String, Object> getGraph(Driver neo4jDriver, int limit) {
+    /** 图谱可视化查询：返回 top N 节点（权重 >= minEntityWeight）及其间的边（权重 >= minRelationWeight） */
+    public Map<String, Object> getGraph(Driver neo4jDriver, int limit, int minEntityWeight, int minRelationWeight) {
         if (neo4jDriver == null) return Map.of("nodes", List.of(), "edges", List.of());
         try (Session session = neo4jDriver.session()) {
             Result nodeResult = session.run(
                     "MATCH (e:Entity)-[r]-() WITH e, count(r) as relCount " +
+                    "WHERE relCount >= $minEntityWeight " +
                     "ORDER BY relCount DESC LIMIT $limit RETURN id(e) as id, e.name as name, relCount",
-                    Map.of("limit", limit));
+                    Map.of("limit", limit, "minEntityWeight", minEntityWeight));
 
             List<Map<String, Object>> nodes = new ArrayList<>();
             Set<Long> nodeIds = new HashSet<>();
@@ -76,8 +79,9 @@ public class GraphRepositoryService {
 
             Result edgeResult = session.run(
                     "MATCH (s:Entity)-[r:RELATION]->(o:Entity) WHERE id(s) IN $ids AND id(o) IN $ids " +
-                    "RETURN id(s) as source, id(o) as target, r.type as type, r.question as question",
-                    Map.of("ids", nodeIds));
+                    "AND coalesce(r.count, 1) >= $minRelationWeight " +
+                    "RETURN id(s) as source, id(o) as target, r.type as type, r.question as question, coalesce(r.count, 1) as weight",
+                    Map.of("ids", nodeIds, "minRelationWeight", minRelationWeight));
 
             List<Map<String, Object>> edges = new ArrayList<>();
             while (edgeResult.hasNext()) {
@@ -86,6 +90,7 @@ public class GraphRepositoryService {
                 edge.put("source", record.get("source").asLong());
                 edge.put("target", record.get("target").asLong());
                 edge.put("label", record.get("type").asString());
+                edge.put("weight", record.get("weight").asInt());
                 String question = record.get("question").isNull() ? null : record.get("question").asString();
                 if (question != null) edge.put("question", question);
                 edges.add(edge);
@@ -98,14 +103,14 @@ public class GraphRepositoryService {
     }
 
     /** 搜索实体 */
-    public Map<String, Object> searchEntities(Driver neo4jDriver, String keyword, int limit) {
+    public Map<String, Object> searchEntities(Driver neo4jDriver, String keyword, int limit, int minEntityWeight, int minRelationWeight) {
         if (neo4jDriver == null) return Map.of("nodes", List.of(), "edges", List.of());
         try (Session session = neo4jDriver.session()) {
             Result nodeResult = session.run(
                     "MATCH (e:Entity) WHERE e.name CONTAINS $kw WITH e LIMIT $limit " +
-                    "MATCH (e)-[r]-() WITH e, count(r) as relCount " +
+                    "MATCH (e)-[r]-() WITH e, count(r) as relCount WHERE relCount >= $minEntityWeight " +
                     "RETURN id(e) as id, e.name as name, relCount",
-                    Map.of("kw", keyword, "limit", limit));
+                    Map.of("kw", keyword, "limit", limit, "minEntityWeight", minEntityWeight));
 
             List<Map<String, Object>> nodes = new ArrayList<>();
             Set<Long> nodeIds = new HashSet<>();
@@ -136,8 +141,9 @@ public class GraphRepositoryService {
             // 边
             Result edgeResult = session.run(
                     "MATCH (s:Entity)-[r:RELATION]->(o:Entity) WHERE id(s) IN $ids AND id(o) IN $ids " +
-                    "RETURN id(s) as source, id(o) as target, r.type as type, r.question as question",
-                    Map.of("ids", nodeIds));
+                    "AND coalesce(r.count, 1) >= $minRelationWeight " +
+                    "RETURN id(s) as source, id(o) as target, r.type as type, r.question as question, coalesce(r.count, 1) as weight",
+                    Map.of("ids", nodeIds, "minRelationWeight", minRelationWeight));
             List<Map<String, Object>> edges = new ArrayList<>();
             while (edgeResult.hasNext()) {
                 Record record = edgeResult.next();
@@ -145,6 +151,7 @@ public class GraphRepositoryService {
                 edge.put("source", record.get("source").asLong());
                 edge.put("target", record.get("target").asLong());
                 edge.put("label", record.get("type").asString());
+                edge.put("weight", record.get("weight").asInt());
                 String question = record.get("question").isNull() ? null : record.get("question").asString();
                 if (question != null) edge.put("question", question);
                 edges.add(edge);

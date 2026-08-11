@@ -243,4 +243,68 @@ file: document.pdf
 
 ---
 
+## 16. 知识图谱 API
+
+> 数据来源 Neo4j 图数据库。前端通过 `chat-web` (GraphController) 代理转发到 `chat-core` (InternalApiController)。
+> 内部调用需要 `User-Agent: chat-web` 请求头。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/graph` | 获取知识图谱节点和关系边 |
+| GET | `/api/v1/graph/search` | 按关键词搜索实体及关联图 |
+| GET | `/api/v1/graph/stats` | 获取图谱统计（实体数、关系数） |
+
+### 获取知识图谱
+
+```
+GET /api/v1/graph?limit=100&minEntityWeight=1&minRelationWeight=1
+
+参数：
+  limit            — 返回节点数上限，默认 100
+  minEntityWeight  — 实体最低权重（关系数），≤ 此值的实体不显示，留空默认 1
+  minRelationWeight — 关系最低权重（累计次数），≤ 此值的关系线不显示，留空默认 1
+
+响应：
+{
+  "nodes": [{ "id": 123, "label": "深度学习", "value": 15 }],
+  "edges": [{ "source": 123, "target": 456, "label": "子领域", "weight": 5, "question": "..." }]
+}
+```
+
+- 实体权重 = 该实体关联的 RELATION 边总数，值越大越核心
+- 关系权重 = Neo4j 中同一条关系累积出现的次数 (`r.count`)，每次抽取相同三元组时 +1
+- `minEntityWeight` 和 `minRelationWeight` 均默认 1（不过滤），用户可手动设置筛选核心节点
+
+### 搜索知识图谱
+
+```
+GET /api/v1/graph/search?keyword=深度&limit=30&minEntityWeight=1&minRelationWeight=1
+
+参数：
+  keyword          — 搜索关键词（模糊匹配实体名称）
+  limit            — 返回结果数上限，默认 30
+  minEntityWeight  — 同获取接口
+  minRelationWeight — 同获取接口
+
+响应：格式同上
+```
+
+### 图谱统计
+
+```
+GET /api/v1/graph/stats
+
+响应：
+{ "entityCount": 250, "relationCount": 480 }
+```
+
+### 知识抽取流程
+
+1. AI 对话完成后，`ChatProcessor` / `DebateProcessor` 异步调用 `KnowledgeGraphService.extractAndSaveAsync()`
+2. AI 从对话文本中提取三元组（subject → relation → object）
+3. 写入 Neo4j：`MERGE` 实体和关系，`ON CREATE SET r.count = 1`，`ON MATCH SET r.count += 1`
+4. 重复出现的同一三元组自动累加关系权重
+
+---
+
 如需将上述内容拆分为单独文件（OpenAPI YAML、SQL DDL 单文件、架构图），或需要将 OpenAPI 写为完整 YAML 并提交到仓库，请回复说明目标文件名与路径（默认放在 docs/）。

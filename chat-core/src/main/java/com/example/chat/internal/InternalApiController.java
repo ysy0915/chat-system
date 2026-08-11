@@ -417,22 +417,27 @@ public class InternalApiController {
 
     @Operation(summary = "获取知识图谱", description = "获取知识图谱的全部节点和关系边")
     @GetMapping("/graph")
-    public ResponseEntity<?> getGraph(@Parameter(description = "返回节点数上限，默认100") @RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public ResponseEntity<?> getGraph(
+            @Parameter(description = "返回节点数上限，默认100") @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @Parameter(description = "实体最低权重（关系数），默认1") @RequestParam(value = "minEntityWeight", defaultValue = "1") int minEntityWeight,
+            @Parameter(description = "关系最低权重（累计次数），默认1") @RequestParam(value = "minRelationWeight", defaultValue = "1") int minRelationWeight) {
         if (knowledgeGraphService == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "nodes", Collections.emptyList(), "edges", Collections.emptyList()));
         }
-        return ResponseEntity.ok(knowledgeGraphService.getGraph(limit));
+        return ResponseEntity.ok(knowledgeGraphService.getGraph(limit, minEntityWeight, minRelationWeight));
     }
 
     @Operation(summary = "搜索知识图谱", description = "按关键词在知识图谱中搜索实体和关系")
     @GetMapping("/graph/search")
     public ResponseEntity<?> searchGraph(
             @Parameter(description = "搜索关键词") @RequestParam("keyword") String keyword,
-            @Parameter(description = "返回结果数上限，默认30") @RequestParam(value = "limit", defaultValue = "30") int limit) {
+            @Parameter(description = "返回结果数上限，默认30") @RequestParam(value = "limit", defaultValue = "30") int limit,
+            @Parameter(description = "实体最低权重（关系数），默认1") @RequestParam(value = "minEntityWeight", defaultValue = "1") int minEntityWeight,
+            @Parameter(description = "关系最低权重（累计次数），默认1") @RequestParam(value = "minRelationWeight", defaultValue = "1") int minRelationWeight) {
         if (knowledgeGraphService == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "nodes", Collections.emptyList(), "edges", Collections.emptyList()));
         }
-        return ResponseEntity.ok(knowledgeGraphService.searchEntities(keyword, limit));
+        return ResponseEntity.ok(knowledgeGraphService.searchEntities(keyword, limit, minEntityWeight, minRelationWeight));
     }
 
     @Operation(summary = "知识图谱统计", description = "获取知识图谱的实体数和关系数统计")

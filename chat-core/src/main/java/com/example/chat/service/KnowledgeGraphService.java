@@ -123,12 +123,12 @@ public class KnowledgeGraphService {
 
     // ---- 图谱查询（委托） ----
 
-    public Map<String, Object> getGraph(int limit) {
-        return graphRepositoryService.getGraph(neo4jDriver, limit);
+    public Map<String, Object> getGraph(int limit, int minEntityWeight, int minRelationWeight) {
+        return graphRepositoryService.getGraph(neo4jDriver, limit, minEntityWeight, minRelationWeight);
     }
 
-    public Map<String, Object> searchEntities(String keyword, int limit) {
-        return graphRepositoryService.searchEntities(neo4jDriver, keyword, limit);
+    public Map<String, Object> searchEntities(String keyword, int limit, int minEntityWeight, int minRelationWeight) {
+        return graphRepositoryService.searchEntities(neo4jDriver, keyword, limit, minEntityWeight, minRelationWeight);
     }
 
     public Map<String, Object> getStats() {

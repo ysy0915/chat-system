@@ -22,15 +22,19 @@ public class GraphController {
 
     @Operation(summary = "获取知识图谱", description = "返回图谱节点和关系数据，默认 100 条")
     @GetMapping
-    public ResponseEntity<?> getGraph(@RequestParam(value = "limit", defaultValue = "100") int limit) {
-        return ResponseEntity.ok(coreClient.getGraph(limit));
+    public ResponseEntity<?> getGraph(@RequestParam(value = "limit", defaultValue = "100") int limit,
+                                       @RequestParam(value = "minEntityWeight", defaultValue = "1") int minEntityWeight,
+                                       @RequestParam(value = "minRelationWeight", defaultValue = "1") int minRelationWeight) {
+        return ResponseEntity.ok(coreClient.getGraph(limit, minEntityWeight, minRelationWeight));
     }
 
     @Operation(summary = "搜索知识图谱", description = "按关键词搜索实体及其邻居节点")
     @GetMapping("/search")
     public ResponseEntity<?> searchGraph(@RequestParam("keyword") String keyword,
-                                          @RequestParam(value = "limit", defaultValue = "30") int limit) {
-        return ResponseEntity.ok(coreClient.searchGraph(keyword, limit));
+                                          @RequestParam(value = "limit", defaultValue = "30") int limit,
+                                          @RequestParam(value = "minEntityWeight", defaultValue = "1") int minEntityWeight,
+                                          @RequestParam(value = "minRelationWeight", defaultValue = "1") int minRelationWeight) {
+        return ResponseEntity.ok(coreClient.searchGraph(keyword, limit, minEntityWeight, minRelationWeight));
     }
 
     @Operation(summary = "图谱统计", description = "获取节点数、关系数等统计信息")

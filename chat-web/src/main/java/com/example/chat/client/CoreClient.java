@@ -351,12 +351,12 @@ public class CoreClient {
 
     // ==================== 知识图谱 ====================
 
-    public Object getGraph(int limit) {
-        return get("/internal/graph?limit=" + limit);
+    public Object getGraph(int limit, int minEntityWeight, int minRelationWeight) {
+        return get("/internal/graph?limit=" + limit + "&minEntityWeight=" + minEntityWeight + "&minRelationWeight=" + minRelationWeight);
     }
 
-    public Object searchGraph(String keyword, int limit) {
-        return get("/internal/graph/search?keyword=" + keyword + "&limit=" + limit);
+    public Object searchGraph(String keyword, int limit, int minEntityWeight, int minRelationWeight) {
+        return get("/internal/graph/search?keyword=" + keyword + "&limit=" + limit + "&minEntityWeight=" + minEntityWeight + "&minRelationWeight=" + minRelationWeight);
     }
 
     public Object getGraphStats() {

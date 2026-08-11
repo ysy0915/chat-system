@@ -16,22 +16,46 @@ export default function KnowledgeGraph() {
     const [keyword, setKeyword] = useState('')
     const [selectedNode, setSelectedNode] = useState(null)
     const [hoveredNode, setHoveredNode] = useState(null)
+    const [minEntityWeight, setMinEntityWeight] = useState('')
+    const [minRelationWeight, setMinRelationWeight] = useState('')
+    const [helpOpen, setHelpOpen] = useState(null) // null | 'entity' | 'relation'
+    const helpRef = useRef(null)
+
+    // 点击其他地方关闭帮助弹窗
+    useEffect(() => {
+        if (!helpOpen) return
+        const close = (e) => {
+            if (helpRef.current && !helpRef.current.contains(e.target)) setHelpOpen(null)
+        }
+        document.addEventListener('pointerdown', close)
+        return () => document.removeEventListener('pointerdown', close)
+    }, [helpOpen])
+
+    const toggleHelp = (key) => {
+        setHelpOpen(prev => prev === key ? null : key)
+    }
 
     // 力导向布局状态
     const simulationRef = useRef({ nodes: [], edges: [], alpha: 1 })
     const animationRef = useRef(null)
     const transformRef = useRef({ x: 0, y: 0, k: 1 })
     const dragRef = useRef(null)
+    const pinchRef = useRef(null)
 
     // 加载图谱数据
-    const loadGraph = useCallback(async (searchKw) => {
+    const loadGraph = useCallback(async (searchKw, entityW, relationW) => {
+        const entityWeight = (entityW != null && entityW !== '') ? parseInt(entityW) : 1
+        const relationWeight = (relationW != null && relationW !== '') ? parseInt(relationW) : 1
         setLoading(true)
         try {
             let resp
             if (searchKw && searchKw.trim()) {
-                resp = await axios.get(`/api/v1/graph/search?keyword=${encodeURIComponent(searchKw.trim())}&limit=50`)
+                resp = await axios.get(
+                    `/api/v1/graph/search?keyword=${encodeURIComponent(searchKw.trim())}` +
+                    `&limit=50&minEntityWeight=${entityWeight}&minRelationWeight=${relationWeight}`)
             } else {
-                resp = await axios.get('/api/v1/graph?limit=100')
+                resp = await axios.get(
+                    `/api/v1/graph?limit=100&minEntityWeight=${entityWeight}&minRelationWeight=${relationWeight}`)
             }
             const data = resp.data
             if (data.nodes) {
@@ -81,7 +105,7 @@ export default function KnowledgeGraph() {
 
     useEffect(() => {
         loadStats()
-        loadGraph()
+        loadGraph('', '', '')
     }, [loadStats, loadGraph])
 
     // 力导向模拟 + Canvas 渲染
@@ -346,15 +370,99 @@ export default function KnowledgeGraph() {
         transformRef.current.k = newK
     }
 
+    // 触摸：单指拖拽节点/画布 + 双指缩放
+    const getTouchDist = (touches) => {
+        const dx = touches[1].clientX - touches[0].clientX
+        const dy = touches[1].clientY - touches[0].clientY
+        return Math.sqrt(dx * dx + dy * dy)
+    }
+
+    const getTouchPos = (touches) => {
+        const canvas = canvasRef.current
+        const rect = canvas.getBoundingClientRect()
+        const { x: tx, y: ty, k: tk } = transformRef.current
+        return {
+            x: (touches[0].clientX - rect.left - tx) / tk,
+            y: (touches[0].clientY - rect.top - ty) / tk
+        }
+    }
+
+    const handleTouchStart = (e) => {
+        if (e.touches.length === 1) {
+            const pos = getTouchPos(e.touches)
+            const node = findNode(pos)
+            if (node) {
+                dragRef.current = { node, startX: e.touches[0].clientX, startY: e.touches[0].clientY, moved: false }
+                setSelectedNode(node)
+            } else {
+                dragRef.current = { pan: true, startX: e.touches[0].clientX, startY: e.touches[0].clientY,
+                                    origX: transformRef.current.x, origY: transformRef.current.y }
+            }
+        } else if (e.touches.length === 2) {
+            dragRef.current = null
+            pinchRef.current = {
+                dist: getTouchDist(e.touches),
+                scale: transformRef.current.k,
+                cx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                cy: (e.touches[0].clientY + e.touches[1].clientY) / 2
+            }
+        }
+    }
+
+    const handleTouchMove = (e) => {
+        // 双指缩放
+        if (e.touches.length === 2 && pinchRef.current) {
+            const p = pinchRef.current
+            const newDist = getTouchDist(e.touches)
+            const ratio = newDist / p.dist
+            const curScale = transformRef.current.k
+            const newScale = Math.min(3, Math.max(0.3, p.scale * ratio))
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
+            const canvas = canvasRef.current
+            const rect = canvas.getBoundingClientRect()
+            const cx = mx - rect.left
+            const cy = my - rect.top
+            transformRef.current.x = cx - (cx - transformRef.current.x) * (newScale / curScale)
+            transformRef.current.y = cy - (cy - transformRef.current.y) * (newScale / curScale)
+            transformRef.current.k = newScale
+            pinchRef.current = { dist: newDist, scale: newScale, cx: mx, cy: my }
+            e.preventDefault()
+            return
+        }
+        // 单指拖拽
+        if (!dragRef.current || e.touches.length !== 1) return
+        if (dragRef.current.node) {
+            const pos = getTouchPos(e.touches)
+            dragRef.current.node.x = pos.x
+            dragRef.current.node.y = pos.y
+            dragRef.current.node.vx = 0
+            dragRef.current.node.vy = 0
+            dragRef.current.moved = true
+            simulationRef.current.alpha = Math.max(simulationRef.current.alpha, 0.3)
+        } else if (dragRef.current.pan) {
+            transformRef.current.x = dragRef.current.origX + (e.touches[0].clientX - dragRef.current.startX)
+            transformRef.current.y = dragRef.current.origY + (e.touches[0].clientY - dragRef.current.startY)
+        }
+        e.preventDefault()
+    }
+
+    const handleTouchEnd = (e) => {
+        dragRef.current = null
+        pinchRef.current = null
+    }
+
     const handleSearch = (e) => {
         e.preventDefault()
-        loadGraph(keyword)
+        loadGraph(keyword, minEntityWeight, minRelationWeight)
     }
 
     const handleReset = () => {
         setKeyword('')
         setSelectedNode(null)
-        loadGraph()
+        setMinEntityWeight('')
+        setMinRelationWeight('')
+        loadGraph('', '', '')
     }
 
     // 选中节点的相关边
@@ -366,33 +474,26 @@ export default function KnowledgeGraph() {
 
     return (
         <div className="graph-page">
-            <div className="graph-header">
-                <Link to="/home" className="graph-back">← 返回</Link>
-                <h2 className="graph-title">知识脉络图</h2>
+            {/* 返回按钮 */}
+            <Link to="/home" className="graph-back-btn">← 返回首页</Link>
+
+            {/* 说明区域 */}
+            <div className="graph-welcome">
+                <h1 className="graph-welcome-title">🧬 知识脉络图</h1>
+                <p className="graph-welcome-desc">
+                    基于 AI 对话内容自动抽取实体与关系，构建可视化知识图谱。<br />
+                    放大缩小浏览、拖拽节点探索、点击查看关联关系。支持按权重筛选核心节点。
+                </p>
                 <div className="graph-stats">
-                    <span className="stat-badge">{stats.entityCount || 0} 实体</span>
-                    <span className="stat-badge">{stats.relationCount || 0} 关系</span>
+                    <span className="stat-badge">🏷 实体 {stats.entityCount || 0}</span>
+                    <span className="stat-badge">🔗 关系 {stats.relationCount || 0}</span>
+                    {graphData.nodes.length > 0 && (
+                        <span className="stat-badge">📊 图中 {graphData.nodes.length} 节点</span>
+                    )}
                 </div>
             </div>
 
-            <div className="graph-toolbar">
-                <form onSubmit={handleSearch} className="graph-search-form">
-                    <input
-                        type="text"
-                        value={keyword}
-                        onChange={e => setKeyword(e.target.value)}
-                        placeholder="搜索知识实体..."
-                        className="graph-search-input"
-                    />
-                    <button type="submit" className="graph-btn" disabled={loading}>
-                        {loading ? '搜索中...' : '搜索'}
-                    </button>
-                    <button type="button" onClick={handleReset} className="graph-btn graph-btn-secondary">
-                        重置
-                    </button>
-                </form>
-            </div>
-
+            {/* 画布区 */}
             <div className="graph-container">
                 <canvas
                     ref={canvasRef}
@@ -401,8 +502,23 @@ export default function KnowledgeGraph() {
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
                     onWheel={handleWheel}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                     className="graph-canvas"
                 />
+
+                {loading && (
+                    <div className="graph-loading-overlay">
+                        <span>加载中…</span>
+                    </div>
+                )}
+
+                {!loading && graphData.nodes.length === 0 && (
+                    <div className="graph-empty-hint">
+                        暂无数据，发起 AI 对话后将自动构建
+                    </div>
+                )}
 
                 {selectedNode && (
                     <div className="graph-detail-panel">
@@ -444,6 +560,82 @@ export default function KnowledgeGraph() {
                         <span>关联数: {hoveredNode.value || 0}</span>
                     </div>
                 )}
+            </div>
+
+            {/* 底部操作区 */}
+            <div className="graph-toolbar">
+                <form onSubmit={handleSearch} className="graph-search-form">
+                    <input
+                        type="text"
+                        value={keyword}
+                        onChange={e => setKeyword(e.target.value)}
+                        placeholder="搜索知识实体…"
+                        className="graph-search-input"
+                    />
+                    <button type="submit" className="graph-btn" disabled={loading}>
+                        {loading ? '搜索中…' : '搜索'}
+                    </button>
+                    <button type="button" onClick={handleReset} className="graph-btn graph-btn-secondary">
+                        重置
+                    </button>
+                </form>
+
+                <div className="graph-weight-filters" ref={helpRef}>
+                    <div className="graph-weight-row">
+                        <span
+                            className={`graph-weight-help${helpOpen === 'entity' ? ' active' : ''}`}
+                            onClick={(e) => { e.stopPropagation(); toggleHelp('entity') }}
+                        >?</span>
+                        {helpOpen === 'entity' && (
+                            <div className="graph-help-popup">
+                                一个词关联的知识越多，它的"权重"就越高。<br />
+                                设个数字，只展示权重 ≥ 这个值的词。<br />
+                                数字越大，图中出现的词越少但越核心。不填默认显示全部。
+                            </div>
+                        )}
+                        <label className="graph-weight-label">
+                            实体最低权重
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={minEntityWeight}
+                                onChange={e => setMinEntityWeight(e.target.value)}
+                                className="graph-weight-input"
+                                placeholder="1"
+                            />
+                        </label>
+                    </div>
+                    <div className="graph-weight-row">
+                        <span
+                            className={`graph-weight-help${helpOpen === 'relation' ? ' active' : ''}`}
+                            onClick={(e) => { e.stopPropagation(); toggleHelp('relation') }}
+                        >?</span>
+                        {helpOpen === 'relation' && (
+                            <div className="graph-help-popup">
+                                两个词之间被 AI 提到越多次，"关系"就越强。<br />
+                                设个数字，只展示出现次数 ≥ 这个值的关系线。<br />
+                                数字越大，图里的连线越少但越重要。不填默认显示全部。
+                            </div>
+                        )}
+                        <label className="graph-weight-label">
+                            关系最低权重
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={minRelationWeight}
+                                onChange={e => setMinRelationWeight(e.target.value)}
+                                className="graph-weight-input"
+                                placeholder="1"
+                            />
+                        </label>
+                    </div>
+                    <button type="button" onClick={() => loadGraph(keyword, minEntityWeight, minRelationWeight)}
+                            className="graph-btn" disabled={loading}>
+                        筛选
+                    </button>
+                </div>
             </div>
         </div>
     )

@@ -98,7 +98,7 @@ public class LangGraphRequest {
         // ── 自愈字段 ──────────────────────────────────
 
         @Schema(description = "失败重试次数 (默认 0)", example = "2")
-        private int retryCount = 0;
+        private int retryCount;
 
         @Schema(description = "重试退避 (毫秒)", example = "500")
         private long retryBackoffMs = 500;

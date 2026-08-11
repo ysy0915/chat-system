@@ -2,7 +2,6 @@ package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
 import com.example.chat.service.ContentSafetyService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -21,12 +20,10 @@ import java.util.UUID;
 public class DebateController {
     private final CoreClient coreClient;
     private final ContentSafetyService contentSafetyService;
-    private final ObjectMapper objectMapper;
 
-    public DebateController(CoreClient coreClient, ContentSafetyService contentSafetyService, ObjectMapper objectMapper) {
+    public DebateController(CoreClient coreClient, ContentSafetyService contentSafetyService) {
         this.coreClient = coreClient;
         this.contentSafetyService = contentSafetyService;
-        this.objectMapper = objectMapper;
     }
 
     @Operation(summary = "发起辩论", description = "创建新辩论：内容安全检测 → 插入记录 → 触发 AI 辩论")

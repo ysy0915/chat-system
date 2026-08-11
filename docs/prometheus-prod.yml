@@ -1,0 +1,37 @@
+# 生产环境 Prometheus 配置（部署在 Milvus 服务器 121.40.188.98）
+# 所有 Java 服务直接跑在宿主机，使用内网 IP 172.23.172.13 抓取
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "chat-core"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["172.23.172.13:9090"]
+
+  - job_name: "chat-web"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["172.23.172.13:8081"]
+
+  - job_name: "chat-games"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["172.23.172.13:8083"]
+
+  - job_name: "chat-media"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["172.23.172.13:8084"]
+
+  - job_name: "chat-llm"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["172.23.172.13:9095"]
+
+  # Nginx 指标（主服务器 112.124.106.108 上的 nginx-prometheus-exporter:9113）
+  # 暴露公网端口 9113 或用专线，此处示例为主服务器公网 IP
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["112.124.106.108:9113"]

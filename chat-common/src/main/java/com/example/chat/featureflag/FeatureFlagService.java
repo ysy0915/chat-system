@@ -81,21 +81,32 @@ public class FeatureFlagService {
     public boolean isEnabled(String flagName, String userId) {
         FlagConfig config = getConfig(flagName);
         if (config == null || !config.enabled) return false;
-
-        // 环境检查
         if (!config.isEnvironmentEnabled(currentEnv)) return false;
+        if (isBlacklisted(config, userId)) return false;
+        if (isWhitelisted(config, userId)) return true;
+        return inGrayscale(config, userId);
+    }
 
-        // 黑名单优先
-        if (userId != null && config.blacklist.contains(userId)) return false;
+    /**
+     * 黑名单用户直接禁用
+     */
+    private boolean isBlacklisted(FlagConfig config, String userId) {
+        return userId != null && config.blacklist.contains(userId);
+    }
 
-        // 白名单直接通过
-        if (userId != null && config.whitelist.contains(userId)) return true;
+    /**
+     * 白名单用户直接放行
+     */
+    private boolean isWhitelisted(FlagConfig config, String userId) {
+        return userId != null && config.whitelist.contains(userId);
+    }
 
-        // 百分比灰度
+    /**
+     * 基于 userId 哈希计算是否落在灰度区间（保证同一用户结果稳定）
+     */
+    private boolean inGrayscale(FlagConfig config, String userId) {
         if (config.percentage >= 100) return true;
         if (config.percentage <= 0) return false;
-
-        // 基于userId hash计算是否在灰度范围内（保证同一用户结果稳定）
         if (userId == null) return config.percentage >= 50; // 匿名用户50%阈值
         int hash = Math.abs(userId.hashCode() % 100);
         return hash < config.percentage;

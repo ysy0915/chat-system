@@ -22,3 +22,15 @@ scrape_configs:
     metrics_path: "/actuator/prometheus"
     static_configs:
       - targets: ["chat-media:8084"]
+
+  - job_name: "chat-llm"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-llm:9095"]
+
+  # 生产环境 Nginx 反向代理指标（主服务器 112.124.106.108）
+  # 需在主服务器安装 nginx-prometheus-exporter：docker run -d -p 9113:9113 \
+  #   nginx/nginx-prometheus-exporter:1.1.0 -nginx.scrape-uri=http://127.0.0.1:8080/stub_status
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["172.23.172.13:9113"]

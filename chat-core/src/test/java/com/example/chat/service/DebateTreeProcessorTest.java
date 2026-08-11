@@ -185,7 +185,7 @@ class DebateTreeProcessorTest {
         @Test
         @DisplayName("LLM 正常 → 返回结果并推送 tree_aggregate_result")
         void llmSuccess() throws Exception {
-            when(llmInvoker.invoke(any(), anyList(), anyDouble(), anyString(), any(), anyString()))
+            when(llmInvoker.invokeStream(any(), anyList(), anyDouble(), anyString(), any(), anyString(), any()))
                     .thenReturn("**【最终结论】** 建议推广\n**【理由】** 1. 经济效益高\n**【建议】** 分步实施");
 
             Map<String, String> conclusions = Map.of("p1", "支持", "p2", "反对");
@@ -209,7 +209,7 @@ class DebateTreeProcessorTest {
         @Test
         @DisplayName("LLM 异常 → 传播到 runTreeDebate，上层 catch 触发本地拼接")
         void llmExceptionPropagates() throws Exception {
-            when(llmInvoker.invoke(any(), anyList(), anyDouble(), anyString(), any(), anyString()))
+            when(llmInvoker.invokeStream(any(), anyList(), anyDouble(), anyString(), any(), anyString(), any()))
                     .thenThrow(new RuntimeException("timeout"));
 
             Map<String, String> conclusions = Map.of("p1", "利好", "p2", "风险");
@@ -227,7 +227,7 @@ class DebateTreeProcessorTest {
         @DisplayName("缺少视角结论的 map → 在 prompt 中显示「无」")
         void missingConclusionInPrompt() throws Exception {
             String mockResult = "最终结论内容";
-            when(llmInvoker.invoke(any(), anyList(), anyDouble(), anyString(), any(), anyString()))
+            when(llmInvoker.invokeStream(any(), anyList(), anyDouble(), anyString(), any(), anyString(), any()))
                     .thenReturn(mockResult);
 
             Map<String, String> conclusions = Map.of("p1", "支持");

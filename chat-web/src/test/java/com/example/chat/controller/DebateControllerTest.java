@@ -16,11 +16,10 @@ class DebateControllerTest {
     }
 
     @Test
-    void constructorTakesCoreClientContentSafetyObjectMapper() throws NoSuchMethodException {
-        // 验证构造函数参数类型
+    void constructorTakesCoreClientContentSafety() throws NoSuchMethodException {
+        // 验证构造函数参数类型（ObjectMapper 已移除）
         assertNotNull(DebateController.class.getDeclaredConstructor(
                 com.example.chat.client.CoreClient.class,
-                com.example.chat.service.ContentSafetyService.class,
-                com.fasterxml.jackson.databind.ObjectMapper.class));
+                com.example.chat.service.ContentSafetyService.class));
     }
 }

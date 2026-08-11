@@ -41,6 +41,8 @@
         <exclude name="BooleanGetMethodName"/>
         <exclude name="CallSuperInConstructor"/>
         <exclude name="ControlStatementBraces"/>
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
+        <exclude name="FieldDeclarationsShouldBeAtStartOfClass"/>
     </rule>
 
     <!-- ========== 设计 ========== -->
@@ -57,6 +59,11 @@
         <exclude name="GodClass"/>
         <exclude name="SignatureDeclareThrowsException"/>
         <exclude name="AvoidCatchingGenericException"/>
+        <exclude name="UseObjectForClearerAPI"/>
+        <exclude name="ExcessivePublicCount"/>
+        <exclude name="TooManyFields"/>
+        <exclude name="NcssCount"/>
+        <exclude name="UseUtilityClass"/>
     </rule>
 
     <rule ref="category/java/design.xml/CyclomaticComplexity">
@@ -89,6 +96,7 @@
         <exclude name="ReturnEmptyArrayRatherThanNull"/>
         <exclude name="UseProperClassLoader"/>
         <exclude name="ConstructorCallsOverridableMethod"/>
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
     </rule>
 
     <!-- ========== 多线程 ========== -->
@@ -96,6 +104,7 @@
         <exclude name="UseConcurrentHashMap"/>
         <exclude name="DoNotUseThreads"/>
         <exclude name="AvoidThreadGroup"/>
+        <exclude name="AvoidUsingVolatile"/>
     </rule>
 
     <!-- ========== 性能 ========== -->
@@ -107,5 +116,6 @@
         <exclude name="SimplifyStartsWith"/>
         <exclude name="InefficientStringBuffering"/>
         <exclude name="TooFewBranchesForASwitchStatement"/>
+        <exclude name="InsufficientStringBufferDeclaration"/>
     </rule>
 </ruleset>

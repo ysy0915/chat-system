@@ -36,7 +36,7 @@ restart_one() {
 
     # 启动
     nohup java \
-        -Xms128m -Xmx256m \
+        -Xms256m -Xmx512m \
         -Xss512k \
         -XX:+UseG1GC \
         -XX:+HeapDumpOnOutOfMemoryError \

@@ -2,6 +2,8 @@ package com.example.chat.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.util.Locale;
+
 /**
  * <h2>业务域类型</h2>
  *
@@ -36,7 +38,7 @@ public enum BizType {
             return CHAT;
         }
         try {
-            return valueOf(name.trim().toUpperCase());
+            return valueOf(name.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return CHAT;
         }

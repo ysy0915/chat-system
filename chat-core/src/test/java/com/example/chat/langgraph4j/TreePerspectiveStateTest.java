@@ -43,7 +43,7 @@ class TreePerspectiveStateTest {
     void emptyDefaults() {
         TreePerspectiveState state = new TreePerspectiveState();
 
-        assertThat(state.getPerspectiveId()).isEmpty();
+        assertThat(state.getPerspectiveId()).isNull();
         assertThat(state.getCurrentRound()).isZero();
         assertThat(state.getMaxRounds()).isEqualTo(3);
         assertThat(state.getRoundHistory()).isEmpty();

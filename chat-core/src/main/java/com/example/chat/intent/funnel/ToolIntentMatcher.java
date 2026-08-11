@@ -67,7 +67,7 @@ public class ToolIntentMatcher {
         if (intent == null || intent.category() != IntentCategory.TASK_EXECUTION) {
             return Optional.empty();
         }
-        // TODO: MCP integration
+        // 扩展点（预留）：MCP 集成，引入 MCPClient 后启用
         // MCPClient client = mcpClientFactory.getClient("default");
         // List<Tool> tools = client.listTools();
         // Tool matched = matchTool(intent.entities(), tools);

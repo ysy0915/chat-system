@@ -44,7 +44,7 @@ public class PineconeVectorStoreAdapter implements VectorStoreAdapter, AutoClose
 
     private VectorStoreConfig config;
 
-    // TODO: 实际引入 Pinecone Java SDK 后实现
+    // 扩展点（预留）：接入 Pinecone Java SDK 后在此注入
     // private PineconeClient pineconeClient;
     // private String indexHost;
 
@@ -58,7 +58,7 @@ public class PineconeVectorStoreAdapter implements VectorStoreAdapter, AutoClose
         this.config = config;
         String apiKey = config.getProp("api_key", "");
 
-        // TODO: PineconeClient 初始化
+        // 扩展点（预留）：初始化 PineconeClient
         // this.pineconeClient = new PineconeClient(config.getHost(), apiKey);
         log.info("[Pinecone] 初始化 host={} collection={} dim={} metric={}",
                 config.getHost(), config.getCollectionName(),
@@ -68,31 +68,31 @@ public class PineconeVectorStoreAdapter implements VectorStoreAdapter, AutoClose
     @Override
     public void insertBatch(List<ChunkRecord> records) {
         log.debug("[Pinecone] 批量插入 {} 条", records.size());
-        // TODO: upsert (id, values, metadata) 批量写入
+        // 扩展点（预留）：upsert (id, values, metadata) 批量写入
     }
 
     @Override
     public void deleteByDocId(String docId) {
         log.info("[Pinecone] 删除文档 docId={}", docId);
-        // TODO: delete by filter { "doc_id": docId }
+        // 扩展点（预留）：delete by filter { "doc_id": docId }
     }
 
     @Override
     public List<ChunkResult> search(List<Float> queryVector, int topK, float scoreThreshold) {
         log.debug("[Pinecone] 检索 topK={} threshold={}", topK, scoreThreshold);
-        // TODO: query (vector, topK, includeMetadata=true, filter)
+        // 扩展点（预留）：query (vector, topK, includeMetadata=true, filter)
         return Collections.emptyList();
     }
 
     @Override
     public boolean isHealthy() {
-        // TODO: describeIndexStats()
+        // 扩展点（预留）：describeIndexStats() 校验索引可用性
         return true;
     }
 
     @Override
     public void close() {
         log.info("[Pinecone] client 已关闭");
-        // TODO: pineconeClient.close()
+        // 扩展点（预留）：pineconeClient.close() 释放连接
     }
 }

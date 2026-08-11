@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -93,7 +92,7 @@ public class CoreClient {
                     new org.springframework.http.HttpEntity<>(parts, headers);
             return restTemplate.postForObject(coreBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", entity, Object.class);
         } catch (java.io.IOException e) {
-            throw new RuntimeException("读取文件失败", e);
+            throw new ChatServiceException("rag", "UPLOAD_IO_ERROR", "读取文件失败: " + e.getMessage(), e);
         }
     }
 

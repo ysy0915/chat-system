@@ -34,7 +34,7 @@
         <springdoc.version>2.3.0</springdoc.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <!-- Code Quality -->
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
         <spotbugs.version>4.9.3</spotbugs.version>
         <spotbugs.maven.version>4.9.3.0</spotbugs.maven.version>
         <checkstyle.version>3.6.0</checkstyle.version>

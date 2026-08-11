@@ -172,7 +172,7 @@ services:
     restart: unless-stopped
     networks:
       - chat-network
-    profiles: ["dev", "monitoring"]
+    profiles: ["dev", "monitoring", "prod"]
 
   grafana:
     image: grafana/grafana:10.2.0
@@ -182,10 +182,12 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./docs/grafana/provisioning:/etc/grafana/provisioning:ro
     restart: unless-stopped
     networks:
       - chat-network
-    profiles: ["dev", "monitoring"]
+    profiles: ["dev", "monitoring", "prod"]
 
   zipkin:
     image: openzipkin/zipkin:3.1
@@ -195,7 +197,7 @@ services:
     restart: unless-stopped
     networks:
       - chat-network
-    profiles: ["dev", "monitoring"]
+    profiles: ["dev", "monitoring", "prod"]
 
 networks:
   chat-network:

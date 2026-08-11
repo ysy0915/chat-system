@@ -15,7 +15,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 nohup java \
-    -Xms128m -Xmx256m \
+    -Xms256m -Xmx512m \
     -Xss512k \
     -XX:+UseG1GC \
     -XX:+HeapDumpOnOutOfMemoryError \

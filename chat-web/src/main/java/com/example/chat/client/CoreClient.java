@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import com.example.chat.exception.ChatServiceException;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Base64;
 import java.util.HashMap;
@@ -25,6 +26,72 @@ public class CoreClient {
 
     @Value("${app.core.base-url:http://127.0.0.1:9090}")
     private String coreBaseUrl;
+
+    // =========================== RAG 知识库 ===========================
+
+    private org.springframework.http.HttpHeaders authHeaders(String authHeader) {
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        if (authHeader != null && !authHeader.isEmpty()) {
+            h.set("Authorization", authHeader);
+        }
+        h.set("User-Agent", "chat-web");
+        return h;
+    }
+
+    /** GET /api/v1/rag/kb - 知识库列表 */
+    public Object listKnowledgeBases(String authHeader) {
+        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+    }
+
+    /** POST /api/v1/rag/kb - 创建知识库 */
+    public Object createKnowledgeBase(Map<String, Object> body, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
+        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+    }
+
+    /** DELETE /api/v1/rag/kb/{id} - 删除知识库 */
+    public Object deleteKnowledgeBase(Long id, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb/" + id, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+    }
+
+    /** GET /api/v1/rag/kb/{id}/documents - 文档列表 */
+    public Object listDocuments(Long kbId, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+    }
+
+    /** DELETE /api/v1/rag/documents/{docId} - 删除文档 */
+    public Object deleteDocument(Long docId, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/documents/" + docId, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+    }
+
+    /** POST /api/v1/rag/kb/{id}/documents - 上传文档 (multipart, param="file") */
+    public Object uploadDocument(Long kbId, MultipartFile file, String authHeader) {
+        try {
+            java.io.InputStream is = file.getInputStream();
+            long len = file.getSize();
+            org.springframework.core.io.InputStreamResource resource =
+                    new org.springframework.core.io.InputStreamResource(is) {
+                        @Override
+                        public String getFilename() { return file.getOriginalFilename(); }
+                        @Override
+                        public long contentLength() { return len; }
+                    };
+            org.springframework.util.LinkedMultiValueMap<String, Object> parts =
+                    new org.springframework.util.LinkedMultiValueMap<>();
+            parts.add("file", resource);
+            org.springframework.http.HttpHeaders headers = authHeaders(authHeader);
+            headers.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA);
+            org.springframework.http.HttpEntity<?> entity =
+                    new org.springframework.http.HttpEntity<>(parts, headers);
+            return restTemplate.postForObject(coreBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", entity, Object.class);
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("读取文件失败", e);
+        }
+    }
 
     @Value("${app.core.base-urls:}")
     private String coreBaseUrlsExtra;

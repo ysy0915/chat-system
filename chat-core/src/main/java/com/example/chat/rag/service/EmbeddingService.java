@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,9 +20,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Embedding 服务：将文本转为向量
- * 默认使用阿里云 DashScope text-embedding-v3（1024 维）
- * 可通过 app.rag.embedding.provider 切换：dashscope / ollama / custom
+ * Embedding 服务：将文本转为向量。
+ * <p>
+ * 支持两种模式（由 app.rag.embedding.mode 控制）：
+ * <ul>
+ *   <li><b>dashscope</b>（默认）：DashScope 原生 API，
+ *       不需要 WorkspaceId，URL 为 dashscope.aliyuncs.com/api/v1/...，
+ *       兼容老 API Key。</li>
+ *   <li><b>openai-compat</b>：OpenAI 兼容模式，URL 需要 WorkspaceId。</li>
+ * </ul>
+ * 默认模型 text-embedding-v3（1024 维），可通过 app.rag.embedding 前缀覆盖。
  */
 @Service
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
@@ -31,7 +40,11 @@ public class EmbeddingService {
     @Value("${app.rag.embedding.provider:dashscope}")
     private String provider;
 
-    @Value("${app.rag.embedding.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
+    /** api-mode: dashscope (原生) | openai-compat (兼容 OpenAI) */
+    @Value("${app.rag.embedding.mode:dashscope}")
+    private String apiMode;
+
+    @Value("${app.rag.embedding.base-url:https://dashscope.aliyuncs.com/api/v1}")
     private String baseUrl;
 
     @Value("${app.rag.embedding.api-key:}")
@@ -53,6 +66,11 @@ public class EmbeddingService {
         this.objectMapper = objectMapper;
     }
 
+    @PostConstruct
+    void init() {
+        log.info("[Embedding] 初始化 apiMode={} baseUrl={} model={} dim={}", apiMode, baseUrl, model, dimension);
+    }
+
     /**
      * 将单条文本转为向量
      * @param text 输入文本（建议 < 2048 token）
@@ -63,53 +81,92 @@ public class EmbeddingService {
     }
 
     /**
-     * 批量文本转向量（减少 API 调用次数，单次最多 25 条）
+     * 批量文本转向量（减少 API 调用次数，单次最多 10 条）
      */
     public List<float[]> embedBatch(List<String> texts) {
         if (texts == null || texts.isEmpty()) {
             return List.of();
         }
         try {
-            String url = baseUrl.replaceAll("/+$", "") + "/embeddings";
+            final String url;
+            final String bodyJson;
 
-            LinkedHashMap<String, Object> body = new LinkedHashMap<>();
-            body.put("model", model);
-            body.put("input", texts);
+            if ("openai-compat".equalsIgnoreCase(apiMode)) {
+                // OpenAI 兼容模式
+                url = baseUrl.replaceAll("/+$", "") + "/embeddings";
+                LinkedHashMap<String, Object> body = new LinkedHashMap<>();
+                body.put("model", model);
+                body.put("input", texts);
+                bodyJson = objectMapper.writeValueAsString(body);
+            } else {
+                // DashScope 原生 API（默认）
+                url = baseUrl.replaceAll("/+$", "")
+                        + "/services/embeddings/text-embedding/text-embedding";
+                LinkedHashMap<String, Object> body = new LinkedHashMap<>();
+                body.put("model", model);
+                LinkedHashMap<String, Object> input = new LinkedHashMap<>();
+                input.put("texts", texts);
+                body.put("input", input);
+                LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
+                parameters.put("dimension", dimension);
+                parameters.put("output_type", "dense");
+                body.put("parameters", parameters);
+                bodyJson = objectMapper.writeValueAsString(body);
+            }
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + apiKey)
                     .timeout(Duration.ofSeconds(60))
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                throw new LLMCallException(response.statusCode(), "Embedding API 失败 status=" + response.statusCode());
+                log.warn("[Embedding] status={} url={} body={}", response.statusCode(), url,
+                        response.body().length() > 500 ? response.body().substring(0, 500) : response.body());
+                throw new LLMCallException(response.statusCode(),
+                        "Embedding API 失败 status=" + response.statusCode());
             }
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> data = (List<Map<String, Object>>) result.get("data");
+            return parseResponse(response.body(), texts.size());
 
-            return data.stream()
-                    .map(item -> {
-                        @SuppressWarnings("unchecked")
-                        List<Number> vector = (List<Number>) item.get("embedding");
-                        float[] arr = new float[vector.size()];
-                        for (int i = 0; i < vector.size(); i++) {
-                            arr[i] = vector.get(i).floatValue();
-                        }
-                        return arr;
-                    })
-                    .toList();
+        } catch (LLMCallException e) {
+            throw e;
         } catch (Exception e) {
             log.error("[Embedding] 转向量失败 provider={} model={} error={}", provider, model, e.getMessage());
             throw new LLMCallException("Embedding 失败", e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<float[]> parseResponse(String body, int expectedCount) throws Exception {
+        Map<String, Object> result = objectMapper.readValue(body, Map.class);
+
+        if ("openai-compat".equalsIgnoreCase(apiMode)) {
+            List<Map<String, Object>> data = (List<Map<String, Object>>) result.get("data");
+            return data.stream()
+                    .map(item -> toFloatArray((List<Number>) item.get("embedding")))
+                    .toList();
+        } else {
+            // DashScope 原生响应格式
+            Map<String, Object> output = (Map<String, Object>) result.get("output");
+            List<Map<String, Object>> embeddings =
+                    (List<Map<String, Object>>) output.get("embeddings");
+            return embeddings.stream()
+                    .map(item -> toFloatArray((List<Number>) item.get("embedding")))
+                    .toList();
+        }
+    }
+
+    private float[] toFloatArray(List<Number> vector) {
+        float[] arr = new float[vector.size()];
+        for (int i = 0; i < vector.size(); i++) {
+            arr[i] = vector.get(i).floatValue();
+        }
+        return arr;
     }
 
     public int getDimension() {

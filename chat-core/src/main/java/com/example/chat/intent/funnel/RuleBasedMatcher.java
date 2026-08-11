@@ -110,6 +110,20 @@ public class RuleBasedMatcher {
         loadRules();
     }
 
+    /** 批量添加规则（从种子池提取的关键词，追加到 Trie 后无需完整 reload） */
+    public synchronized void batchAddRules(List<IntentRule> rules) {
+        if (rules == null || rules.isEmpty()) return;
+        int added = 0;
+        for (IntentRule rule : rules) {
+            if (!rule.isEnabled()) continue;
+            if (rule.getMatchType() == IntentRule.MatchType.KEYWORD) {
+                addKeywordRule(rule);
+                added++;
+            }
+        }
+        log.info("[RuleMatcher] 批量追加 {} 条关键词规则 (输入 {} 条)", added, rules.size());
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  匹配引擎
     // ═══════════════════════════════════════════════════════════════════

@@ -202,4 +202,45 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 
 ---
 
+---
+
+## 9. 知识库管理 (RAG)
+
+> 需要 `admin` 角色，通过 `chat-web` (KnowledgeBaseController) 代理转发到 `chat-core` (KnowledgeController)
+> 内部调用需要 `User-Agent: chat-web` 请求头（防止被 `IpRateLimitInterceptor` 拦截）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/rag/kb` | 知识库列表 |
+| POST | `/api/v1/rag/kb` | 创建知识库 |
+| DELETE | `/api/v1/rag/kb/{id}` | 删除知识库 |
+| GET | `/api/v1/rag/kb/{id}/documents` | 文档列表 |
+| POST | `/api/v1/rag/kb/{id}/documents` | 上传文档 (multipart `file`) |
+| DELETE | `/api/v1/rag/documents/{docId}` | 删除文档 |
+
+### 创建知识库
+
+```
+POST /api/v1/rag/kb
+Content-Type: application/json
+Authorization: Bearer {token}
+
+{
+    "name": "通用知识库",
+    "description": "系统默认知识库"
+}
+```
+
+### 上传文档
+
+```
+POST /api/v1/rag/kb/{id}/documents
+Content-Type: multipart/form-data
+Authorization: Bearer {token}
+
+file: document.pdf
+```
+
+---
+
 如需将上述内容拆分为单独文件（OpenAPI YAML、SQL DDL 单文件、架构图），或需要将 OpenAPI 写为完整 YAML 并提交到仓库，请回复说明目标文件名与路径（默认放在 docs/）。

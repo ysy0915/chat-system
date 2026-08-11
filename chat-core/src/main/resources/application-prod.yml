@@ -74,6 +74,12 @@ app:
     api-key: ${LLM_API_KEY:}
   rag:
     enabled: ${RAG_ENABLED:false}
+    embedding:
+      mode: ${EMBEDDING_MODE:dashscope}
+      base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/api/v1}
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${EMBEDDING_MODEL:text-embedding-v3}
+      dimension: ${EMBEDDING_DIMENSION:1024}
     milvus:
       enabled: ${MILVUS_ENABLED:false}
       host: 127.0.0.1

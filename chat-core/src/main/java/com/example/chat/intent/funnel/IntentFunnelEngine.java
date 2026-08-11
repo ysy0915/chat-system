@@ -5,9 +5,11 @@ import com.example.chat.intent.IntentResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -19,22 +21,24 @@ import java.util.concurrent.atomic.AtomicLong;
  *   │ 用户输入      │
  *   └──────┬──────┘
  *          ▼
- *   ┌──────────────────┐ 命中率 5-15%
+ *   ┌──────────────────┐ 命中率 15-25%
  *   │ Layer 1: 规则层   │ Trie / Regex / 状态机
  *   │    0-1ms         │ 处理明确的、固定的命令
  *   └──────┬───────────┘
  *          │ 未命中
  *          ▼
- *   ┌──────────────────┐ 命中率 70-85%
+ *   ┌──────────────────┐ 命中率 80-90%
  *   │ Layer 2: 上下文层 │ Embedding + Milvus + 对话状态
  *   │    ~30-80ms       │ 接住九成常规意图
  *   └──────┬───────────┘
  *          │ 未命中
  *          ▼
- *   ┌──────────────────┐ 命中率 < 10%
+ *   ┌──────────────────┐
  *   │ Layer 3: 工具层   │ LLM 分类 + MCP 工具执行
- *   │  ~200-1000ms     │ 深度语义理解，打通意图→执行
+ *   │  ~200-1000ms     │ 深度语义理解 + 反馈闭环
  *   └──────────────────┘
+ *
+ *   L3 命中 → 异步推入种子池 → 定时灌入 Milvus/Mermaid/表格 → 增强 L2/L1
  * </pre>
  *
  * 用法：注入 FunnelEngine，调用 recognize(text, scene, userId, lastIntents)。
@@ -54,6 +58,9 @@ public class IntentFunnelEngine {
     @Autowired
     private ToolIntentMatcher toolIntentMatcher;
 
+    @Autowired
+    private IntentDataExtractor intentDataExtractor;
+
     // ────── 指标 ──────
     private final AtomicLong layer1Hits = new AtomicLong();
     private final AtomicLong layer2Hits = new AtomicLong();
@@ -61,6 +68,17 @@ public class IntentFunnelEngine {
     private final AtomicLong totalCalls = new AtomicLong();
     /** 最近 100 条识别日志 */
     private final ConcurrentLinkedQueue<String> recentLog = new ConcurrentLinkedQueue<>();
+
+    // ────── 反馈闭环：种子池 ──────
+    /** 待审核的种子数据（LLM 分类结果为确认意图） */
+    private final ConcurrentLinkedQueue<SeedEntry> seedPool = new ConcurrentLinkedQueue<>();
+    private static final int SEED_FLUSH_THRESHOLD = 100;  // 积累 100 条后写入 Milvus
+    private final AtomicLong seedPoolTotal = new AtomicLong();
+    private final AtomicLong seedPoolFlushed = new AtomicLong();
+
+    // ────── 质量指标 ──────
+    /** 每意图错误计数（已知意图但匹配错误的） */
+    private final ConcurrentHashMap<String, AtomicLong> miscountPerCategory = new ConcurrentHashMap<>();
 
     // ═══════════════════════════════════════════════════════════════════
     //  主入口
@@ -117,6 +135,10 @@ public class IntentFunnelEngine {
             layer3Hits.incrementAndGet();
             long latency = System.currentTimeMillis() - start;
             recordLog("L3", "llm", llmResult.category().name(), latency, text);
+
+            // ★ 反馈闭环：将 L3 结果推入种子池
+            enqueueSeed(text, llmResult.category().name(), (float) llmResult.confidence());
+
             return new FunnelRecognizeResult(llmResult, "LLM", latency);
         }
 
@@ -143,10 +165,82 @@ public class IntentFunnelEngine {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  反馈闭环：种子池管理
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * 将 L3 确认的 (文本, 意图) 推入种子池。
+     * 高置信度 (>0.85) 的 LLM 分类结果经过深度语义理解，是最有价值的种子数据。
+     */
+    private void enqueueSeed(String text, String intent, float confidence) {
+        // 只收集高置信度的 L3 结果
+        if (confidence < 0.80f) return;
+        seedPool.offer(new SeedEntry(text, intent, confidence));
+        seedPoolTotal.incrementAndGet();
+    }
+
+    /**
+     * 定时刷新种子池：每 10 分钟检查一次。
+     * 当积累 >= SEED_FLUSH_THRESHOLD 条时，写入 Milvus 并提取关键词到 L1。
+     */
+    @Scheduled(fixedDelay = 600_000) // 10 分钟
+    public void scheduledSeedFlush() {
+        if (contextMatcher == null) return;
+
+        int size = seedPool.size();
+        if (size < SEED_FLUSH_THRESHOLD) {
+            log.debug("[SeedPool] 当前 {} 条，未达阈值 {}", size, SEED_FLUSH_THRESHOLD);
+            return;
+        }
+
+        List<Map.Entry<String, String>> examples = new ArrayList<>(size);
+        List<SeedEntry> batch = new ArrayList<>(size);
+        SeedEntry entry;
+        while ((entry = seedPool.poll()) != null) {
+            batch.add(entry);
+            examples.add(new AbstractMap.SimpleEntry<>(entry.text, entry.intent));
+        }
+
+        if (examples.isEmpty()) return;
+
+        // 写入 Milvus (L2 增强)
+        contextMatcher.insertExamples(examples);
+
+        // 提取关键词写入 L1 规则
+        List<IntentRule> newRules = intentDataExtractor.extractKeywordsFromSeeds(batch);
+        if (!newRules.isEmpty()) {
+            ruleBasedMatcher.batchAddRules(newRules);
+            log.info("[SeedPool] L1 规则增强: +{} 条关键词", newRules.size());
+        }
+
+        seedPoolFlushed.addAndGet(batch.size());
+        log.info("[SeedPool] 刷新完成: {} 条种子 → L2 + {} 条关键词 → L1",
+                 batch.size(), newRules.size());
+    }
+
+    /** 手动触发种子池立即刷新 */
+    public int manualSeedFlush() {
+        if (contextMatcher == null) return 0;
+        List<Map.Entry<String, String>> examples = new ArrayList<>();
+        List<SeedEntry> batch = new ArrayList<>();
+        SeedEntry entry;
+        while ((entry = seedPool.poll()) != null) {
+            batch.add(entry);
+            examples.add(new AbstractMap.SimpleEntry<>(entry.text, entry.intent));
+        }
+        if (examples.isEmpty()) return 0;
+
+        contextMatcher.insertExamples(examples);
+        seedPoolFlushed.addAndGet(batch.size());
+        log.info("[SeedPool] 手动刷新: {} 条", batch.size());
+        return batch.size();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     //  运维
     // ═══════════════════════════════════════════════════════════════════
 
-    /** 引擎统计 */
+    /** 引擎完整统计 */
     public Map<String, Object> stats() {
         long total = totalCalls.get();
         long l1 = layer1Hits.get();
@@ -161,16 +255,65 @@ public class IntentFunnelEngine {
         s.put("layer1_rate", total > 0 ? String.format("%.1f%%", 100.0 * l1 / total) : "0%");
         s.put("layer2_rate", total > 0 ? String.format("%.1f%%", 100.0 * l2 / total) : "0%");
         s.put("layer3_rate", total > 0 ? String.format("%.1f%%", 100.0 * l3 / total) : "0%");
+
+        // L1+L2 综合命中率（目标 ≥ 95%）
+        s.put("combined_l1_l2_rate", total > 0
+                ? String.format("%.1f%%", 100.0 * (l1 + l2) / total) : "0%");
+
+        // 质量指标
         s.put("rule_matcher", ruleBasedMatcher.stats());
         if (contextMatcher != null) {
             s.put("intent_examples_count", contextMatcher.countExamples());
+            s.put("context_quality", contextMatcher.qualityStats());
         }
+
+        // 种子池指标
+        s.put("seed_pool_size", seedPool.size());
+        s.put("seed_pool_total_enqueued", seedPoolTotal.get());
+        s.put("seed_pool_total_flushed", seedPoolFlushed.get());
+        s.put("seed_pool_feedback_rate", total > 0
+                ? String.format("%.2f%%", 100.0 * seedPoolTotal.get() / total) : "0%");
+
+        // 冷启动率：L3 占比（越低越好）
+        s.put("cold_start_ratio", total > 0
+                ? String.format("%.1f%%", 100.0 * l3 / total) : "0%");
+
         return s;
     }
 
     /** 最近 N 条识别日志 */
     public List<String> recentLogs() {
         return new ArrayList<>(recentLog);
+    }
+
+    /** 种子池快照 */
+    public List<Map<String, Object>> seedPoolSnapshot() {
+        return seedPool.stream()
+                .limit(20)
+                .map(e -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("text", e.text);
+                    m.put("intent", e.intent);
+                    m.put("confidence", e.confidence);
+                    return m;
+                })
+                .toList();
+    }
+
+    /** 重置全部指标 */
+    public void resetStats() {
+        totalCalls.set(0);
+        layer1Hits.set(0);
+        layer2Hits.set(0);
+        layer3Hits.set(0);
+        seedPoolTotal.set(0);
+        seedPoolFlushed.set(0);
+        miscountPerCategory.clear();
+        recentLog.clear();
+        if (contextMatcher != null) {
+            contextMatcher.resetStats();
+        }
+        log.info("[IntentFunnelEngine] 全部指标已重置");
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -195,7 +338,7 @@ public class IntentFunnelEngine {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  结果包装
+    //  内部类
     // ═══════════════════════════════════════════════════════════════════
 
     /**
@@ -204,6 +347,19 @@ public class IntentFunnelEngine {
     public record FunnelRecognizeResult(IntentResult intent, String source, long latencyMs) {
         public boolean isKnown() {
             return intent != null && intent.category() != IntentCategory.UNKNOWN;
+        }
+    }
+
+    /** 种子条目 */
+    public static class SeedEntry {
+        public final String text;
+        public final String intent;
+        public final float confidence;
+
+        public SeedEntry(String text, String intent, float confidence) {
+            this.text = text;
+            this.intent = intent;
+            this.confidence = confidence;
         }
     }
 }

@@ -6,12 +6,9 @@ import com.example.chat.rag.service.EmbeddingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 意图数据挖掘 —— 从历史对话中自动提取规则和语义示例。
@@ -22,6 +19,11 @@ import java.util.regex.Pattern;
  *     2. 意图示例         → 存入 Milvus       → 刷新到 ContextMatcher
  *
  *   触发方式：管理员调用 /admin/intent/extract API，或定时调度。
+ *
+ *   优化变更 (v3.0)：
+ *     - TF-IDF 阈值从 tf>0.2 降为多级 (0.08/0.15)
+ *     - 每意图示例从 3 条扩到 20 条
+ *     - 新增 extractKeywordsFromSeeds 接收种子池数据
  * </pre>
  */
 @Service
@@ -44,9 +46,6 @@ public class IntentDataExtractor {
 
     /**
      * 从一批 (问题, 意图标签) 数据中提取关键词规则和意图示例。
-     *
-     * @param labeledData [(question, intentCategory), ...]
-     * @return 提取结果摘要
      */
     public ExtractResult extract(List<Map.Entry<String, String>> labeledData) {
         if (labeledData == null || labeledData.isEmpty()) {
@@ -71,8 +70,7 @@ public class IntentDataExtractor {
             contextMatcher.insertExamples(examples);
         }
 
-        log.info("[DataExtractor] 提取完成: rules={} examples={}",
-                 newRules.size(), examples.size());
+        log.info("[DataExtractor] 提取完成: rules={} examples={}", newRules.size(), examples.size());
 
         // 5) 触发规则热更新
         ruleBasedMatcher.reload();
@@ -82,9 +80,6 @@ public class IntentDataExtractor {
 
     /**
      * 对一批无标签问题，使用 LLM 先标注再提取。
-     *
-     * @param questions 用户问题列表
-     * @param scene     场景
      */
     public ExtractResult autoLabelAndExtract(List<String> questions, String scene) {
         if (questions == null || questions.isEmpty()) {
@@ -112,14 +107,34 @@ public class IntentDataExtractor {
         return extract(labeled);
     }
 
+    /**
+     * 从种子池条目中提取关键词规则。
+     * 供 IntentFunnelEngine.scheduledSeedFlush() 使用。
+     */
+    public List<IntentRule> extractKeywordsFromSeeds(
+            List<IntentFunnelEngine.SeedEntry> seeds) {
+        if (seeds == null || seeds.isEmpty()) return Collections.emptyList();
+
+        // 转换为按意图分组的格式
+        Map<String, List<String>> questionsByIntent = new LinkedHashMap<>();
+        for (IntentFunnelEngine.SeedEntry seed : seeds) {
+            questionsByIntent.computeIfAbsent(seed.intent, k -> new ArrayList<>())
+                             .add(seed.text);
+        }
+
+        return extractKeywordRules(questionsByIntent);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
-    //  关键词规则提取
+    //  关键词规则提取 (TF-IDF)
     // ═══════════════════════════════════════════════════════════════════
 
     /**
      * TF-IDF 风格的规则提取：
      * 对每个意图类别，提取高频关键词作为 KEYWORD 规则。
      * 关键词在某类别中出现频繁、在其他类别中罕见 → 高区分度规则。
+     *
+     * v3.0 优化：多级阈值替代原来的 tf>0.2 && score>0.4
      */
     private List<IntentRule> extractKeywordRules(Map<String, List<String>> questionsByIntent) {
         List<IntentRule> newRules = new ArrayList<>();
@@ -132,49 +147,57 @@ public class IntentDataExtractor {
             List<String> questions = entry.getValue();
 
             // 提取该意图下的高频关键词
-            Map<String, int[]> wordCounts = new LinkedHashMap<>(); // word → [in-count, total-count]
+            Map<String, int[]> wordCounts = new LinkedHashMap<>();
             for (String q : questions) {
                 List<String> words = tokenize(q);
                 for (String w : words) {
-                    if (w.length() < 2) continue; // 过滤单字
+                    if (w.length() < 2) continue;
                     wordCounts.computeIfAbsent(w, k -> new int[2]);
-                    wordCounts.get(w)[0]++; // 该意图内频次
+                    wordCounts.get(w)[0]++;
                 }
             }
 
-            // 计算每个词的 IDF
+            // 计算每个词的 IDF + TF-IDF
             for (var wc : wordCounts.entrySet()) {
                 String word = wc.getKey();
                 int[] counts = wc.getValue();
-                double tf = (double) counts[0] / questions.size(); // 词频
+                double tf = (double) counts[0] / questions.size();
                 int otherCount = countInOtherIntents(word, questionsByIntent, intent);
                 double idf = Math.log((double) totalDocs / (counts[0] + otherCount + 1)) + 1;
                 double score = tf * idf;
 
-                // 阈值：词频 > 20% 且 score > 0.4
-                if (tf > 0.2 && score > 0.4) {
+                // 多级阈值：扩大关键词发现率
+                // L1 高置信：tf > 15% 且 score > 0.35
+                // L2 中置信：tf > 8%
+                // L3 低置信：tf > 5% 且 score > 0.25
+                boolean hit = (tf > 0.15 && score > 0.35)
+                           || (tf > 0.08)
+                           || (tf > 0.05 && score > 0.25);
+                if (hit) {
                     IntentRule rule = new IntentRule();
                     rule.setMatchType(IntentRule.MatchType.KEYWORD);
                     rule.setPattern(word);
                     rule.setIntentCategory(intent);
                     rule.setPriority((int) (score * 10));
                     rule.setDescription("自动提取: " + intent + " # tf-idf=" + String.format("%.2f", score));
-                    rule.setConfidence(0.9);
+                    rule.setConfidence(tf > 0.15 ? 0.9 : (tf > 0.08 ? 0.75 : 0.6));
                     rule.setSource("AUTO_EXTRACT");
                     newRules.add(rule);
                 }
             }
         }
 
-        // 按优先级排序
         newRules.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
         return newRules;
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  意图示例提取
+    // ═══════════════════════════════════════════════════════════════════
+
     /** 提取意图示例（用于 Milvus ContextMatcher） */
     private List<Map.Entry<String, String>> extractExamples(
             List<Map.Entry<String, String>> labeledData) {
-        // 每个意图取 top-3 条作为示例
         Map<String, List<String>> grouped = new LinkedHashMap<>();
         for (var entry : labeledData) {
             grouped.computeIfAbsent(entry.getValue(), k -> new ArrayList<>())
@@ -185,7 +208,8 @@ public class IntentDataExtractor {
         for (var entry : grouped.entrySet()) {
             String intent = entry.getKey();
             List<String> questions = entry.getValue();
-            int limit = Math.min(questions.size(), 3);
+            // v3.0: 每个意图最多取 20 条，覆盖更多语义变体
+            int limit = Math.min(questions.size(), 20);
             for (int i = 0; i < limit; i++) {
                 examples.add(new AbstractMap.SimpleEntry<>(questions.get(i), intent));
             }
@@ -223,7 +247,8 @@ public class IntentDataExtractor {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  内部类
+    // ═══════════════════════════════════════════════════════════════════
 
-    /** 提取结果 */
     public record ExtractResult(int rulesExtracted, int examplesExtracted, String error) {}
 }

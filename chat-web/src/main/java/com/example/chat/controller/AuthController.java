@@ -1,10 +1,13 @@
 package com.example.chat.controller;
 
+import com.example.chat.dto.LoginRequest;
+import com.example.chat.dto.RegisterRequest;
 import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,9 +35,9 @@ public class AuthController {
 
     @Operation(summary = "用户登录", description = "用户名 + 密码登录，返回 JWT Token 和用户信息")
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
-        String username = body.get("username");
-        String password = body.get("password");
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest body) {
+        String username = body.getUsername();
+        String password = body.getPassword();
         User u = userRepository.findByName(username);
         if (u == null) {
             return ResponseEntity.status(401).body(Map.of("error", "用户名或密码错误"));
@@ -50,21 +53,11 @@ public class AuthController {
 
     @Operation(summary = "用户注册", description = "注册新用户（用户名/密码/昵称），返回 JWT Token")
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
-        String username = payload.get("username");
-        String password = payload.get("password");
-        String nickname = payload.get("nickname");
-
-        if (username == null || username.isBlank() || password == null || password.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "用户名和密码不能为空"));
-        }
-        String trimmedUsername = username.trim();
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest payload) {
+        String trimmedUsername = payload.getUsername().trim();
         // 昵称可选，未填则默认使用用户名
-        String trimmedNickname = (nickname == null || nickname.isBlank())
-                ? trimmedUsername : nickname.trim();
-        if (trimmedUsername.length() > 50 || password.length() > 100 || trimmedNickname.length() > 50) {
-            return ResponseEntity.badRequest().body(Map.of("error", "用户名、昵称或密码过长"));
-        }
+        String trimmedNickname = (payload.getNickname() == null || payload.getNickname().isBlank())
+                ? trimmedUsername : payload.getNickname().trim();
 
         if (userRepository.findByName(trimmedUsername) != null) {
             return ResponseEntity.badRequest().body(Map.of("error", "用户名已被占用"));
@@ -74,7 +67,7 @@ public class AuthController {
         user.email = trimmedUsername + "@chat.local";
         user.name = trimmedUsername;
         user.nickname = trimmedNickname;
-        user.passwordHash = passwordEncoder.encode(password);
+        user.passwordHash = passwordEncoder.encode(payload.getPassword());
         user.role = "user";
         userRepository.insert(user);
 

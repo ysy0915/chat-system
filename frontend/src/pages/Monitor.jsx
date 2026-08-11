@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
@@ -184,6 +184,8 @@ export default function Monitor() {
 
   useEffect(() => {
     drawChart()
+    // 数据变化重绘图表，drawChart 每次渲染重建无需列入
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasSize, selectedDate, dailyVisits, pageDailyVisits, activePages, hoverTick])
 
   function drawChart() {
@@ -201,7 +203,6 @@ export default function Monitor() {
     const pad = { top: 20, right: 130, bottom: 50, left: 55 }
     const chartW = W - pad.left - pad.right
     const chartH = H - pad.top - pad.bottom
-    const dayMs = 24 * 60 * 60 * 1000
 
     // 收集各页面每天的访问量
     function getPageVisits(page, dateStr) {
@@ -454,8 +455,6 @@ export default function Monitor() {
       ctx.fillText(`访问量: ${tip.count}`, tx + 10, ty + 52)
     }
   }
-
-  const totalCurrent = Object.values(current).reduce((a, b) => a + b, 0)
 
   if (!authed) {
     return (

@@ -16,7 +16,7 @@ export function useSpeechSynthesis() {
             if (window.speechSynthesis) {
                 window.speechSynthesis.cancel()
             }
-        } catch (e) {}
+        } catch {}
         currentIdRef.current = null
         setSpeakingId(null)
     }, [])

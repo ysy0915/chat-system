@@ -128,7 +128,7 @@ function OnlinePresenceTracker({ authUser }) {
             }
             activePresenceRef.current = null
             stompRef.current = null
-            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {}
+            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch {}
         }
     }, [authUser, publishPresence, syncPresence])
 
@@ -147,7 +147,7 @@ function OnlinePresenceTracker({ authUser }) {
             if (disconnectedRef.current && stompRef.current && !stompRef.current.connected) {
                 disconnectedRef.current = false
                 setShowIdleBanner(false)
-                try { Promise.resolve(stompRef.current.activate()).catch(() => {}) } catch (e) {}
+                try { Promise.resolve(stompRef.current.activate()).catch(() => {}) } catch {}
             }
         }
         const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
@@ -170,10 +170,12 @@ function OnlinePresenceTracker({ authUser }) {
                 }
                 disconnectedRef.current = true
                 setShowIdleBanner(true)
-                try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {}
+                try { Promise.resolve(client.deactivate()).catch(() => {}) } catch {}
             }
         }, 30000) // 每 30 秒检查一次
         return () => clearInterval(idleTimerRef.current)
+    // 定时器只依赖 publishPresence，ref/setState 无需列入依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [publishPresence])
 
     return showIdleBanner ? (
@@ -682,6 +684,8 @@ function AppShell(){
             window.removeEventListener('auth-changed', handler)
             window.removeEventListener('open-auth-modal', openAuthHandler)
         }
+    // 全局事件监听器仅挂载一次注册/卸载
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     // 首次访问（每个会话）立即弹出测试版本说明

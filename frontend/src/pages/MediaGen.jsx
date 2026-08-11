@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 
@@ -24,7 +24,7 @@ export default function MediaGen() {
         const sorted = [...res.data].reverse()
         const history = []
         const runningRecords = []
-        sorted.forEach((r, idx) => {
+        sorted.forEach((r) => {
           // 用户提问
           history.push({ role: 'user', content: r.prompt, type: r.type })
           if (r.status === 'running') {
@@ -137,6 +137,8 @@ export default function MediaGen() {
     }
     window.addEventListener('auth-changed', handler)
     return () => window.removeEventListener('auth-changed', handler)
+  // 全局认证事件监听仅挂载一次
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
@@ -6,7 +6,7 @@ import { Client } from '@stomp/stompjs'
 import { formatText, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAutoScroll } from '../hooks/useAutoScroll'
-import DebateTreeView from '../components/DebateTreeView'
+import DebateTreeView, { formatFinalText } from '../components/DebateTreeView'
 
 const MODEL_COLORS = {
   1: { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.3)', accent: '#38bdf8', icon: '🫧' },
@@ -26,7 +26,7 @@ export default function Debate() {
   const [synthesizer, setSynthesizer] = useState('')
   const [error, setError] = useState(null)
   const [modelNames, setModelNames] = useState({})
-  const [wsStatus, setWsStatus] = useState('connecting')
+  const [, setWsStatus] = useState('connecting')
 
   // ---- 树状模式 ----
   const [treeMode, setTreeMode] = useState(false)
@@ -69,7 +69,9 @@ export default function Debate() {
     })
     stompRef.current = client
     client.activate()
-    return () => { try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {} }
+    return () => { try { Promise.resolve(client.deactivate()).catch(() => {}) } catch {} }
+  // STOMP 连接仅随 userId/treeMode 重建，throttledEmit 经 ref 转发取最新值
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, treeMode])
 
   // ---- 帧节流分发 ----
@@ -182,6 +184,8 @@ export default function Debate() {
         batch.forEach(handleDebateEventRef.current)
       })
     }
+  // 帧节流循环挂载一次，事件处理器经 ref 转发取最新值
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -278,7 +282,7 @@ export default function Debate() {
           <div className="debate-tree-conclusion-text">
             {treeFinalAnswer
               ? <>
-                  {formatText(treeFinalAnswer).map((line, i) => <p key={i}>{line}</p>)}
+                  {formatFinalText(treeFinalAnswer)}
                   {debating && <span className="debate-tree-conclusion-cursor">▌</span>}
                 </>
               : <span className="debate-tree-conclusion-pending">辩论进行中，结论即将生成…</span>

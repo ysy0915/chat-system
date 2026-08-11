@@ -1,4 +1,4 @@
-import React from 'react'
+
 
 const MODEL_TYPE_LABELS = {
   chat:        { label: '对话',   color: '#4f8ef7' },

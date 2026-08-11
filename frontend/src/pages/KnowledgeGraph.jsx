@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 
@@ -202,6 +202,8 @@ export default function KnowledgeGraph() {
             window.removeEventListener('resize', resize)
             if (animationRef.current) cancelAnimationFrame(animationRef.current)
         }
+    // 图渲染动画循环，tick/render 经 ref 转发，仅随数据/选中态变化重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [graphData, hoveredNode, selectedNode])
 
     const render = (ctx, canvas, sim) => {
@@ -447,7 +449,7 @@ export default function KnowledgeGraph() {
         e.preventDefault()
     }
 
-    const handleTouchEnd = (e) => {
+    const handleTouchEnd = () => {
         dragRef.current = null
         pinchRef.current = null
     }

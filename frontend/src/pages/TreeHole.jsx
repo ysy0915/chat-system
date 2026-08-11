@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
@@ -233,7 +233,7 @@ export default function TreeHole() {
                 if (!manualClose) {
                     reconnectTimer = setTimeout(() => {
                         if (!manualClose && stompRef.current === client) {
-                            try { Promise.resolve(client.activate()).catch(() => {}) } catch (e) {}
+                            try { Promise.resolve(client.activate()).catch(() => {}) } catch {}
                         }
                     }, 3000)
                 }
@@ -247,7 +247,7 @@ export default function TreeHole() {
         return () => {
             manualClose = true
             if (reconnectTimer) clearTimeout(reconnectTimer)
-            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch (e) {}
+            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch {}
         }
     }, [authUser])
 
@@ -257,6 +257,8 @@ export default function TreeHole() {
         if (!ta) return
         ta.style.height = 'auto'
         ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'
+    // 输入状态变化时重算高度，hasInput 为语义依赖（effect 内部仅读 ref）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasInput])
 
     const handleSend = useCallback(async () => {
@@ -303,7 +305,8 @@ export default function TreeHole() {
             setMessages(prev => prev.slice(0, -1))
             setTyping(false)
         }
-    }, [hasInput, mood, typing, selectedFile])
+    // handleSend 内部仅调用 setHasInput，未读取 hasInput，故不加入依赖
+    }, [mood, typing, selectedFile])
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {

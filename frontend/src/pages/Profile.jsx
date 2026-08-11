@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useNavigate, Link } from 'react-router-dom'
 
@@ -39,6 +39,8 @@ export default function Profile() {
     const authHandler = () => loadProfile()
     window.addEventListener('auth-changed', authHandler)
     return () => window.removeEventListener('auth-changed', authHandler)
+  // 全局认证事件监听仅挂载一次，loadProfile 经闭包读取
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const goLogin = () => {

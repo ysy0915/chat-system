@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 
 export function useAuthUser() {
     const [authUser, setAuthUser] = useState(() => {
@@ -16,6 +16,8 @@ export function useAuthUser() {
         const handler = (e) => setAuthUser(e.detail)
         window.addEventListener('auth-changed', handler)
         return () => window.removeEventListener('auth-changed', handler)
+    // 认证事件监听仅挂载一次，handler 使用 setState（稳定引用）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
     return authUser
 }

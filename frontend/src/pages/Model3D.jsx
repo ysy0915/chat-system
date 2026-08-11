@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 
@@ -32,7 +32,7 @@ export default function Model3D() {
             const sorted = [...res.data].reverse()
             const history = []
             const runningRecords = []
-            sorted.forEach((r, idx) => {
+            sorted.forEach((r) => {
               history.push({ role: 'user', content: r.prompt })
               if (r.status === 'running') {
                 history.push({
@@ -78,6 +78,8 @@ export default function Model3D() {
     }
     window.addEventListener('auth-changed', handler)
     return () => window.removeEventListener('auth-changed', handler)
+  // 全局认证事件监听仅挂载一次，handler 内部闭包读取最新状态
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

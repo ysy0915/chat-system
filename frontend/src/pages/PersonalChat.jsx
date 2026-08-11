@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
@@ -41,7 +41,7 @@ export default function PersonalChat() {
   const scrollRef = useAutoScroll([messages, typing])
   const { recording: isRecording, toggle: toggleVoice, isSupported: voiceSupported } = useVoiceInput(setQuestion)
   const { speakingId, speak: speakMessage, stop: stopSpeak } = useSpeechSynthesis()
-  const [speechSupported, setSpeechSupported] = useState(() => voiceSupported ?? !!(window.SpeechRecognition || window.webkitSpeechRecognition))
+  const [speechSupported] = useState(() => voiceSupported ?? !!(window.SpeechRecognition || window.webkitSpeechRecognition))
   const userIdResolved = useRef(false)
   const clientRef = useRef(null)
   const connectedRef = useRef(false)
@@ -150,7 +150,7 @@ export default function PersonalChat() {
     }
     // 直接新建SockJS连接（不依赖旧的client）
     if (clientRef.current) {
-      try { clientRef.current.deactivate() } catch (e) {}
+      try { clientRef.current.deactivate() } catch {}
       clientRef.current = null
     }
     // 重新创建连接
@@ -306,7 +306,7 @@ export default function PersonalChat() {
         ai_answer: true
       }, { timeout: 120000 })
       setCurrentModel(model.label)
-    } catch (e) {
+    } catch {
       setTyping(false)
       // 切换模型失败不触发熔断（不是LLM调用失败，只是消息传递问题）
       setMessages(prev => [...prev, { role: 'system', content: '切换失败，请重试' }])
@@ -350,10 +350,12 @@ export default function PersonalChat() {
       }
       connectedRef.current = false
       if (clientRef.current) {
-        try { Promise.resolve(clientRef.current.deactivate()).catch(() => {}) } catch (e) {}
+        try { Promise.resolve(clientRef.current.deactivate()).catch(() => {}) } catch {}
         clientRef.current = null
       }
     }
+  // STOMP 仅随 userId 重连，回调经 ref 转发取最新值
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
   const triggerFailure = () => {

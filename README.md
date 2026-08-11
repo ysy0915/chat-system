@@ -125,7 +125,7 @@ mvn clean test
 # 单模块
 mvn test -pl chat-common  # ✅ 51 个测试类（35 个空壳/废弃测试已清理）
 mvn test -pl chat-core
-mvn test -pl chat-web
+mvn test -pl chat-web   # ✅ 54 个测试（12 个 Controller 全覆盖）
 mvn test -pl chat-media
 mvn test -pl chat-games
 mvn test -pl chat-llm
@@ -146,13 +146,15 @@ mvn clean install -DskipTests
 | [docs/api-design.md](docs/api-design.md) | 全部 REST API 设计 |
 | [docs/数据库设计说明.md](docs/数据库设计说明.md) | MySQL 表结构、Redis Key、索引策略 |
 | [docs/LLM策略与路由说明.md](docs/LLM策略与路由说明.md) | LLM 策略、路由、容错、已知问题 |
-| [docs/安全配置说明.md](docs/安全配置说明.md) | JWT 鉴权、白名单、限流、内容安全 |
+| [docs/安全配置说明.md](docs/安全配置说明.md) | JWT 鉴权、弱密钥校验、三层限流、DTO 校验、内容安全 |
+| [docs/CHANGELOG-3.0.md](docs/CHANGELOG-3.0.md) | 版本变更记录、模块分工 |
 
 ### 运维与排错
 
 | 文档 | 内容 |
 |------|------|
-| [docs/部署运维手册.md](docs/部署运维手册.md) | 本机/服务器/Docker 部署全流程 |
+| [docs/部署运维手册.md](docs/部署运维手册.md) | 本机/服务器/Docker 部署全流程、监控告警 |
+| [docs/prometheus-prod.yml](docs/prometheus-prod.yml) + [prometheus-alert-rules.yml](docs/prometheus-alert-rules.yml) | 生产监控抓取 + 告警规则 |
 | [docs/CI_CD.md](docs/CI_CD.md) | GitHub Actions 流水线、自动部署、回滚策略 |
 | [docs/故障排查指南.md](docs/故障排查指南.md) | 常见问题现象→根因→修复步骤 |
 
@@ -191,10 +193,10 @@ mvn clean install -DskipTests
 | 维度 | 得分 | 说明 |
 |------|:--:|------|
 | 测试覆盖 | 24/25 | 源文件全面覆盖，真实测试持续扩充 |
-| 测试质量 | 13/20 | ✅ 35 个空壳/废弃测试全部删除 + games模块真实测试 |
+| 测试质量 | 14/20 | ✅ 空壳测试全清理 + chat-web 全 Controller 测试（54 个）+ 前端 hooks 测试 |
 | 代码规范 | 14/15 | ✅ Checkstyle 0违规, PMD 2000+→92, CI阻断就绪 |
 | 架构设计 | 13/15 | ✅ Resilience4j 熔断/重试 + Prometheus + Zipkin 分布式追踪 |
 | 文档 | 9/10 | ✅ springdoc + @Schema 全量注解 + Swagger UI |
 | CI/CD | 9/10 | ✅ GitHub Actions CI + Deploy + Security + OWASP |
-| 安全性 | 5/5 | ✅ JWT + CORS + CSP + 限流 + Gitleaks + OWASP + 方法级安全 |
-| **综合** | **87/100** | ✅ 83→87 提升中 → 目标90 |
+| 安全性 | 5/5 | ✅ JWT弱密钥校验 + 三层限流 + DTO校验 + 上传限制 + CORS + CSP + OWASP |
+| **综合** | **88/100** | ✅ 87→88 提升中 → 目标90 |

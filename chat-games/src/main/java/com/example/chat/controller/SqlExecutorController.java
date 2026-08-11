@@ -39,8 +39,18 @@ public class SqlExecutorController {
     private String adminPassword;
     private static final Map<String, Long> sessions = new ConcurrentHashMap<>();
 
+    /** 登录失败计数（IP → 连续失败次数），防暴力破解 */
+    private static final Map<String, Integer> loginFailures = new ConcurrentHashMap<>();
+    /** 登录失败锁定时间（毫秒）：连续失败 >= 5 次后锁定 15 分钟 */
+    private static final long LOGIN_LOCK_MS = 15 * 60_000L;
+    /** 执行频率限制：同一 IP 每分钟最多执行 30 次 SQL */
+    private static final int MAX_EXEC_PER_MIN = 30;
+    /** IP → [窗口开始时间戳, 窗口内执行次数] */
+    private static final Map<String, long[]> execWindows = new ConcurrentHashMap<>();
+
     private static final Set<String> DANGEROUS_KEYWORDS = Set.of(
-            "DROP", "TRUNCATE", "ALTER", "GRANT", "REVOKE", "CREATE", "SHUTDOWN", "DELETE"
+            "DROP", "TRUNCATE", "ALTER", "GRANT", "REVOKE", "CREATE", "SHUTDOWN", "DELETE",
+            "OUTFILE", "DUMPFILE", "LOAD_FILE", "INTO OUTFILE", "SLEEP", "BENCHMARK"
     );
 
     private static final Set<String> READ_ONLY_KEYWORDS = Set.of(
@@ -62,7 +72,7 @@ public class SqlExecutorController {
         return true;
     }
 
-    @Operation(summary = "SQL执行器登录", description = "使用管理员密码登录，获取执行SQL的临时令牌")
+    @Operation(summary = "SQL执行器登录", description = "使用管理员密码登录，获取执行SQL的临时令牌（连续失败5次锁定15分钟）")
     @PostMapping("/login")
     public ResponseEntity<?> login(
             @Parameter(description = "请求体，包含 password 字段") @RequestBody Map<String, String> body,
@@ -70,17 +80,27 @@ public class SqlExecutorController {
         String clientIp = request.getHeader("X-Real-IP");
         if (clientIp == null) clientIp = request.getRemoteAddr();
 
+        // 登录失败限流：连续失败 >= 5 次则锁定 LOGIN_LOCK_MS 时间
+        Integer failures = loginFailures.getOrDefault(clientIp, 0);
+        if (failures >= 5) {
+            long remainingMinutes = LOGIN_LOCK_MS / 60_000L;
+            auditLog.warn("[SQL_AUDIT] LOGIN_LOCKED ip={} failures={}", clientIp, failures);
+            return ResponseEntity.status(429).body(Map.of("error", "登录失败次数过多，请" + remainingMinutes + "分钟后再试"));
+        }
+
         if (adminPassword != null && !adminPassword.isBlank() && adminPassword.equals(body.get("password"))) {
             String token = UUID.randomUUID().toString();
             sessions.put(token, System.currentTimeMillis());
+            loginFailures.remove(clientIp);
             auditLog.info("[SQL_AUDIT] LOGIN_SUCCESS ip={}", clientIp);
             return ResponseEntity.ok(Map.of("token", token));
         }
-        auditLog.warn("[SQL_AUDIT] LOGIN_FAILED ip={}", clientIp);
+        loginFailures.put(clientIp, failures + 1);
+        auditLog.warn("[SQL_AUDIT] LOGIN_FAILED ip={} failures={}", clientIp, failures + 1);
         return ResponseEntity.status(401).body(Map.of("error", "密码错误"));
     }
 
-    @Operation(summary = "执行SQL语句", description = "执行SQL查询或更新语句，禁止执行DROP/TRUNCATE等危险操作")
+    @Operation(summary = "执行SQL语句", description = "执行SQL查询或更新语句，禁止执行DROP/TRUNCATE等危险操作（同一IP每分钟限30次）")
     @PostMapping("/execute")
     public ResponseEntity<?> execute(
             @Parameter(description = "管理员令牌，登录后获取") @RequestHeader(value = "X-Admin-Token", required = false) String token,
@@ -93,6 +113,22 @@ public class SqlExecutorController {
             auditLog.warn("[SQL_AUDIT] UNAUTHORIZED_EXECUTE ip={}", clientIp);
             return ResponseEntity.status(401).body(Map.of("error", "未授权"));
         }
+
+        // 执行频率限流：同一 IP 每分钟最多 MAX_EXEC_PER_MIN 次（滑动窗口）
+        long now = System.currentTimeMillis();
+        if (execWindows.size() >= 2000) {
+            execWindows.entrySet().removeIf(e -> now - e.getValue()[0] > 60_000L);
+        }
+        long[] window = execWindows.computeIfAbsent(clientIp, k -> new long[]{now, 0});
+        if (now - window[0] >= 60_000L) {
+            window[0] = now;
+            window[1] = 0;
+        }
+        if (window[1] >= MAX_EXEC_PER_MIN) {
+            auditLog.warn("[SQL_AUDIT] RATE_LIMITED ip={}", clientIp);
+            return ResponseEntity.status(429).body(Map.of("error", "执行过于频繁，请稍后再试"));
+        }
+        window[1]++;
 
         String sql = body.get("sql");
         ResponseEntity<?> validationError = validateSql(sql, clientIp);
@@ -110,6 +146,11 @@ public class SqlExecutorController {
         if (sql.length() > 5000) return ResponseEntity.badRequest().body(Map.of("error", "SQL长度不能超过5000字符"));
 
         String upperSql = sql.trim().toUpperCase(Locale.ROOT);
+        // 禁止多语句执行（含分号的 SQL 一律拒绝，防止 SQL 注入拼接）
+        if (upperSql.contains(";")) {
+            auditLog.warn("[SQL_AUDIT] MULTI_STATEMENT_BLOCKED ip={}", clientIp);
+            return ResponseEntity.badRequest().body(Map.of("error", "禁止一次执行多条SQL语句"));
+        }
         for (String keyword : DANGEROUS_KEYWORDS) {
             if (upperSql.contains(keyword)) {
                 auditLog.warn("[SQL_AUDIT] DANGEROUS_SQL_BLOCKED ip={} sql={}", clientIp, sql.substring(0, Math.min(200, sql.length())));

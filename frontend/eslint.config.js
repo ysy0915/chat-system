@@ -31,6 +31,9 @@ export default [
     rules: {
       'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
+      // 将 JSX 中使用的组件标记为已使用，避免 no-unused-vars 误报
+      'react/jsx-uses-vars': 'error',
+      'react/jsx-uses-react': 'off',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

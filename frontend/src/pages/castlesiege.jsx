@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
+/* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环+STOMP 生命周期，内部函数经 ref/闭包转发取最新值 */
 
 const MAP_WIDTH = 3600
 const MAP_HEIGHT = 2200
@@ -207,13 +208,6 @@ function createUnits(unitType = 'infantry') {
     return UNIT_KEYS.reduce((units, key) => {
         units[key] = key === unitType ? 1 : 0
         return units
-    }, {})
-}
-
-function cloneUnits(units) {
-    return UNIT_KEYS.reduce((nextUnits, key) => {
-        nextUnits[key] = units[key] || 0
-        return nextUnits
     }, {})
 }
 
@@ -924,7 +918,7 @@ function buildHud(game, now) {
     }
 }
 
-function drawCastle(ctx, castle, occupant, now) {
+function drawCastle(ctx, castle, occupant, _now) {
     ctx.save()
     ctx.translate(castle.x, castle.y)
     ctx.fillStyle = 'rgba(59, 130, 246, 0.18)'

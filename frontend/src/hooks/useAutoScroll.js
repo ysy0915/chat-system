@@ -12,6 +12,8 @@ export function useAutoScroll(deps) {
             rafIdRef.current = null
             ref.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
         })
+    // 依赖数组由调用方动态传入（streamed 消息片段），无法静态枚举
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, deps)
 
     // 卸载时取消未执行的帧回调

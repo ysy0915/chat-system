@@ -27,6 +27,8 @@ export function useStompConnection(userId, subscriptions, onConnect) {
             try { client.deactivate() } catch {}
             clientRef.current = null
         }
+    // 仅随 userId 变化重连，subscriptions/onConnect 回调由调用方每渲染重建，不应触发重连
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId])
     
     return clientRef

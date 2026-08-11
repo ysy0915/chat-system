@@ -4,6 +4,16 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# 告警规则（服务宕机 / 高延迟 / 高内存 / 高错误率）
+rule_files:
+  - "/etc/prometheus/prometheus-alert-rules.yml"
+
+# 告警通知（Alertmanager 如需通知请取消注释并配置 webhook/邮箱）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
+
 scrape_configs:
   - job_name: "chat-core"
     metrics_path: "/actuator/prometheus"

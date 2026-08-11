@@ -1,15 +1,17 @@
 package com.example.chat.controller;
 
+import com.example.chat.dto.MediaGenerateRequest;
 import com.example.chat.entity.MediaGenRecord;
 import com.example.chat.repository.MediaGenRecordRepository;
 import com.example.chat.service.MediaGenService;
 import com.example.chat.service.MediaGenService.MediaGenResult;
 import com.example.chat.service.OssService;
+import com.example.chat.service.RateLimitService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -36,32 +38,44 @@ public class MediaGenController {
 
     private static final Logger log = LoggerFactory.getLogger(MediaGenController.class);
 
-    @Autowired
-    private MediaGenService mediaGenService;
-
-    @Autowired
-    private MediaGenRecordRepository mediaGenRecordRepository;
-
-    @Autowired
-    private OssService ossService;
+    private final MediaGenService mediaGenService;
+    private final MediaGenRecordRepository mediaGenRecordRepository;
+    private final OssService ossService;
+    private final RateLimitService rateLimitService;
 
     private static final Set<String> MODEL3D_WHITELIST = new HashSet<>(Arrays.asList("雪梨", "ysy0929"));
+
+    public MediaGenController(MediaGenService mediaGenService,
+                              MediaGenRecordRepository mediaGenRecordRepository,
+                              OssService ossService,
+                              RateLimitService rateLimitService) {
+        this.mediaGenService = mediaGenService;
+        this.mediaGenRecordRepository = mediaGenRecordRepository;
+        this.ossService = ossService;
+        this.rateLimitService = rateLimitService;
+    }
 
     // ---- 生成 ----
 
     @Operation(summary = "生成媒体", description = "支持 text_to_image / text_to_video / image_to_video / text_to_3d / image_to_3d")
     @PostMapping("/generate")
-    public ResponseEntity<?> generate(@RequestBody Map<String, String> payload) {
-        String prompt = payload.get("prompt");
-        String type = payload.getOrDefault("type", "image");
-
-        if (prompt == null || prompt.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "请输入描述内容"));
+    public ResponseEntity<?> generate(@Valid @RequestBody MediaGenerateRequest req) {
+        String prompt = req.getPrompt();
+        String type = req.getType() == null || req.getType().isBlank() ? "image" : req.getType();
 
         if ("3d".equals(type) && !is3DAllowed())
             return ResponseEntity.status(403).body(Map.of("error", "3D模型生成功能暂未开放，敬请期待"));
 
         Long userId = getCurrentUserId();
+        if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+
+        // 用户级限流：媒体生成消耗费用，防止刷量
+        if (!rateLimitService.isAllowed(userId)) {
+            long waitSeconds = rateLimitService.getRemainingSeconds(userId);
+            return ResponseEntity.status(429).body(Map.of(
+                    "error", "操作过于频繁，请" + waitSeconds + "秒后再试",
+                    "retry_after", waitSeconds));
+        }
         try {
             MediaGenResult result = mediaGenService.generate(prompt, type, userId);
             Map<String, Object> resp = new HashMap<>(Map.of(

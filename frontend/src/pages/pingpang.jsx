@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+/* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环内引用大量内部函数，依赖数组无法也不应静态枚举 */
 
 const AI_MODELS = [
     { id: 'deepseek', name: 'DeepSeek', color: '#3b82f6', emoji: '🐋' },

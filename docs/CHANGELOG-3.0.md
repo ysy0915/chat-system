@@ -163,6 +163,39 @@ chat-web 现在支持多实例部署，随时扩容：
 
 ---
 
+## 十、2026-08-12 安全与稳定性加固
+
+### 安全加固 (P0)
+
+| 项目 | 内容 |
+|------|------|
+| JWT 弱密钥校验 | `jwt.secret` 少于 32 字节直接拒绝启动，`openssl rand -base64 48` 生成 |
+| 登录/注册 DTO 校验 | `@Valid` + `@Size` 统一参数校验，替代手写长度判断 |
+| 上传大小限制 | 全模块统一 10MB（`max-file-size` / `max-request-size`） |
+| SQL 执行台加固 | 登录失败 ≥5 次锁 15 分钟；执行频率每分钟 30 次；新增 `OUTFILE`/`SLEEP` 等危险关键字；禁多语句 |
+| 媒体生成限流 | 用户级限流（`RateLimitService`），超限 429 + `retry_after` |
+
+### 性能与稳定性 (P1)
+
+| 项目 | 内容 |
+|------|------|
+| RAG 上传异步化 | 文档上传立即返回 202 + `status=processing`，解析/分片/向量化后台执行 |
+| 全文索引 SQL | `docs/sql/fulltext_search_indexes.sql` 解决消息 `LIKE '%kw%'` 全表扫描 |
+| AuthUtils 收敛 | 公共认证工具类，消除各 Controller 重复的 `extractUserId` |
+| Neo4j 自动重连 | `kg-reconnect` 守护线程每 60s 重试，修复启动竞态导致知识脉络图数据丢失 |
+
+### 运维与测试 (P1/P2)
+
+| 项目 | 内容 |
+|------|------|
+| Prometheus 告警 | `prometheus-alert-rules.yml`：宕机/高延迟/高内存/高错误率，Alertmanager 接线 |
+| chat-llm 容器化 | `Dockerfile-llm` + docker-compose 增加 chat-llm (profiles: ["all"]) |
+| chat-web 测试 | 12 个 Controller 全覆盖（54 个测试），含代理层 `KnowledgeBaseControllerTest` |
+| 前端测试 | hooks vitest 测试（useAuthUser / useAutoScroll） |
+| 树状博弈展示 | 最终结论去掉「【最终结论】」标签，逐句空行展示 |
+
+---
+
 ## 模块分工
 
 ```
@@ -172,16 +205,20 @@ chat-core (:9090)
 ├── 思考链展示 (ThinkingStreamParser 状态机)
 ├── 标准辩论 (LangGraph4j StateGraph)
 ├── 树状辩论 (Java 上层 + LangGraph 子图混合编排)
+├── RAG 知识库 (异步上传 + 向量化)
+├── 知识图谱 (Neo4j, 60s 自动重连)
 └── AI 错误自愈 + 熔断降级
 
 chat-web (:8081)
 ├── REST API + WebSocket 接入
-├── JWT 认证 + 多层 IP 限流 + 自动拉黑
+├── JWT 认证 + 弱密钥校验 + 多层 IP 限流 + 自动拉黑
+├── DTO 参数校验 (@Valid)
 ├── CORS 白名单 + CSP 头
 ├── IP 管理后台 API
 └── 无状态 Session (Redis)
 
-chat-games (:8083)   — 游戏服务
-chat-media (:8084)   — 多模态生成
+chat-games (:8083)   — 游戏服务 + SQL 执行台 (登录锁定 + 频率限流)
+chat-media (:8084)   — 多模态生成 (用户级限流)
+chat-llm  (:9095)    — 独立 LLM 服务 (REST + gRPC :9195)
 frontend             — 可拖拽树状辩论画布 + 思考链渲染
 ```

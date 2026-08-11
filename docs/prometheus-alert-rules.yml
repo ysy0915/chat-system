@@ -1,0 +1,68 @@
+# 生产环境 Prometheus 告警规则
+# 依赖：各服务需暴露 actuator 指标（chat-core/web/games/media/llm 均已在 pom 引入 micrometer）
+groups:
+  - name: chat-system-availability
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "服务 {{ $labels.job }} 不可用"
+          description: "{{ $labels.job }} ({{ $labels.instance }}) 已持续 2 分钟不可达"
+
+  - name: chat-system-latency
+    rules:
+      - alert: HighHttpLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket[5m])) by (le, uri, job)) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "接口 {{ $labels.uri }} 高延迟"
+          description: "{{ $labels.job }} 的接口 {{ $labels.uri }} P95 延迟超过 3 秒，持续 5 分钟"
+
+  - name: chat-system-resource
+    rules:
+      - alert: HighJvmMemory
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 堆内存使用率过高"
+          description: "{{ $labels.job }} 堆内存使用率超过 85%，持续 10 分钟"
+
+      - alert: HighCpu
+        expr: process_cpu_usage > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} CPU 使用率过高"
+          description: "{{ $labels.job }} CPU 使用率超过 90%，持续 10 分钟"
+
+      - alert: HighSystemLoad
+        expr: node_load1 > 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "服务器负载过高"
+          description: "服务器 1 分钟负载超过 4，持续 10 分钟"
+
+  - name: chat-system-errors
+    rules:
+      - alert: HighHttpErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (job)
+            / sum(rate(http_server_requests_seconds_count[5m])) by (job) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 5xx 错误率过高"
+          description: "{{ $labels.job }} 5xx 错误率超过 5%，持续 5 分钟"

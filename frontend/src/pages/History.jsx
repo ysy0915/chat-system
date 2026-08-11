@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 
@@ -10,6 +10,8 @@ export default function History(){
     return stored ? parseInt(stored) : 0
   })
 
+  // 仅挂载时加载一次历史列表
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{ fetchList() }, [])
 
 
@@ -41,7 +43,7 @@ export default function History(){
             if (parsed && parsed.answer) {
               answerText = parsed.answer
             }
-          } catch (e) {
+          } catch {
             // answerText is already plain text, keep as is
           }
           return (

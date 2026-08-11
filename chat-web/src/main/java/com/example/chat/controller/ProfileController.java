@@ -2,6 +2,7 @@ package com.example.chat.controller;
 
 import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,7 +31,7 @@ public class ProfileController {
     @Operation(summary = "获取个人资料", description = "返回当前登录用户的信息（需 JWT）")
     @GetMapping
     public ResponseEntity<?> getProfile(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        Long userId = extractUserId(authHeader);
+        Long userId = AuthUtils.extractUserId(authHeader, jwtUtil);
         if (userId == null) {
             return ResponseEntity.status(401).body(Map.of("error", "未登录"));
         }
@@ -52,7 +53,7 @@ public class ProfileController {
     @PutMapping
     public ResponseEntity<?> updateProfile(@RequestHeader(value = "Authorization", required = false) String authHeader,
                                            @RequestBody Map<String, String> body) {
-        Long userId = extractUserId(authHeader);
+        Long userId = AuthUtils.extractUserId(authHeader, jwtUtil);
         if (userId == null) {
             return ResponseEntity.status(401).body(Map.of("error", "未登录"));
         }
@@ -74,12 +75,5 @@ public class ProfileController {
                 "name", user.name != null ? user.name : "",
                 "nickname", user.nickname != null ? user.nickname : ""
         ));
-    }
-
-    private Long extractUserId(String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
-        String token = authHeader.substring(7);
-        if (!jwtUtil.validateToken(token)) return null;
-        return jwtUtil.getUserId(token);
     }
 }

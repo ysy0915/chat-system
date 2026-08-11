@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
@@ -14,9 +14,8 @@ export default function ChatPage(){
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
-  const [wsStatus, setWsStatus] = useState('connecting')
+  const [, setWsStatus] = useState('connecting')
   const stompRef = useRef(null)
-  const messagesEnd = useRef(null)
   const [userId, setUserId] = useState(() => {
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
@@ -140,7 +139,7 @@ export default function ChatPage(){
         if (!manualClose) {
           reconnectTimer = setTimeout(() => {
             if (!manualClose && stompRef.current === client) {
-              try { Promise.resolve(client.activate()).catch(() => {}) } catch (e) {}
+              try { Promise.resolve(client.activate()).catch(() => {}) } catch {}
             }
           }, 3000)
         }

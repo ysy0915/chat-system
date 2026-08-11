@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+/* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环内引用大量内部函数，依赖数组无法也不应静态枚举 */
 
 const GRID_COLS = 40
 const GRID_ROWS = 26
@@ -814,20 +815,6 @@ function stepGame(game, now, deltaMs) {
     }
 
     replenishFood(game)
-}
-
-function drawRoundedCell(ctx, x, y, size, radius) {
-    ctx.beginPath()
-    ctx.moveTo(x + radius, y)
-    ctx.lineTo(x + size - radius, y)
-    ctx.quadraticCurveTo(x + size, y, x + size, y + radius)
-    ctx.lineTo(x + size, y + size - radius)
-    ctx.quadraticCurveTo(x + size, y + size, x + size - radius, y + size)
-    ctx.lineTo(x + radius, y + size)
-    ctx.quadraticCurveTo(x, y + size, x, y + size - radius)
-    ctx.lineTo(x, y + radius)
-    ctx.quadraticCurveTo(x, y, x + radius, y)
-    ctx.closePath()
 }
 
 function getCamera(game) {

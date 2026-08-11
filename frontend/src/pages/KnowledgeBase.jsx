@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './KnowledgeBase.css'
 
@@ -17,10 +17,11 @@ export default function KnowledgeBase() {
   const [error, setError] = useState('')
   const [forbidden, setForbidden] = useState(false)
 
-  const [token, setToken] = useState(localStorage.getItem('auth_token') || '')
+  const [token] = useState(localStorage.getItem('auth_token') || '')
 
   useEffect(() => {
     loadKnowledgeBases()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时加载一次
   }, [])
 
   const authHeader = { headers: { Authorization: token ? `Bearer ${token}` : '' } }

@@ -1,0 +1,18 @@
+# chat-llm Dockerfile - LLM 聚合服务（模型路由/重试/降级）
+FROM maven:3-eclipse-temurin-17 AS builder
+WORKDIR /build
+COPY pom.xml .
+COPY chat-common/pom.xml chat-common/
+COPY chat-llm/pom.xml chat-llm/
+RUN mvn dependency:go-offline -pl chat-llm -am -DskipTests || true
+COPY chat-common/src chat-common/src/
+COPY chat-llm/src chat-llm/src/
+RUN mvn package -pl chat-llm -am -DskipTests -q
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=builder /build/chat-llm/target/chat-llm-*.jar app.jar
+RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
+USER app
+EXPOSE 9095
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -1,5 +1,6 @@
 package com.example.chat.rag.controller;
 
+import com.example.chat.config.ThreadPoolFactory;
 import com.example.chat.rag.entity.KnowledgeBase;
 import com.example.chat.rag.entity.KnowledgeDocument;
 import com.example.chat.rag.repository.RAGRepository;
@@ -12,9 +13,9 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +30,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 知识库管理 Controller
@@ -52,23 +54,30 @@ public class KnowledgeController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeController.class);
 
-    @Autowired
-    private RAGRepository ragRepository;
+    private final RAGRepository ragRepository;
+    private final VectorStoreService vectorStoreService;
+    private final DocumentParser documentParser;
+    private final TextChunker textChunker;
+    private final JwtUtil jwtUtil;
 
-    @Autowired(required = false)
-    private VectorStoreService vectorStoreService;
-
-    @Autowired
-    private DocumentParser documentParser;
-
-    @Autowired
-    private TextChunker textChunker;
-
-    @Autowired
-    private JwtUtil jwtUtil;
+    /** 文档解析/向量化异步线程池：不阻塞 HTTP 上传线程 */
+    private final ExecutorService ragExecutor;
 
     @Value("${app.rag.upload.max-size:10485760}")  // 默认 10MB
     private long maxUploadSize;
+
+    public KnowledgeController(RAGRepository ragRepository,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false) VectorStoreService vectorStoreService,
+                               DocumentParser documentParser,
+                               TextChunker textChunker,
+                               JwtUtil jwtUtil) {
+        this.ragRepository = ragRepository;
+        this.vectorStoreService = vectorStoreService;
+        this.documentParser = documentParser;
+        this.textChunker = textChunker;
+        this.jwtUtil = jwtUtil;
+        this.ragExecutor = ThreadPoolFactory.create(2, 4, 50, "rag-ingest-");
+    }
 
     /** 校验 token 并要求 admin 角色，返回 null 表示通过，否则返回错误响应 */
     private ResponseEntity<?> checkAdmin(String authHeader) {
@@ -147,11 +156,11 @@ public class KnowledgeController {
             return ResponseEntity.badRequest().body(Map.of("error", "文件超过 " + maxUploadSize + " 字节限制"));
         }
 
+        final String fileName = file.getOriginalFilename();
         try {
-            byte[] bytes = file.getBytes();
-            String fileName = file.getOriginalFilename();
+            final byte[] bytes = file.getBytes();
 
-            // 1. 创建文档记录（状态 pending）
+            // 1. 创建文档记录（状态 processing），立即返回，不阻塞上传线程
             KnowledgeDocument doc = new KnowledgeDocument();
             doc.knowledgeBaseId = kbId;
             doc.fileName = fileName;
@@ -160,7 +169,26 @@ public class KnowledgeController {
             doc.chunkCount = 0;
             doc.status = "processing";
             ragRepository.insertDocument(doc);
+            final long docId = doc.id;
 
+            // 2-5. 解析/分片/向量化/状态更新放到异步线程池执行
+            ragExecutor.submit(() -> ingestDocumentAsync(kbId, docId, fileName, bytes));
+
+            return ResponseEntity.accepted().body(Map.of(
+                    "documentId", docId,
+                    "fileName", fileName,
+                    "chunkCount", 0,
+                    "status", "processing"
+            ));
+        } catch (Exception e) {
+            log.error("[RAG] 文档上传失败 kb={} error={}", kbId, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** 异步执行文档解析 → 分片 → 向量化入库 → 状态更新 */
+    private void ingestDocumentAsync(long kbId, long docId, String fileName, byte[] bytes) {
+        try {
             // 2. 解析文档为纯文本
             String text = documentParser.parse(fileName, bytes);
 
@@ -168,26 +196,23 @@ public class KnowledgeController {
             List<VectorStoreService.ChunkText> chunks = textChunker.chunk(text);
             log.info("[RAG] 文档 {} 解析+分片完成 共 {} 片", fileName, chunks.size());
 
-            // 4. 向量化入库（异步化可优化，当前同步处理）
+            // 4. 向量化入库
             if (vectorStoreService != null) {
-                vectorStoreService.insertChunks(kbId, doc.id, chunks, fileName);
+                vectorStoreService.insertChunks(kbId, docId, chunks, fileName);
             }
 
             // 5. 更新文档状态
-            ragRepository.updateDocumentStatus(doc.id, "done", null, chunks.size());
+            ragRepository.updateDocumentStatus(docId, "done", null, chunks.size());
 
             // 6. 更新知识库统计
             updateKbStats(kbId);
-
-            return ResponseEntity.ok(Map.of(
-                    "documentId", doc.id,
-                    "fileName", fileName,
-                    "chunkCount", chunks.size(),
-                    "status", "done"
-            ));
         } catch (Exception e) {
-            log.error("[RAG] 文档上传失败 kb={} error={}", kbId, e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            log.error("[RAG] 文档异步处理失败 kb={} doc={} error={}", kbId, docId, e.getMessage(), e);
+            try {
+                ragRepository.updateDocumentStatus(docId, "failed", e.getMessage(), 0);
+            } catch (Exception ignored) {
+                // 状态更新失败不覆盖原始异常
+            }
         }
     }
 

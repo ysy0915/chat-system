@@ -23,6 +23,9 @@ public class JwtUtil {
     private final SecretKey key;
     private final long expirationMs;
 
+    /** HS256 签名所需最小密钥长度（32 字节 = 256 bit） */
+    private static final int MIN_SECRET_BYTES = 32;
+
     public JwtUtil(@Value("${jwt.secret:#{null}}") String secret,
                    @Value("${jwt.expiration:86400000}") long expirationMs) {
         if (secret == null || secret.isBlank() || DISABLED_MARKER.equals(secret)) {
@@ -32,7 +35,14 @@ public class JwtUtil {
             this.key = Keys.hmacShaKeyFor(randomBytes);
             log.warn("[JWT] ⚠️ 未配置 jwt.secret，使用随机密钥 (重启后旧token全部失效)");
         } else {
-            this.key = Keys.hmacShaKeyFor(secret.getBytes());
+            byte[] secretBytes = secret.getBytes();
+            if (secretBytes.length < MIN_SECRET_BYTES) {
+                // 弱密钥拒绝启动：避免 HS256 被暴力破解
+                throw new IllegalStateException(
+                        "[JWT] ⚠️ jwt.secret 长度不足 " + MIN_SECRET_BYTES + " 字节（当前 " + secretBytes.length
+                                + "），请配置至少 32 字节的强密钥，示例：openssl rand -base64 48");
+            }
+            this.key = Keys.hmacShaKeyFor(secretBytes);
         }
         this.expirationMs = expirationMs;
     }

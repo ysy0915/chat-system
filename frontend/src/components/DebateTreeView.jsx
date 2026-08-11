@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import '../styles/debate-tree.css'
 
 // ---- 布局常量 ----
@@ -18,16 +18,14 @@ const ROLE_COLORS = {
   '中立': { border: 'role-li',   accent: '#a855f7', icon: '🟪', model: '千问' },
 }
 
-// 格式化管理：按行分割 + 按句号/分号额外分割 + 加粗标记 + 去掉【最终结论】标签
-function formatFinalText(text) {
+// 格式化管理：按行分割 + 按句号/分号额外分割 + 加粗标记 + 去掉开头的【最终结论】标签
+// 每一句话单独一段，句与句之间空行（margin 1em）展示
+export function formatFinalText(text) {
   if (!text) return null
   // 先按换行分割
   return text.split('\n').flatMap((line, i) => {
-    // 跳过包含【最终结论】的多余标签行
-    let displayLine = line
-    if (displayLine.startsWith('**【最终结论】**')) {
-      displayLine = displayLine.replace('**【最终结论】**', '')
-    }
+    // 去掉开头的【最终结论】标签（兼容 ** 包裹 / 冒号 / 空格等变体）
+    let displayLine = line.replace(/^\s*\*?\*?【最终结论】\*?\*?[:：]?\s*/, '')
     if (!displayLine.trim()) return []
     // 如果行内包含多个句子（以。或；结尾），分割成多行
     const sentences = displayLine.split(/(?<=[。；])/g).filter(s => s.trim())
@@ -39,7 +37,7 @@ function formatFinalText(text) {
         }
         return part
       })
-      return <p key={`${i}-${j}`} style={{ margin: '0 0 4px 0' }}>{formatted}</p>
+      return <p key={`${i}-${j}`} style={{ margin: '0 0 1em 0' }}>{formatted}</p>
     })
   })
 }
@@ -110,6 +108,8 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
       applyTransform(newScale)
       setScale(newScale)
     })
+  // 自动适配仅在视角结构变化时执行一次，依赖 applyTransform 最新引用
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perspectives])
 
   // ---- 处理 WebSocket 事件 ----
@@ -254,6 +254,8 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
     }
     websocketEvents.onMessage(handler)
     return () => websocketEvents.offMessage(handler)
+  // 事件订阅生命周期绑定 websocketEvents（稳定引用），onDone 最新值经 handler 闭包获取
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [websocketEvents])
 
   // ---- 更新 SVG 连线 ----
@@ -434,7 +436,6 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
         {/* 视角节点 */}
         {perspectives.map((p, idx) => {
           const pX = ROOT_X - (perspectiveCount - 1) * PERSPECTIVE_GAP / 2 + idx * PERSPECTIVE_GAP
-          const isDone = p.status === 'done'
           return (
             <div key={p.id}>
               {/* 视角卡片 */}
@@ -602,7 +603,6 @@ function buildConnectors(perspectives) {
 
 // 垂直线
 function pathV(x1, y1, x2, y2) {
-  const midY = (y1 + y2) / 2
   return `M${x1},${y1} L${x1},${y2}`
 }
 

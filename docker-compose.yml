@@ -85,6 +85,21 @@ services:
       - chat-network
     profiles: ["all"]
 
+  chat-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile-llm
+    image: chat-llm:latest
+    container_name: chat-llm
+    ports:
+      - "9095:9095"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["all"]
+
   # ===== 前端 Nginx =====
 
   frontend:

@@ -124,13 +124,15 @@ export function useVoiceInput(onResult) {
             }
             setRecording(false)
         }
+    // start 回调依赖 recRef/setState（稳定），仅随 isIOS/onResult 重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isIOS, onResult])
 
     const stop = useCallback(() => {
         if (recRef.current) {
             try {
                 recRef.current.stop()
-            } catch (err) {
+            } catch {
                 // 忽略 stop 异常
             }
         }

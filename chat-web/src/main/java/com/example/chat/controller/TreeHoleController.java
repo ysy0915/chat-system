@@ -1,6 +1,7 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -138,14 +139,6 @@ public class TreeHoleController {
     }
 
     private Long extractUserId(HttpServletRequest request) {
-        String header = request.getHeader("Authorization");
-        if (header == null || !header.startsWith("Bearer ")) return null;
-        String token = header.substring(7);
-        try {
-            if (!jwtUtil.validateToken(token)) return null;
-            return jwtUtil.getUserId(token);
-        } catch (Exception e) {
-            return null;
-        }
+        return AuthUtils.extractUserId(request, jwtUtil);
     }
 }

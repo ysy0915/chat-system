@@ -1,13 +1,11 @@
 // frontend/src/pages/Landing.jsx
-import React, { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 
 export default function Landing() {
-  const animRef = useRef(null)
-  const lastTimeRef = useRef(null)
   const [onlineCount, setOnlineCount] = useState(0)
   const [totalUsage, setTotalUsage] = useState(0)
   const stompRef = useRef(null)

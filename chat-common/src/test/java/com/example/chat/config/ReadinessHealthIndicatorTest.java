@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -43,8 +44,13 @@ class ReadinessHealthIndicatorTest {
     @Test
     @DisplayName("Redis 正常时返回 UP")
     void health_redisAvailable_returnsUp() {
-        long now = System.currentTimeMillis();
-        when(valueOperations.get(anyString())).thenReturn(String.valueOf(now));
+        // 模拟真实 Redis：set 写入的值，get 能读回
+        AtomicReference<String> stored = new AtomicReference<>();
+        doAnswer(inv -> {
+            stored.set(inv.getArgument(1));
+            return null;
+        }).when(valueOperations).set(anyString(), anyString(), any(Duration.class));
+        when(valueOperations.get(anyString())).thenAnswer(inv -> stored.get());
 
         Health health = indicator.health();
 

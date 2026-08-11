@@ -16,51 +16,53 @@ LLMInvoker (统一调用入口)
     │       └── 根据任务类型选择模型
     │
     ▼
-LLMStrategyFactory (策略工厂)
+LlmBundleClient (统一多模型调用)
     │
-    ├── OpenAICompatStrategy  →  千问 (Qwen) / DeepSeek
-    ├── DoubaoStrategy        →  豆包 (Doubao)
-    └── DirectLLMClient       →  直接 HTTP 调用 (备用)
+    ├── DirectLLMClient          →  降级 HTTP 直连 (chat-core 内)
+    └── chat-llm 独立服务 (:9095)
+            ├── OpenAICompatProvider →  千问 (Qwen) / DeepSeek / 豆包 (REST)
+            ├── OpenAISdkProvider    →  OpenAI SDK (type: sdk)
+            └── LLMProviderRegistry  →  多 Provider 注册与路由
 ```
 
 ---
 
 ## 二、LLM 策略
 
-### 2.1 `LLMStrategy` 接口
+> 旧的 chat-core 策略层（`LLMStrategy` 接口 / `LLMStrategyFactory` / `OpenAICompatStrategy` / `DoubaoStrategy`）已于 2026-08 清理废弃，统一迁移至 **chat-llm 独立服务** 的多 Provider 架构。
 
-统一抽象，定义三个核心方法：
-- `callLLM(messages, modelConfig)` — 同步调用
-- `callLLMWithImage(messages, imageUrl, modelConfig)` — 带图片的多模态调用
-- `callLLMStream(messages, modelConfig, callback)` — 流式调用
+### 2.1 `chat-llm` Provider 架构 (chat-llm 模块)
 
-### 2.2 `OpenAICompatStrategy`
+`LLMProviderRegistry` 按配置注册 Provider，统一对外提供同步/流式调用：
 
-**适用模型**：千问 (Qwen)、DeepSeek 等兼容 OpenAI API 格式的模型
+| Provider | 类型 | 适用模型 |
+|---------|------|---------|
+| `OpenAICompatProvider` | REST (`type: rest`) | 千问 (Qwen)、DeepSeek、豆包（OpenAI 兼容端点） |
+| `OpenAISdkProvider` | SDK (`type: sdk`) | OpenAI、Azure OpenAI 等官方 SDK 支持 |
 
-**特点**：
+**OpenAI 兼容 REST 调用特点**：
 - 使用 `java.net.http.HttpClient` 直接构建 HTTP 请求
-- 通过 `modelConfig` 中的 `apiKey`、`baseUrl` 动态配置
+- 通过配置的 `apiKey`、`baseUrl` 动态绑定
 - 支持流式 (SSE) 与非流式两种模式
-- 支持携带图片的多模态调用
 - **重要**：**不设置** `Accept-Encoding: gzip`，因为 `BodyHandlers.ofString()` 不会自动解压
 
-### 2.3 `DoubaoStrategy`
+### 2.2 `GraphExecuteService` — 自研图执行引擎 (chat-llm)
 
-**适用模型**：豆包 (Doubao)
+不依赖第三方 LangGraph 框架，自研轻量图引擎：
+- 逻辑节点（`nodeType=logic`）— 执行 `compare / increment` 表达式
+- 并行分支（`branches`）— 一个节点内多个 LLM 并行调用，各自流式回调
+- 状态写入（`sink / sinkAppend`）— 节点输出写入指定 state 键
+- 重试自愈（`retryCount / fallbackNodeId`）
+- 流式事件（`GraphStreamEvent`）— 按 nodeId/branchId 标识
+
+### 2.3 `DirectLLMClient` (chat-core)
+
+**用途**：直接 HTTP 调用的通用客户端（备用/降级方案）
 
 **特点**：
-- 使用豆包专用 SDK
-- 独立 JSON 解析逻辑，处理豆包特有响应格式
-- 包含 `cleanJson()` 方法过滤控制字符
-
-### 2.4 `DirectLLMClient`
-
-**用途**：直接 HTTP 调用的通用客户端（备用方案）
-
-**特点**：
-- 不依赖策略工厂，直接构建 HTTP 请求
-- 用于不需要策略路由的简单场景
+- 不依赖 Provider 注册，直接构建 HTTP 请求
+- 用于 `LLMInvoker` 不可用时（未注入 / 熔断）的降级调用
+- 统一了 KnowledgeGraphService / ModelAutoChatService 中的重复降级 HTTP 逻辑
 
 ---
 
@@ -173,10 +175,11 @@ LLMStrategyFactory (策略工厂)
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
-| LangChain4j | - | LLM 调用框架、ChatMemory |
-| LangGraph4j | - | 辩论场图式工作流 (DebateGraphService) |
+| chat-llm (自研) | - | 多 Provider LLM 服务、图执行引擎、RAG、gRPC (:9095/:9195) |
+| LangChain4j | - | 个人对话 / 树洞 ChatMemory (chat-core `langchain4j/`) |
+| grpc-java | - | chat-llm 对外 gRPC 服务 (rag/llm, :9195) |
 | Jackson | - | JSON 序列化/反序列化 |
-| java.net.http | JDK 内置 | OpenAICompatStrategy 的 HTTP 客户端 |
+| java.net.http | JDK 内置 | OpenAI 兼容 Provider 的 HTTP 客户端 |
 
 ---
 
@@ -186,18 +189,18 @@ LLMStrategyFactory (策略工厂)
 
 **现象**：LLM 返回的 JSON 中包含 CTRL-CHAR (code 31) 等控制字符，Jackson 解析失败
 
-**修复**：三个策略文件均添加 `cleanJson()` 方法：
-- `OpenAICompatStrategy.java`
-- `DoubaoStrategy.java`
-- `DirectLLMClient.java`
+**修复**：Provider/客户端均添加 `cleanJson()` 方法：
+- `OpenAICompatProvider.java`（chat-llm）
+- `OpenAISdkProvider.java`（chat-llm）
+- `DirectLLMClient.java`（chat-core）
 
 方法过滤 ASCII 范围 0x00-0x1F（保留 `\t` `\n` `\r`）的控制字符。
 
 ### 6.2 Gzip 压缩响应乱码
 
-**现象**：`OpenAICompatStrategy` 设置 `Accept-Encoding: gzip`，部分 API 返回 gzip 压缩数据，`BodyHandlers.ofString()` 无法解压导致乱码
+**现象**：`OpenAICompatProvider` 设置 `Accept-Encoding: gzip`，部分 API 返回 gzip 压缩数据，`BodyHandlers.ofString()` 无法解压导致乱码
 
-**修复**：删除 `OpenAICompatStrategy` 中的 `.header("Accept-Encoding", "gzip")` 行
+**修复**：删除 `OpenAICompatProvider` 中的 `.header("Accept-Encoding", "gzip")` 行
 
 ### 6.3 线程池任务被静默丢弃
 
@@ -229,7 +232,7 @@ RejectedExecutionHandler handler = (r, executor) -> {
 **影响文件**：
 - `ErrorType.java`、`FileContentExtractor.java`、`DocumentParser.java` — 使用 `Locale.ROOT` 但未 import
 - `TreeHoleService.java` — 使用 `ModelConfig` 但未 import
-- `LLMStrategyFactory.java`、`TaskClassifier.java` — 同 `Locale` 问题
+- `TaskClassifier.java` — 同 `Locale` 问题
 - `MediaGenController.java` — `HashMap`/`ArrayList`/`HashSet`/`Arrays`/`Set` 未 import
 
 **修复**：为所有文件添加显式 `import` 声明。JDK 26 更加严格，不再允许隐式类型引用。

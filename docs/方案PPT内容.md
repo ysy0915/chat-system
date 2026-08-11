@@ -62,9 +62,10 @@
 - 13 个功能页面：首页、观点辩论场、知识脉络图、个人对话空间、情绪树洞、AI 伙伴群聊、图片与视频、3D 模型生成、AI 多人游戏、问答列表、个人信息、模型管理、知识库
 - 响应式布局，支持桌面端与移动端双指缩放
 
-**后端形态**：5 个微服务 + 1 个前端
+**后端形态**：6 个微服务 + 1 个前端
 - `chat-core`：AI 核心引擎（辩论、意图识别、思考链、RAG、Agent 工具）
 - `chat-web`：Web 接入层（认证、限流、WebSocket、路由）
+- `chat-llm`：独立 LLM 服务（多 Provider、自研图执行引擎、RAG、gRPC）
 - `chat-games`：AI 多人游戏
 - `chat-media`：多模态生成（图/视频/3D）
 - `flink-log-analyzer`：日志实时分析
@@ -180,7 +181,7 @@
 | 多模态生成 | 文生图/视频/3D 专用模型 | 对应厂商 API |
 
 **路由策略**：
-- `LLMStrategyFactory` 按 provider 分发策略
+- chat-llm 多 Provider 注册（`OpenAICompatProvider` / `OpenAISdkProvider`）
 - 支持 OpenAI 兼容格式与豆包专用格式
 - 通过 Nacos 动态配置 temperature / maxTokens / persona
 

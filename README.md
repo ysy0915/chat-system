@@ -6,8 +6,8 @@
 
 | 层级 | 技术 |
 |------|------|
-| **后端框架** | Spring Boot 3, Spring Cloud (Nacos), Spring Data Redis, MyBatis |
-| **AI 引擎** | LangChain4j, LangGraph4j, 多 LLM 策略 (OpenAI 兼容/豆包) |
+| **后端框架** | Spring Boot 3, Spring Cloud (Nacos), Spring Data Redis, MyBatis, gRPC |
+| **AI 引擎** | chat-llm 独立 LLM 服务（多 Provider：OpenAI 兼容 / DeepSeek / 豆包 / OpenAI SDK）+ 自研 LangGraph 风格图执行引擎；chat-core 保留 LangChain4j 个人对话 / 树洞服务 |
 | **知识库** | Milvus 向量数据库 + Embedding + RAG 检索增强 |
 | **消息中间件** | RabbitMQ (跨节点广播, 聊天分流) |
 | **数据库** | MySQL + Redis + Elasticsearch + Kafka + Flink |
@@ -22,6 +22,7 @@ chat-system-project/
 ├── chat-common/       # 公共库（实体、DTO、安全、工具、拦截器）
 ├── chat-core/         # 核心 AI 服务（LLM调用、RAG、Agent工具、策略路由） 端口 9090
 ├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081(生产)
+├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、gRPC） 端口 9095 / gRPC 9195
 ├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
 ├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
 ├── flink-log-analyzer/# 日志分析（Kafka → Flink → ES 实时流式处理）
@@ -122,11 +123,12 @@ Milvus 向量检索 + 文档解析 + 文本分块 + 对话记忆融合
 mvn clean test
 
 # 单模块
-mvn test -pl chat-common  # ✅ 14 个真实测试类 (~25% 行覆盖)
+mvn test -pl chat-common  # ✅ 51 个测试类（35 个空壳/废弃测试已清理）
 mvn test -pl chat-core
 mvn test -pl chat-web
 mvn test -pl chat-media
 mvn test -pl chat-games
+mvn test -pl chat-llm
 
 # 跳过测试构建
 mvn clean install -DskipTests
@@ -188,8 +190,8 @@ mvn clean install -DskipTests
 
 | 维度 | 得分 | 说明 |
 |------|:--:|------|
-| 测试覆盖 | 24/25 | 源文件全面覆盖，434 tests / 0 failures |
-| 测试质量 | 13/20 | ✅ 空壳测试全部清理 + games模块真实测试 |
+| 测试覆盖 | 24/25 | 源文件全面覆盖，真实测试持续扩充 |
+| 测试质量 | 13/20 | ✅ 35 个空壳/废弃测试全部删除 + games模块真实测试 |
 | 代码规范 | 14/15 | ✅ Checkstyle 0违规, PMD 2000+→92, CI阻断就绪 |
 | 架构设计 | 13/15 | ✅ Resilience4j 熔断/重试 + Prometheus + Zipkin 分布式追踪 |
 | 文档 | 9/10 | ✅ springdoc + @Schema 全量注解 + Swagger UI |

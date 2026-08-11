@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.util.ReflectionUtils;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 
 import java.lang.reflect.Field;
@@ -73,41 +74,32 @@ class SpaRoutingConfigTest {
     }
 
     private String getViewName(Object reg) throws Exception {
-        try {
-            Field field = reg.getClass().getDeclaredField("viewName");
-            field.setAccessible(true);
-            return (String) field.get(reg);
-        } catch (NoSuchFieldException e) {
-            // Fallback: try common field names
-            for (Field f : reg.getClass().getDeclaredFields()) {
-                if (f.getType() == String.class) {
-                    f.setAccessible(true);
-                    String val = (String) f.get(reg);
-                    if (val != null && (val.startsWith("forward:") || val.startsWith("redirect:"))) {
-                        return val;
-                    }
-                }
-            }
+        // Spring 6.x: ViewControllerRegistration.setViewName 委托给内部 ParameterizableViewController，
+        // viewName 字符串实际存入 Object view 字段（无独立的 viewName 字段）
+        Field controllerField = ReflectionUtils.findField(reg.getClass(), "controller");
+        if (controllerField == null) {
             return null;
         }
+        controllerField.setAccessible(true);
+        Object controller = controllerField.get(reg);
+        if (controller == null) {
+            return null;
+        }
+        Field viewField = ReflectionUtils.findField(controller.getClass(), "view");
+        if (viewField == null) {
+            return null;
+        }
+        viewField.setAccessible(true);
+        Object view = viewField.get(controller);
+        return view instanceof String ? (String) view : null;
     }
 
     private String getUrlPath(Object reg) throws Exception {
-        try {
-            Field field = reg.getClass().getDeclaredField("urlPath");
-            field.setAccessible(true);
-            return (String) field.get(reg);
-        } catch (NoSuchFieldException e) {
-            for (Field f : reg.getClass().getDeclaredFields()) {
-                if (f.getType() == String.class) {
-                    f.setAccessible(true);
-                    String val = (String) f.get(reg);
-                    if (val != null && val.startsWith("/chat/")) {
-                        return val;
-                    }
-                }
-            }
+        Field field = ReflectionUtils.findField(reg.getClass(), "urlPath");
+        if (field == null) {
             return null;
         }
+        field.setAccessible(true);
+        return (String) field.get(reg);
     }
 }

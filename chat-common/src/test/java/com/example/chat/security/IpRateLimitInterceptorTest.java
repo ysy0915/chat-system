@@ -188,7 +188,7 @@ class IpRateLimitInterceptorTest {
 
         when(redisTemplate.hasKey(anyString())).thenReturn(false);
         when(valueOperations.increment(startsWith("ip:count:"))).thenReturn(1L);
-        when(valueOperations.increment(startsWith("ip:rate:global:"))).thenReturn(61L);
+        when(valueOperations.increment(startsWith("ip:rate:global:"))).thenReturn(601L);
         when(redisTemplate.expire(anyString(), any(Duration.class))).thenReturn(true);
 
         assertFalse(interceptor.preHandle(request, response, null));
@@ -204,7 +204,7 @@ class IpRateLimitInterceptorTest {
 
         when(redisTemplate.hasKey(anyString())).thenReturn(false);
         when(valueOperations.increment(startsWith("ip:count:"))).thenReturn(1L);
-        when(valueOperations.increment(startsWith("ip:rate:sensitive:"))).thenReturn(6L);
+        when(valueOperations.increment(startsWith("ip:rate:sensitive:"))).thenReturn(11L);
         when(redisTemplate.expire(anyString(), any(Duration.class))).thenReturn(true);
 
         assertFalse(interceptor.preHandle(request, response, null));

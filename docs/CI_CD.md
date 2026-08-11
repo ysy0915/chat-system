@@ -140,13 +140,13 @@ ssh-keyscan -H 121.40.188.98 >> known_hosts_milvus
 
 ```bash
 # 1. 找到上一个版本的 jar（服务器上有备份）
-ssh -i "Milvus.pem" root@121.40.188.98 "ls -lt /opt/app/core/*.jar.bak"
+ssh -i "Milvus.pem" root@121.40.188.98 "ls -lt /opt/app/core/*.jar.bak /opt/app/web/*.jar.bak /opt/app/llm/*.jar.bak"
 
-# 2. 恢复 backup
-ssh -i "Milvus.pem" root@121.40.188.98 "cp /opt/app/core/chat-core-{prev}.jar.bak /opt/app/core/chat-core-0.0.1-SNAPSHOT.jar"
+# 2. 恢复 backup（以 chat-llm 为例）
+ssh -i "Milvus.pem" root@121.40.188.98 "cp /opt/app/llm/chat-llm-{prev}.jar.bak /opt/app/llm/chat-llm-0.0.1-SNAPSHOT.jar"
 
 # 3. 重启
-ssh -i "Milvus.pem" root@121.40.188.98 "bash /opt/app/restart-core.sh"
+ssh -i "Milvus.pem" root@121.40.188.98 "bash /opt/app/restart-llm.sh"
 ```
 
 ### 5.3 建议改进

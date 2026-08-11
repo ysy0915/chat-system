@@ -57,9 +57,59 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
   const isDragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0 })
   const canvasOffset = useRef({ x: 0, y: 0 })
+  const hasAutoFit = useRef(false)  // 首次视角加载后自动适配一次
+
+  const wrapperRef = useRef(null)  // 用于绑定非 passive touch 事件
+  const touchHandlersRef = useRef(null)
+
+  // 以 { passive: false } 绑定 touch 事件，确保双指缩放时 preventDefault 生效
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const onTS = (e) => touchHandlersRef.current?.handleTouchStart(e)
+    const onTM = (e) => touchHandlersRef.current?.handleTouchMove(e)
+    const onTE = (e) => touchHandlersRef.current?.handleTouchEnd(e)
+    const opts = { passive: false }
+    el.addEventListener('touchstart', onTS, opts)
+    el.addEventListener('touchmove', onTM, opts)
+    el.addEventListener('touchend', onTE, opts)
+    return () => {
+      el.removeEventListener('touchstart', onTS, opts)
+      el.removeEventListener('touchmove', onTM, opts)
+      el.removeEventListener('touchend', onTE, opts)
+    }
+  }, [])
 
   // 同步 scaleRef
   useEffect(() => { scaleRef.current = scale }, [scale])
+
+  // 首次有视角数据后自动缩放到适配全部节点
+  useEffect(() => {
+    if (hasAutoFit.current || perspectives.length === 0) return
+    hasAutoFit.current = true
+    // 延迟一帧等 DOM 渲染完成
+    requestAnimationFrame(() => {
+      const wrapper = canvasRef.current?.parentElement
+      const canvas = canvasRef.current
+      if (!wrapper || !canvas) return
+      const vw = wrapper.clientWidth - 40   // 留边距
+      const vh = wrapper.clientHeight - 40
+      // 计算画布内容总尺寸
+      const count = perspectives.length
+      const maxR = Math.max(1, ...perspectives.map(p => p.rounds.length))
+      const cw = Math.max(1400, count * PERSPECTIVE_GAP + 200)
+      const ch = ROUND_START_Y + maxR * ROUND_HEIGHT + SUMMARY_OFFSET + FINAL_Y_OFFSET + 200
+      const fitScale = Math.min(1, vw / cw, vh / ch)
+      const newScale = Math.max(0.15, fitScale)
+      // 居中画布，垂直方向偏上（留出下方结论框空间）
+      const ox = (vw - cw * newScale) / 2
+      const oy = 16
+      canvasOffset.current = { x: ox, y: oy }
+      scaleRef.current = newScale
+      applyTransform(newScale)
+      setScale(newScale)
+    })
+  }, [perspectives])
 
   // ---- 处理 WebSocket 事件 ----
 
@@ -226,7 +276,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
       isDragging.current = false
       pinchRef.current = {
         dist: getTouchDist(e.touches),
-        scale,
+        scale: scaleRef.current,
         cx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
         cy: (e.touches[0].clientY + e.touches[1].clientY) / 2,
       }
@@ -240,14 +290,19 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
       const newDist = getTouchDist(e.touches)
       const ratio = newDist / p.dist
       const curScale = scaleRef.current
-      const newScale = Math.min(2, Math.max(0.3, p.scale * ratio))
+      const newScale = Math.min(2, Math.max(0.15, p.scale * ratio))
       const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2
       const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
       canvasOffset.current = {
         x: (canvasOffset.current.x - mx) * (newScale / curScale) + mx,
         y: (canvasOffset.current.y - my) * (newScale / curScale) + my,
       }
-      setScale(newScale)
+      // 立即更新 DOM 变换，确保实时反馈
+      scaleRef.current = newScale
+      applyTransform(newScale)
+      // 异步更新 React state
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(() => setScale(newScale))
       pinchRef.current = { dist: newDist, scale: newScale, cx: mx, cy: my }
       e.preventDefault()
       return
@@ -259,12 +314,16 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
       y: e.touches[0].clientY - dragStart.current.y,
     }
     applyTransform(scaleRef.current)
+    e.preventDefault()
   }
 
   const handleTouchEnd = () => {
     isDragging.current = false
     pinchRef.current = null
   }
+
+  // 每次渲染同步最新 handler 引用到 ref
+  touchHandlersRef.current = { handleTouchStart, handleTouchMove, handleTouchEnd }
 
   const rafRef = useRef(null)  // 缩放动画帧节流
 
@@ -297,6 +356,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
     applyTransform(1)
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = requestAnimationFrame(() => setScale(1))
+    hasAutoFit.current = false  // 允许重新触发适配
   }, [applyTransform])
 
   // 双指缩放
@@ -319,10 +379,9 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
   return (
     <div
       className="debate-tree-wrapper"
-      style={{ height: Math.min(totalHeight * scale + 100, window.innerHeight * 0.85) }}
+      ref={wrapperRef}
       onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
     >
       <div className="debate-tree-canvas" ref={canvasRef}
         style={{ width: totalWidth, height: totalHeight }}>

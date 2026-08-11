@@ -202,7 +202,7 @@ export default function Debate() {
   }
 
   return (
-    <div className="debate-container">
+    <div className={`debate-container${treeMode ? ' tree-mode' : ''}`}>
       <Link to="/home" className="btn-back-home">← 返回首页</Link>
 
       {!debating && !finalAnswer && !treeCompleted && rounds.length === 0 && !error && (
@@ -236,6 +236,19 @@ export default function Debate() {
             setTreeCompleted(true)
           }}
         />
+      )}
+
+      {/* 树状模式：最终结论 - 始终占位，结论出来后填充 */}
+      {treeMode && (debating || treeCompleted) && (
+        <div className="debate-tree-conclusion">
+          <div className="debate-tree-conclusion-title">📊 最终结论</div>
+          <div className="debate-tree-conclusion-text">
+            {treeFinalAnswer
+              ? formatText(treeFinalAnswer).map((line, i) => <p key={i}>{line}</p>)
+              : <span className="debate-tree-conclusion-pending">辩论进行中，结论即将生成…</span>
+            }
+          </div>
+        </div>
       )}
 
       {/* ---- 线性模式渲染 ---- */}

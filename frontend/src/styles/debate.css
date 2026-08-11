@@ -10,6 +10,17 @@
     margin: 0 auto;
 }
 
+/* 树状模式：全宽 + 可滚动 + 画布剧中 */
+.debate-container.tree-mode {
+    max-width: none;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 8px 0 0;
+    align-items: center;
+    -webkit-overflow-scrolling: touch;
+}
+
 .debate-container > .btn-back-home {
     align-self: flex-start;
     margin-bottom: 12px;
@@ -421,5 +432,68 @@
 
 .debate-mode-tab .tab-icon {
     font-size: 15px;
+}
+
+/* === 树状模式：最终结论区块 (始终占位) === */
+
+.debate-tree-conclusion {
+    margin: 12px auto 0;
+    max-width: 1280px;
+    width: calc(100% - 32px);
+    max-height: 320px;              /* 固定最大高度，超长时内部滚动 */
+    padding: 14px 20px 16px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    flex-direction: column;
+}
+
+.debate-tree-conclusion-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    flex-shrink: 0;                 /* 标题不允许压缩 */
+}
+
+.debate-tree-conclusion-text {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-y: auto;               /* 内容超长时内部滚动 */
+    flex: 1;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.debate-tree-conclusion-text p {
+    margin: 0 0 8px 0;
+}
+
+.debate-tree-conclusion-text p:last-child {
+    margin-bottom: 0;
+}
+
+.debate-tree-conclusion-pending {
+    color: var(--text-muted, #94a3b8);
+    font-style: italic;
+}
+
+@media (max-width: 768px) {
+    .debate-tree-conclusion {
+        margin: 8px 8px 4px;
+        width: calc(100% - 16px);
+        max-width: none;
+        max-height: 240px;          /* 手机端固定高度 */
+        padding: 10px 14px 12px;
+    }
+    .debate-tree-conclusion-title {
+        font-size: 14px;
+        margin-bottom: 6px;
+    }
+    .debate-tree-conclusion-text {
+        font-size: 13px;
+        line-height: 1.6;
+    }
 }
 

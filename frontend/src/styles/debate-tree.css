@@ -3,12 +3,13 @@
 .debate-tree-wrapper {
   position: relative;
   width: 100%;
-  min-height: 70vh;
+  height: 500px;                  /* 固定高度，结论框在下方不受挤压 */
   overflow: hidden;
   cursor: grab;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
   border-radius: 16px;
-  margin: 16px 0;
+  margin: 0 auto;
+  max-width: 1280px;
 }
 .debate-tree-wrapper:active {
   cursor: grabbing;
@@ -269,10 +270,10 @@
 
 @media (max-width: 768px) {
   .debate-tree-wrapper {
-    height: calc(100dvh - 180px) !important;  /* 固定高度，减去 header + 输入区 */
-    margin: 0;
+    height: 400px !important;     /* 固定高度，留出结论框和输入区 */
+    margin: 0 auto;
     border-radius: 0;
-    touch-action: none;  /* 阻止浏览器默认手势，由 JS 接管拖拽 */
+    touch-action: none;
     -webkit-overflow-scrolling: touch;
   }
 

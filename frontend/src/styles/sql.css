@@ -1,4 +1,19 @@
 /* ===== SQL Executor ===== */
+/* SQL 执行器/登录页不在 KeepAliveRoute 中（app-layout 固定 100vh），需要让 body 与 app-layout 恢复滚动 */
+body:has(.sql-executor),
+body:has(.sql-login-page) {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: auto;
+}
+
+body:has(.sql-executor) .app-layout,
+body:has(.sql-login-page) .app-layout {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+}
+
 .sql-login-page {
     display: flex; align-items: center; justify-content: center;
     flex: 1; position: relative; overflow: hidden;

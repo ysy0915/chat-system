@@ -13,8 +13,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.UUID;
-
 @Configuration
 @ConditionalOnClass(ConnectionFactory.class)
 @ConditionalOnProperty(name = "app.cross-node.enabled", havingValue = "true")
@@ -27,7 +25,8 @@ public class CrossNodeConfig {
 
     @Bean
     public String nodeId() {
-        return "node-" + serverPort + "-" + UUID.randomUUID().toString().substring(0, 8);
+        // 固定 nodeId（按端口），避免每次重启生成新队列导致 RabbitMQ 队列堆积
+        return "node-" + serverPort;
     }
 
     @Bean

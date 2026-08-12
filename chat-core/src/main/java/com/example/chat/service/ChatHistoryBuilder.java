@@ -52,10 +52,16 @@ public class ChatHistoryBuilder {
 
     /** 群聊历史消息 */
     public List<LLMMessage> buildGroup(Long userId, String currentQuestion) {
-        List<LLMMessage> messages = new ArrayList<>();
+        List<LLMMessage> historyMsgs = buildFromRecent(userId);
+
         StringBuilder systemPrompt = new StringBuilder("你是AI伙伴群聊中的AI角色，请友好、有趣地回答问题。");
         appendMemory("chat", userId, currentQuestion, systemPrompt);
+
+        historyMsgs = compressHistory("chat", userId, historyMsgs, systemPrompt);
+
+        List<LLMMessage> messages = new ArrayList<>();
         messages.add(LLMMessage.system(systemPrompt.toString()));
+        messages.addAll(historyMsgs);
         messages.add(LLMMessage.user(currentQuestion));
         return messages;
     }

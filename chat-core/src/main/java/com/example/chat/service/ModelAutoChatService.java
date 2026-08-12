@@ -32,6 +32,10 @@ public class ModelAutoChatService {
     private final BaseUrlResolver baseUrlResolver;
     private final DirectLLMClient directLLMClient;
 
+    /** 当前实例端口（双 core 部署时用于区分主从实例） */
+    @org.springframework.beans.factory.annotation.Value("${server.port:9090}")
+    private String serverPort;
+
     /** LLM 统一调用入口 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private LLMInvoker llmInvoker;
@@ -57,6 +61,10 @@ public class ModelAutoChatService {
 
     @Scheduled(fixedRate = 3600000, initialDelay = 60000)
     public void autoChat() {
+        // 双 core 部署：仅主实例(9090)执行自动对话，避免双实例重复广播
+        if (!"9090".equals(serverPort)) {
+            return;
+        }
         int hour = LocalTime.now().getHour();
         if (hour >= 1 && hour < 9) {
             return;

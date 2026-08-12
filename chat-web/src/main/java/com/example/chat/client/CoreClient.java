@@ -159,7 +159,8 @@ public class CoreClient {
     public void chatStop(String reqId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("req_id", reqId);
-        post("/internal/chat/stop", payload);
+        // 双 core 部署下 stop 必须广播到所有实例，否则可能打到非承载实例导致停止失效
+        broadcast("/internal/chat/stop", payload);
     }
 
     // ==================== 消息查询 ====================
@@ -236,7 +237,8 @@ public class CoreClient {
     public void treeHoleStop(String reqId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("req_id", reqId);
-        post("/internal/treehole/stop", payload);
+        // 双 core 部署下 stop 必须广播到所有实例，否则可能打到非承载实例导致停止失效
+        broadcast("/internal/treehole/stop", payload);
     }
 
     public Object treeHoleHistory(Long userId) {
@@ -379,6 +381,32 @@ public class CoreClient {
     }
 
     // ==================== 内部方法 ====================
+
+    /**
+     * 广播 POST 到所有 core 实例（用于 stop 等需要命中承载实例的操作）
+     * 任一实例成功即视为成功，全部失败才抛异常
+     */
+    private void broadcast(String path, Map<String, Object> payload) {
+        Exception lastEx = null;
+        int success = 0;
+        for (String url : coreUrls) {
+            try {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+                restTemplate.postForEntity(url + path, entity, Object.class);
+                success++;
+            } catch (Exception e) {
+                log.warn("[CoreClient] 广播 {} -> {} 失败: {}", path, url, e.getMessage());
+                lastEx = e;
+            }
+        }
+        if (success == 0) {
+            log.error("[CoreClient] 广播 {} 所有 Core 实例均失败", path);
+            throw new ChatServiceException("core", "ALL_INSTANCES_FAILED", "调用核心服务失败: " +
+                    (lastEx != null ? lastEx.getMessage() : "无可用实例"), lastEx);
+        }
+    }
 
     private Object get(String path) {
         Exception lastEx = null;

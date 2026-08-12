@@ -9,6 +9,15 @@ server:
     max-connections: 2000
     connection-timeout: 5000
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+
 spring:
   application:
     name: chat-core

@@ -1,5 +1,7 @@
 #!/bin/bash
 # chat-web 启动脚本（Milvus 服务器，端口 8081/8082，Nacos 注册）
+# 加载环境变量
+[ -f /opt/app/.env ] && set -a && . /opt/app/.env && set +a
 APP_JAR=/opt/app/web/chat-web-0.0.1-SNAPSHOT.jar
 PORT=${1:-8081}
 LOG_FILE=/opt/app/logs/web-${PORT}.log
@@ -15,7 +17,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 nohup java \
-    -Xms256m -Xmx512m \
+    -Xms128m -Xmx256m \
     -Xss512k \
     -XX:+UseG1GC \
     -XX:+HeapDumpOnOutOfMemoryError \

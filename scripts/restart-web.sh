@@ -1,5 +1,5 @@
 #!/bin/bash
-# chat-web 重启脚本（端口 8081/8082）
+# chat-web 重启脚本（双实例 端口 8081/8082）
 # 用法：bash /opt/app/restart-web.sh [8081|8082|all]
 # 不传参数默认重启全部两个实例
 # 加载环境变量
@@ -15,35 +15,50 @@ restart_one() {
 
     echo "[web-$P] 重启开始 $(date)"
 
-    # 杀旧进程
+    # 1. PID 文件杀进程
     if [ -f "$PID_FILE" ]; then
         OLD_PID=$(cat "$PID_FILE")
         if kill -0 "$OLD_PID" 2>/dev/null; then
             echo "[web-$P] 杀死旧进程 PID=$OLD_PID"
-            kill "$OLD_PID"
+            kill "$OLD_PID" 2>/dev/null
             sleep 3
             kill -9 "$OLD_PID" 2>/dev/null
         fi
+        rm -f "$PID_FILE"
     fi
 
-    # 等端口释放
-    for i in $(seq 1 10); do
-        if ! ss -tlnp | grep -q ":$P "; then
+    # 2. pkill 兜底（按端口匹配，不误杀另一实例）
+    pkill -9 -f "chat-web.*server.port=${P}" 2>/dev/null
+    sleep 1
+
+    # 3. 端口强杀
+    for i in $(seq 1 15); do
+        PORT_PID=$(ss -tlnp | grep ":$P " | grep -oP 'pid=\K\d+' | head -1)
+        if [ -z "$PORT_PID" ]; then
             echo "[web-$P] 端口 $P 已释放"
             break
         fi
-        echo "[web-$P] 端口 $P 仍被占用，等待... ($i/10)"
+        echo "[web-$P] 端口 $P 仍被 PID=$PORT_PID 占用，强制杀死 ($i/15)"
+        kill -9 "$PORT_PID" 2>/dev/null
         sleep 2
     done
 
     # 启动
     nohup java \
-        -Xms256m -Xmx512m \
+        -Xms256m -Xmx256m \
         -Xss512k \
         -XX:+UseG1GC \
+        -XX:MaxGCPauseMillis=200 \
+        -XX:G1HeapRegionSize=2m \
+        -XX:InitiatingHeapOccupancyPercent=45 \
+        -XX:ParallelGCThreads=2 \
+        -XX:ConcGCThreads=1 \
         -XX:+HeapDumpOnOutOfMemoryError \
         -XX:HeapDumpPath=/opt/app/logs/web-${P}-heap-dump \
         -XX:+ExitOnOutOfMemoryError \
+        -XX:+UseContainerSupport \
+        -Xlog:gc*:file=/opt/app/logs/gc-web-${P}.log:time,uptime,level,tags:filecount=5,filesize=10m \
+        -DLOG_PATH=/opt/app/logs \
         -jar "$APP_JAR" \
         --spring.profiles.active=prod \
         --server.port=${P} \
@@ -73,5 +88,5 @@ if [ "$PORT" = "all" ]; then
     restart_one 8081
     restart_one 8082
 else
-    restart_one $PORT
+    restart_one "$PORT"
 fi

@@ -97,6 +97,14 @@ JWT 认证的私密对话，历史记录持久化，基于 LangChain4j ChatMemor
 ### 观点辩论场
 LangGraph4j 实现三 AI 并行辩论（豆包/千问/DeepSeek），场次可选（默认 3 轮，1~10），每轮反思修正 + 裁决式汇总
 
+### Multi-Agent 并行工作流（2026-08）
+超长/跨域请求自动拆解为最多 9 个子任务，经 RabbitMQ 分发到双 core 实例的 10 并发 Worker 并行执行，主 Agent 收敛压缩输出（≤1000 字）：
+- **Redis Lua 原子限流** — 双实例共享 `max-concurrent=8` 并发上限，超限自动降级普通流程（不排队、不拒绝）
+- **manual ack + prefetch=1** — 子任务按 Worker 真实能力公平分发，忙时不拉新消息；执行中实例挂掉由 RabbitMQ requeue 自动重投，零丢失
+- **WorkflowReconciler 对账** — 每 30s 兜底"结果已齐但收敛未完成"的卡住 plan，服务器挂掉重启后自动恢复收敛
+- **输出压缩** — 收敛用轻量模型（qwen-turbo）汇总，最终回答 ≤1000 字
+- 压测结论：20 并发 = 8 并行 + 12 降级，全量测试套件 PASS=12 / FAIL=0（`scripts/test-multiagent-suite.sh`）
+
 ### 情绪树洞
 匿名情绪倾诉，AI 共情回复，内容安全过滤，Memory 记忆增强：LLM 提炼用户画像（情景+情绪+偏好），回答逐步贴合个人偏好
 

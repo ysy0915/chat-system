@@ -2,8 +2,10 @@ package com.example.chat.llm.rag.legacy;
 
 import com.example.chat.dto.LangChainRequest;
 import com.example.chat.dto.LangChainResponse;
+import com.example.chat.entity.UserProfile;
 import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import com.example.chat.llm.service.LLMInvokeService;
+import com.example.chat.repository.UserProfileRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,6 +107,14 @@ public class ConversationMemoryService {
     @Autowired(required = false)
     public void setLlmInvokeService(LLMInvokeService llmInvokeService) {
         this.llmInvokeService = llmInvokeService;
+    }
+
+    /** 用户画像持久化（MySQL user_profiles 表，L3） */
+    private UserProfileRepository userProfileRepository;
+
+    @Autowired(required = false)
+    public void setUserProfileRepository(UserProfileRepository userProfileRepository) {
+        this.userProfileRepository = userProfileRepository;
     }
 
     // ==================== 保存对话 ====================
@@ -328,6 +338,8 @@ public class ConversationMemoryService {
             redisTemplate.opsForValue().set(getProfileKey(scene, userId),
                     objectMapper.writeValueAsString(merged),
                     profileTtlDays, TimeUnit.DAYS);
+            // L3: 画像持久化到 MySQL user_profiles（Redis 为主缓存，MySQL 保底不丢）
+            persistProfile(scene, userId, merged);
             log.info("[Memory] 用户画像已更新 scene={} user={} emotions={} preferences={}",
                     scene, userId,
                     joinList(merged.get("emotions"), "、"),
@@ -397,15 +409,93 @@ public class ConversationMemoryService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> readProfile(String scene, Long userId) {
-        if (redisTemplate == null) return new LinkedHashMap<>();
+        if (redisTemplate == null) return readProfileFromDb(scene, userId);
         try {
             String raw = redisTemplate.opsForValue().get(getProfileKey(scene, userId));
-            if (raw == null || raw.isBlank()) return new LinkedHashMap<>();
+            if (raw == null || raw.isBlank()) {
+                // Redis 无画像（可能过期）：从 MySQL 恢复并回填 Redis
+                Map<String, Object> fromDb = readProfileFromDb(scene, userId);
+                if (!fromDb.isEmpty()) {
+                    try {
+                        redisTemplate.opsForValue().set(getProfileKey(scene, userId),
+                                objectMapper.writeValueAsString(fromDb),
+                                profileTtlDays, TimeUnit.DAYS);
+                    } catch (Exception ignored) {
+                    }
+                }
+                return fromDb;
+            }
             Map<String, Object> m = objectMapper.readValue(raw, Map.class);
             return m != null ? m : new LinkedHashMap<>();
         } catch (Exception e) {
             log.warn("[Memory] 画像读取失败 scene={} user={} error={}", scene, userId, e.getMessage());
             return new LinkedHashMap<>();
+        }
+    }
+
+    /**
+     * L3: 将合并后的画像写入 MySQL user_profiles（幂等 upsert）。
+     */
+    private void persistProfile(String scene, Long userId, Map<String, Object> profile) {
+        if (userProfileRepository == null || profile == null || profile.isEmpty()) return;
+        try {
+            UserProfile p = new UserProfile();
+            p.userId = userId;
+            p.scene = scene;
+            p.sceneDesc = str(profile.get("scene"));
+            p.emotionsJson = toJsonArray(profile.get("emotions"));
+            p.preferencesJson = toJsonArray(profile.get("preferences"));
+            p.contextsJson = toJsonArray(profile.get("contexts"));
+            userProfileRepository.upsert(p);
+        } catch (Exception e) {
+            log.warn("[Memory] 画像落库失败 scene={} user={} error={}", scene, userId, e.getMessage());
+        }
+    }
+
+    /**
+     * 从 MySQL 读取画像（Redis miss 兜底），恢复为与 Redis 一致的 Map 结构。
+     */
+    private Map<String, Object> readProfileFromDb(String scene, Long userId) {
+        if (userProfileRepository == null) return new LinkedHashMap<>();
+        try {
+            UserProfile p = userProfileRepository.findByUserIdAndScene(userId, scene);
+            if (p == null) return new LinkedHashMap<>();
+            Map<String, Object> m = new LinkedHashMap<>();
+            if (p.sceneDesc != null && !p.sceneDesc.isBlank()) m.put("scene", p.sceneDesc);
+            m.put("emotions", parseJsonArray(p.emotionsJson));
+            m.put("preferences", parseJsonArray(p.preferencesJson));
+            m.put("contexts", parseJsonArray(p.contextsJson));
+            if (p.updatedAt != null) m.put("updatedAt", p.updatedAt.toEpochMilli());
+            return m;
+        } catch (Exception e) {
+            log.warn("[Memory] 画像 DB 读取失败 scene={} user={} error={}", scene, userId, e.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private String toJsonArray(Object value) {
+        try {
+            if (value instanceof List<?> list) {
+                return objectMapper.writeValueAsString(list);
+            }
+        } catch (Exception ignored) {
+        }
+        return "[]";
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> parseJsonArray(String json) {
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            List<Object> list = objectMapper.readValue(json, List.class);
+            List<String> result = new ArrayList<>();
+            for (Object o : list) {
+                String s = str(o);
+                if (!s.isBlank()) result.add(s);
+            }
+            return result;
+        } catch (Exception e) {
+            return new ArrayList<>();
         }
     }
 

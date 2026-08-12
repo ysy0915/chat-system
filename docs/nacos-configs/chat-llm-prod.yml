@@ -1,0 +1,168 @@
+# chat-llm 专属生产配置（公共配置在 chat-common-prod.yml）
+server:
+  port: 9095
+  tomcat:
+    threads:
+      max: 100
+      min-spare: 10
+    accept-count: 100
+    max-connections: 1000
+    connection-timeout: 5000
+
+spring:
+  jpa:
+    open-in-view: false
+  neo4j:
+    uri: ${NEO4J_URI:bolt://127.0.0.1:7687}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:}
+
+# gRPC 服务端口（chat-llm 主实例 9195，从实例在启动参数中覆盖为 9196）
+grpc:
+  server:
+    port: 9195
+
+# 新版 RAG（多数据源）—— 与 app.rag 同开同关
+rag:
+  enabled: ${RAG_ENABLED:false}
+
+# RAG 新版 store 配置（覆盖 app.rag.milvus）
+app:
+  rag:
+    embedding:
+      model: ${EMBEDDING_MODEL:text-embedding-v3}
+    milvus:
+      dimension: 1024
+      hnsw-m: 16
+      hnsw-ef-construction: 200
+      search-ef: 64
+  knowledge-graph:
+    enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
+
+# ── LLM 配置 ──
+llm:
+  invoke-timeout-seconds: 120
+  max-retries: 2
+  retry-backoff-millis: 1000
+  providers:
+    - name: deepseek
+      type: rest
+      base-url: https://api.deepseek.com
+      path: /chat/completions
+      api-key: ${DEEPSEEK_API_KEY:}
+      models:
+        - deepseek-chat
+        - deepseek-reasoner
+    - name: qwen
+      type: rest
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      path: /v1/chat/completions
+      api-key: ${QWEN_API_KEY:}
+      models:
+        - qwen-plus
+        - qwen-max
+        - qwen-turbo
+    - name: doubao
+      type: rest
+      base-url: https://ark.cn-beijing.volces.com/api/v3
+      path: /chat/completions
+      api-key: ${DOUBAO_API_KEY:}
+      models:
+        - doubao-seed-2-0-pro-260215
+        - doubao-seed-2-0-lite-260215
+
+# ── Resilience4j ──
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 30s
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+    instances:
+      llm-cb-default:
+        base-config: default
+      llm-cb-deepseek:
+        base-config: default
+      llm-cb-qwen:
+        base-config: default
+      llm-cb-doubao:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+    instances:
+      llm-retry-deepseek:
+        base-config: default
+      llm-retry-qwen:
+        base-config: default
+      llm-retry-doubao:
+        base-config: default
+      llm-retry-graph:
+        max-attempts: 2
+        wait-duration: 1s
+        retry-exceptions:
+          - java.lang.RuntimeException
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 10
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+    instances:
+      llm-rate-deepseek:
+        base-config: default
+      llm-rate-qwen:
+        base-config: default
+      llm-rate-doubao:
+        base-config: default
+      llm-biz-rate-chat-deepseek:
+        base-config: default
+      llm-biz-rate-chat-qwen:
+        base-config: default
+      llm-biz-rate-chat-doubao:
+        base-config: default
+      llm-biz-rate-media-deepseek:
+        base-config: default
+      llm-biz-rate-rag-deepseek:
+        base-config: default
+      llm-biz-rate-graph-deepseek:
+        base-config: default
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 120s
+        cancel-running-future: true
+    instances:
+      llm-time-deepseek:
+        base-config: default
+      llm-time-qwen:
+        base-config: default
+      llm-time-doubao:
+        base-config: default
+
+# ── Logging ──
+logging:
+  level:
+    com.example.chat.llm: DEBUG
+    io.github.resilience4j: INFO
+    io.micrometer: INFO

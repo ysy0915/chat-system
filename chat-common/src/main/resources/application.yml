@@ -1,3 +1,6 @@
+# chat-common 本地开发默认配置
+# 生产环境配置由 Nacos 提供: chat-common-prod.yml (group: CHAT)
+# 注意: 本文件会被打进各模块的依赖 jar，不要放生产敏感配置
 spring:
   application:
     name: ${APP_NAME:chat-core}
@@ -14,29 +17,30 @@ spring:
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
+      maximum-pool-size: 10
+      minimum-idle: 2
       connection-timeout: 30000
   mybatis:
     mapper-locations: classpath:mybatis/mappers/*.xml
     configuration:
       map-underscore-to-camel-case: true
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: ${RABBIT_USERNAME:guest}
-    password: ${RABBIT_PASSWORD:guest}
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: /
     connection-timeout: 5000ms
     requested-heartbeat: 10s
     listener:
       simple:
         auto-startup: false
-  redis:
-    host: 127.0.0.1
-    port: 6379
-    database: 0
-    timeout: 5000ms
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 5000ms
   mvc:
     async:
       request-timeout: 120000
@@ -102,14 +106,14 @@ management:
     tags:
       application: ${spring.application.name}
   tracing:
-    enabled: false                              # 暂时关闭 tracing（SockJS 兼容性问题）
+    enabled: false
     sampling:
       probability: ${TRACING_SAMPLE_RATE:0.1}
   zipkin:
     tracing:
       endpoint: ${ZIPKIN_ENDPOINT:http://127.0.0.1:9411/api/v2/spans}
 
-# Resilience4j 弹性容错配置
+# Resilience4j（本地开发简化配置）
 resilience4j:
   circuitbreaker:
     instances:
@@ -120,21 +124,17 @@ resilience4j:
         slow-call-rate-threshold: 50
         slow-call-duration-threshold: 2s
         wait-duration-in-open-state: 30s
-        permitted-number-of-calls-in-half-open-state: 3
   retry:
     instances:
       llm-retry:
         max-attempts: 3
         wait-duration: 500ms
-        retry-exceptions:
-          - java.lang.Exception
   timelimiter:
     instances:
       llm-timeout:
         timeout-duration: 30s
-        cancel-running-future: true
 
-# RAG 知识库配置（默认关闭，需要时设置 app.rag.enabled=true 开启）
+# RAG 知识库（本地开发默认关闭）
 app:
   module:
     core: true
@@ -162,13 +162,10 @@ app:
       max-chars: 3000
     upload:
       max-size: 10485760
-  # 动态模型路由
   router:
-    enabled: true  # 开启动态路由
-  # 任务分类器
+    enabled: true
   classifier:
-    enabled: true  # 开启任务分类
-  # LangChain4j（高级 AI 编排框架，默认关闭）
+    enabled: true
   langchain4j:
     enabled: false
     treehole:
@@ -180,19 +177,24 @@ app:
     model: qwen-plus
     temperature: 0.85
     timeout: 60
-  # LangGraph4j（图式工作流编排，默认关闭）
   langgraph4j:
     enabled: false
     debate:
       enabled: false
       rounds: 3
-  # 可观测性模块（链路追踪、错误聚合、AI 自愈）
   observability:
     enabled: true
-    trace-retention: 1000  # 保留最近1000条链路
-    auto-heal: true        # 启用自动自愈
-  # AI Agent 工具调度层（默认关闭，设置 true 开启）
+    trace-retention: 1000
+    auto-heal: true
   agent:
     enabled: true
-    max-tool-calls: 3        # 单次对话最多调用工具次数
-    default-kb-id: 1          # 知识库搜索工具默认检索的知识库 ID
+    max-tool-calls: 3
+    default-kb-id: 1
+    # ── Multi-Agent 并行工作流（TaskPlanner 指挥官 + RabbitMQ 分发）──
+    planner:
+      enabled: true                # 总开关
+      min-length: 120              # 问题长度超过该值即触发拆解判定
+      max-tasks: 5                 # 单计划最多拆解子任务数
+      task-timeout-ms: 120000      # 子任务软超时（毫秒）
+      max-concurrent: 8            # Worker 最大并发消费者数
+      llm-judge: false             # 是否启用 LLM 二次判定（false=仅规则判定，省成本）

@@ -23,10 +23,14 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Nacos 服务发现 -->
+        <!-- Nacos 服务发现 + 配置中心 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
 
         <!-- Spring Boot -->
@@ -61,11 +65,17 @@
             <version>1.3.2</version>
         </dependency>
 
-        <!-- Swagger / OpenAPI -->
+        <!-- Swagger / OpenAPI（排除 swagger-ui webjars 静态资源，仅保留 /v3/api-docs JSON） -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>2.5.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.webjars</groupId>
+                    <artifactId>swagger-ui</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Resilience4j — 熔断 / 重试 / 限流 / 超时 -->

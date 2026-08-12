@@ -75,22 +75,43 @@ public class ToolRegistry {
     public List<Map<String, Object>> getToolsSchema() {
         List<Map<String, Object>> schema = new ArrayList<>();
         for (Tool tool : tools.values()) {
-            Object parametersJson;
-            try {
-                parametersJson = objectMapper.readValue(tool.getParameters(), Object.class);
-            } catch (Exception e) {
-                // parameters 不是合法 JSON，退化为空对象
-                parametersJson = Map.of("type", "object", "properties", Map.of());
-            }
-            Map<String, Object> function = new java.util.LinkedHashMap<>();
-            function.put("name", tool.getName());
-            function.put("description", tool.getDescription());
-            function.put("parameters", parametersJson);
-            Map<String, Object> entry = new java.util.LinkedHashMap<>();
-            entry.put("type", "function");
-            entry.put("function", function);
-            schema.add(entry);
+            schema.add(buildSchemaEntry(tool));
         }
         return schema;
+    }
+
+    /**
+     * 按工具名范围生成 schema（Sub-Agent Worker 限定 tools_scope 用）。
+     * 范围为空或全不匹配时返回空列表（表示无可用工具）。
+     */
+    public List<Map<String, Object>> getToolsSchema(List<String> names) {
+        List<Map<String, Object>> schema = new ArrayList<>();
+        if (names == null || names.isEmpty()) return schema;
+        for (String name : names) {
+            Tool tool = tools.get(name);
+            if (tool != null) {
+                schema.add(buildSchemaEntry(tool));
+            }
+        }
+        return schema;
+    }
+
+    /** 单条工具的 OpenAI function schema */
+    private Map<String, Object> buildSchemaEntry(Tool tool) {
+        Object parametersJson;
+        try {
+            parametersJson = objectMapper.readValue(tool.getParameters(), Object.class);
+        } catch (Exception e) {
+            // parameters 不是合法 JSON，退化为空对象
+            parametersJson = Map.of("type", "object", "properties", Map.of());
+        }
+        Map<String, Object> function = new java.util.LinkedHashMap<>();
+        function.put("name", tool.getName());
+        function.put("description", tool.getDescription());
+        function.put("parameters", parametersJson);
+        Map<String, Object> entry = new java.util.LinkedHashMap<>();
+        entry.put("type", "function");
+        entry.put("function", function);
+        return entry;
     }
 }

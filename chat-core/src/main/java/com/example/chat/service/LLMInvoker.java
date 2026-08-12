@@ -86,6 +86,16 @@ public class LLMInvoker {
     public String invoke(ModelConfig config, List<LLMMessage> messages,
                          double temperature, String scene,
                          String defaultBaseUrl, String defaultApiKey) throws Exception {
+        return invoke(config, messages, temperature, scene, defaultBaseUrl, defaultApiKey, null);
+    }
+
+    /**
+     * 非流式调用（可指定 maxTokens；为 null 时不限制）。
+     */
+    public String invoke(ModelConfig config, List<LLMMessage> messages,
+                         double temperature, String scene,
+                         String defaultBaseUrl, String defaultApiKey,
+                         Integer maxTokens) throws Exception {
         // 熔断检查：provider连续失败5次后快速失败，不发起LLM调用
         checkCircuitBreaker(config);
 
@@ -96,7 +106,7 @@ public class LLMInvoker {
         if (bundleEnabled()) {
             try {
                 LangChainResponse resp = invokeViaBundle(config, messages, temperature, scene,
-                        defaultBaseUrl, defaultApiKey, trace.traceId);
+                        defaultBaseUrl, defaultApiKey, trace.traceId, maxTokens);
                 if (resp.isSuccess()) {
                     recordSuccess(scene, config, startTime, resp.getContent(), trace);
                     clearTraceIfNeeded(trace);
@@ -112,7 +122,7 @@ public class LLMInvoker {
 
         // Bundle 未启用或调用失败：降级 DirectLLMClient 直连兜底
         try {
-            String answer = invokeDirect(config, messages, temperature, defaultBaseUrl, defaultApiKey, null);
+            String answer = invokeDirect(config, messages, temperature, defaultBaseUrl, defaultApiKey, null, maxTokens);
             recordSuccess(scene, config, startTime, answer, trace);
             return answer;
         } catch (Exception e) {
@@ -165,10 +175,11 @@ public class LLMInvoker {
      */
     private String invokeDirect(ModelConfig config, List<LLMMessage> messages,
                                 double temperature, String defaultBaseUrl, String defaultApiKey,
-                                Consumer<String> streamCallback) {
+                                Consumer<String> streamCallback, Integer maxTokens) {
         String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
         String apiKey = resolveApiKey(config, defaultApiKey);
-        String answer = directLLMClient.call(baseUrl, apiKey, config.model, messages, temperature, -1);
+        int mt = (maxTokens != null && maxTokens > 0) ? maxTokens : -1;
+        String answer = directLLMClient.call(baseUrl, apiKey, config.model, messages, temperature, mt);
         if (streamCallback != null && answer != null && !answer.isEmpty()) {
             streamCallback.accept(answer);
         }
@@ -259,12 +270,13 @@ public class LLMInvoker {
     private LangChainRequest buildBundleRequest(ModelConfig config, List<LLMMessage> messages,
                                                 double temperature, String scene,
                                                 String defaultBaseUrl, String defaultApiKey,
-                                                String traceId) {
+                                                String traceId, Integer maxTokens) {
         LangChainRequest req = new LangChainRequest();
         req.setProvider(config.provider);
         req.setModel(config.model);
         req.setMessages(LLMMessage.toMapList(messages));
         req.setTemperature(temperature);
+        if (maxTokens != null && maxTokens > 0) req.setMaxTokens(maxTokens);
         req.setBizType("CHAT");
         req.setTraceId(traceId);
         Map<String, Object> extra = new HashMap<>();
@@ -279,9 +291,9 @@ public class LLMInvoker {
     private LangChainResponse invokeViaBundle(ModelConfig config, List<LLMMessage> messages,
                                               double temperature, String scene,
                                               String defaultBaseUrl, String defaultApiKey,
-                                              String traceId) {
+                                              String traceId, Integer maxTokens) {
         LangChainRequest req = buildBundleRequest(config, messages, temperature, scene,
-                defaultBaseUrl, defaultApiKey, traceId);
+                defaultBaseUrl, defaultApiKey, traceId, maxTokens);
         return llmBundleClient.invoke(req);
     }
 
@@ -290,7 +302,7 @@ public class LLMInvoker {
                                                     String defaultBaseUrl, String defaultApiKey,
                                                     String traceId, Consumer<String> callback) {
         LangChainRequest req = buildBundleRequest(config, messages, temperature, scene,
-                defaultBaseUrl, defaultApiKey, traceId);
+                defaultBaseUrl, defaultApiKey, traceId, null);
         return llmBundleClient.invokeStream(req, callback);
     }
 
@@ -347,7 +359,7 @@ public class LLMInvoker {
 
         // Bundle 未启用或调用失败：降级 DirectLLMClient 直连兜底（完整答案一次性回调）
         try {
-            String answer = invokeDirect(config, messages, temperature, defaultBaseUrl, defaultApiKey, callback);
+            String answer = invokeDirect(config, messages, temperature, defaultBaseUrl, defaultApiKey, callback, null);
             recordStreamSuccess(scene, config, startTime, answer, trace);
             return answer;
         } catch (Exception e) {

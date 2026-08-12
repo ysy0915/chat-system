@@ -41,6 +41,10 @@ public class WsMessage {
     public static final String TYPE_MODEL_END      = "model_end";
     public static final String TYPE_THINKING_START = "thinking_start";
     public static final String TYPE_THINKING_TOKEN = "thinking_token";
+    // ====== Multi-Agent 并行工作流 ======
+    public static final String TYPE_PLAN_START     = "plan_start";     // 任务拆解计划已生成并分发
+    public static final String TYPE_PLAN_PROGRESS  = "plan_progress";  // 某个子任务已完成（进度）
+    public static final String TYPE_PLAN_ERROR     = "plan_error";     // 并行工作流失败降级提示
 
     // ====== 字段 ======
 

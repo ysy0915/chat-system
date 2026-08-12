@@ -231,7 +231,7 @@ public class OpenAISdkProvider implements LLMProviderStrategy {
             if (choices != null && !choices.isEmpty()) {
                 Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
                 if (message != null) {
-                    content = (String) message.getOrDefault("content", "");
+                    content = extractContent(message.get("content"));
                     toolCalls = (List<Map<String, Object>>) message.get("tool_calls");
                 }
             }
@@ -262,5 +262,32 @@ public class OpenAISdkProvider implements LLMProviderStrategy {
     private static String truncate(String s) {
         if (s == null) return "";
         return s.length() > 500 ? s.substring(0, 500) + "..." : s;
+    }
+
+    /**
+     * 结构化 content 提取：兼容 OpenAI 新版 content 数组（[{type,text}]）、
+     * 对象（{text:...}）与普通字符串。提取失败返回空串，绝不回退整个响应体。
+     */
+    @SuppressWarnings("unchecked")
+    private static String extractContent(Object content) {
+        if (content == null) return "";
+        if (content instanceof String s) return s;
+        if (content instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> m) {
+                    Object text = m.get("text");
+                    if (text != null) sb.append(text);
+                } else if (item != null) {
+                    sb.append(item);
+                }
+            }
+            return sb.toString();
+        }
+        if (content instanceof Map<?, ?> m) {
+            Object text = m.get("text");
+            return text != null ? text.toString() : content.toString();
+        }
+        return content.toString();
     }
 }

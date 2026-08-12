@@ -97,7 +97,7 @@ public class DirectLLMClient {
             if (message == null || message.get("content") == null) {
                 return "";
             }
-            return message.get("content").toString();
+            return unwrapNestedContent(message.get("content"));
 
         } catch (LLMCallException e) {
             throw e;
@@ -112,6 +112,39 @@ public class DirectLLMClient {
     private static String truncateBody(String body) {
         if (body == null) return "";
         return body.length() > 500 ? body.substring(0, 500) + "..." : body;
+    }
+
+    /**
+     * 双嵌套防御：部分第三方中转网关会把完整 chat.completion 响应体序列化后
+     * 放入 {@code message.content} 字段（content 里再包一层 choices/message/content）。
+     * 检测到该形态时递归提取最内层 content，普通文本原样返回，最多解包 3 层。
+     */
+    @SuppressWarnings("unchecked")
+    private String unwrapNestedContent(Object content) {
+        String current = content.toString();
+        for (int depth = 0; depth < 3; depth++) {
+            String trimmed = current.trim();
+            if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return current;
+            try {
+                Map<String, Object> map = objectMapper.readValue(trimmed, Map.class);
+                Object choicesObj = map.get("choices");
+                if (!(choicesObj instanceof List<?> choices) || choices.isEmpty()) return current;
+                Object messageObj = ((Map<String, Object>) choices.get(0)).get("message");
+                if (!(messageObj instanceof Map<?, ?> message)) return current;
+                Object inner = message.get("content");
+                if (inner == null || inner.toString().isBlank()) return current;
+                // 若内层仍是响应体形态则继续解包，否则返回
+                String innerStr = inner.toString().trim();
+                if (innerStr.startsWith("{") && innerStr.contains("\"choices\"")) {
+                    current = innerStr;
+                    continue;
+                }
+                return innerStr;
+            } catch (Exception e) {
+                return current;
+            }
+        }
+        return current;
     }
 
     /**

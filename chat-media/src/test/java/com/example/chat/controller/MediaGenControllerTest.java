@@ -1,5 +1,6 @@
 package com.example.chat.controller;
 
+import com.example.chat.dto.MediaGenerateRequest;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -20,7 +21,7 @@ class MediaGenControllerTest {
 
     @Test
     void shouldHaveGenerateMethod() throws Exception {
-        Method method = MediaGenController.class.getDeclaredMethod("generate", java.util.Map.class);
+        Method method = MediaGenController.class.getDeclaredMethod("generate", MediaGenerateRequest.class);
         assertNotNull(method, "generate method should exist");
     }
 

@@ -97,6 +97,18 @@ public class ChatProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.agent.tool.ToolDispatcher toolDispatcher;
 
+    /** 技能注册中心（可选注入，Step3 技能注入 System Prompt） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.agent.skill.SkillRegistry skillRegistry;
+
+    /** Multi-Agent 并行工作流指挥官（可选注入，app.agent.planner.enabled=true 时存在） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.agent.planner.AgentWorkflowOrchestrator agentWorkflowOrchestrator;
+
+    /** 长期事实记忆召回 topK */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.memory.fact-top-k:5}")
+    private int factMemoryTopK;
+
     /** 意图识别 — 三层漏斗引擎 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private IntentFunnelEngine funnelEngine;
@@ -333,6 +345,20 @@ public class ChatProcessor {
                                 .with("intent", intent != null ? intent.category().name() : "UNKNOWN")
                                 .toMap());
 
+                // Multi-Agent 并行工作流：超长/跨域任务由 TaskPlanner 拆解为子任务并发执行
+                if (agentWorkflowOrchestrator != null) {
+                    try {
+                        if (agentWorkflowOrchestrator.tryParallelWorkflow(reqId, userId, question,
+                                config, temperature)) {
+                            log.info("[doPersonalStream] req_id={} 已接管为并行工作流", reqId);
+                            return;
+                        }
+                    } catch (Exception planEx) {
+                        log.warn("[doPersonalStream] req_id={} 并行工作流启动失败，降级原流程: {}",
+                                reqId, planEx.getMessage());
+                    }
+                }
+
                 // 工具调度：命中则推送增强后的回答（非流式）
                 if (toolDispatcher != null) {
                     String toolAnswer = null;
@@ -377,6 +403,26 @@ public class ChatProcessor {
                     effectiveHistory.add(0, new LLMMessage("system",
                             "如果问题复杂需要推理分析，请先把分析路径写在 <thinking>...</thinking> 标签中，"
                             + "再给出最终回答。简单问题直接回答即可，不需要 <thinking> 标签。"));
+                }
+
+                // Step2: 长期事实记忆召回注入（Milvus user_memory），让回答贴合用户偏好
+                java.util.List<String> memoryFacts = recallUserFacts(userId, question);
+                if (!memoryFacts.isEmpty()) {
+                    if (effectiveHistory == history) {
+                        effectiveHistory = new java.util.ArrayList<>(history);
+                    }
+                    effectiveHistory.add(0, new LLMMessage("system", buildFactMemoryPrompt(memoryFacts)));
+                    log.info("[doPersonalStream] req_id={} 长期记忆注入 {} 条", reqId, memoryFacts.size());
+                }
+
+                // Step3: 技能库注入（Agent 自进化沉淀的技能，供直接套用）
+                String skillPrompt = buildSkillSystemPrompt(question);
+                if (skillPrompt != null && !skillPrompt.isBlank()) {
+                    if (effectiveHistory == history) {
+                        effectiveHistory = new java.util.ArrayList<>(history);
+                    }
+                    effectiveHistory.add(0, new LLMMessage("system", skillPrompt));
+                    log.info("[doPersonalStream] req_id={} 技能库注入命中", reqId);
                 }
 
                 final String topic = "/topic/user." + userId;
@@ -510,6 +556,7 @@ public class ChatProcessor {
                             completeWithAnswer(reqId, userId, question, result.answer,
                                     result.config.provider, result.config.model, startTime);
                             ragClient.saveMemoryAsync("chat", userId, question, result.answer);
+                            ragClient.saveFactsAsync("chat", userId, question, result.answer);
                         } catch (Exception e) {
                             log.error("completeWithAnswer 失败", e);
                         }
@@ -689,7 +736,7 @@ public class ChatProcessor {
 
 
 
-    private void completeWithAnswer(String reqId, Long userId, String question, String answer, String provider, String model, long startTime) {
+    public void completeWithAnswer(String reqId, Long userId, String question, String answer, String provider, String model, long startTime) {
         long latency = System.currentTimeMillis() - startTime;
         int answerLen = answer != null ? answer.length() : 0;
         // token 估算：中文约 1.5 字/token，英文约 4 字符/token，取折中 2 字符/token
@@ -715,6 +762,8 @@ public class ChatProcessor {
 
         // 保存对话记忆（异步 fire-and-forget）
         ragClient.saveMemoryAsync("personal", userId, question, answer);
+        // L2: 异步抽取用户关键事实存 Milvus user_memory
+        ragClient.saveFactsAsync("personal", userId, question, answer);
 
         Message m = messageRepository.findByReqId(reqId);
         if (m != null) {
@@ -894,6 +943,58 @@ public class ChatProcessor {
         return "以下是用户知识库中检索到的参考资料。回答时请优先依据参考资料作答，"
                 + "如果参考资料不足以回答，可结合你的知识回答并简要说明。\n\n"
                 + "【参考资料】\n" + context;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Step2 长期事实记忆 / Step3 技能注入
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** 召回用户长期事实记忆（Milvus user_memory），失败返回空列表 */
+    private java.util.List<String> recallUserFacts(Long userId, String question) {
+        if (userId == null || userId <= 0 || question == null || question.isBlank()) return java.util.List.of();
+        try {
+            java.util.List<String> facts = ragClient.recallFacts(userId, question, factMemoryTopK);
+            return facts != null ? facts : java.util.List.of();
+        } catch (Exception e) {
+            log.debug("[Memory] 事实记忆召回失败 user={}: {}", userId, e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
+    /** 构建长期记忆注入 prompt */
+    private String buildFactMemoryPrompt(java.util.List<String> facts) {
+        return "以下是你对该用户的长期记忆事实（来自历史对话的提炼），回答时参考但不要逐字复述：\n"
+                + String.join("\n- ", facts);
+    }
+
+    /**
+     * 构建技能库注入 prompt（Agent 自进化沉淀的技能，供直接套用）。
+     * 返回 null 表示无可注入技能。
+     */
+    private String buildSkillSystemPrompt(String question) {
+        if (skillRegistry == null || !skillRegistry.hasSkills()) return null;
+        java.util.List<com.example.chat.entity.Skill> skills = skillRegistry.allSkills();
+        if (skills.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder();
+        sb.append("以下是系统已沉淀的可复用技能。若当前问题与某技能适用场景匹配，"
+                + "请直接调用该技能（按其代码/步骤执行），不要重复发明。\n\n");
+        int injected = 0;
+        for (com.example.chat.entity.Skill s : skills) {
+            if (injected >= 3) break;
+            sb.append("【技能 ").append(s.name).append("】").append(s.language).append('\n');
+            if (s.description != null && !s.description.isBlank()) {
+                sb.append("适用场景: ").append(s.description).append('\n');
+            }
+            if (s.triggerPrompt != null && !s.triggerPrompt.isBlank()) {
+                sb.append("触发说明: ").append(s.triggerPrompt).append('\n');
+            }
+            if (s.code != null && !s.code.isBlank()) {
+                sb.append("代码:\n```").append(s.language).append('\n').append(s.code).append("\n```\n");
+            }
+            sb.append('\n');
+            injected++;
+        }
+        return sb.toString();
     }
 
     /**

@@ -21,10 +21,14 @@
             <artifactId>chat-common</artifactId>
         </dependency>
 
-        <!-- Nacos 服务发现 -->
+        <!-- Nacos 服务发现 + 配置中心 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
 
         <!-- RabbitMQ（core 需要跨节点广播） -->
@@ -33,45 +37,18 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
-        <!-- Reactor Netty（core 需要流式调用 LLM） -->
-        <dependency>
-            <groupId>io.projectreactor.netty</groupId>
-            <artifactId>reactor-netty</artifactId>
-        </dependency>
-
-        <!-- 阿里云内容安全 -->
-        <dependency>
-            <groupId>com.aliyun</groupId>
-            <artifactId>green20220302</artifactId>
-            <version>2.2.8</version>
-        </dependency>
-
-        <!-- Apache POI for Excel/PPT parsing -->
+        <!-- Apache POI for Excel/PPT parsing（FileContentExtractor） -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>5.2.5</version>
         </dependency>
 
-        <!-- Milvus 向量数据库客户端 -->
+        <!-- Milvus 向量数据库客户端（意图 L2 语义匹配） -->
         <dependency>
             <groupId>io.milvus</groupId>
             <artifactId>milvus-sdk-java</artifactId>
             <version>2.3.4</version>
-        </dependency>
-
-        <!-- PDF 文档解析 -->
-        <dependency>
-            <groupId>org.apache.pdfbox</groupId>
-            <artifactId>pdfbox</artifactId>
-            <version>3.0.1</version>
-        </dependency>
-
-        <!-- Alibaba Cloud OSS（附件上传） -->
-        <dependency>
-            <groupId>com.aliyun.oss</groupId>
-            <artifactId>aliyun-sdk-oss</artifactId>
-            <version>3.17.4</version>
         </dependency>
 
         <!-- SpringDoc OpenAPI (Swagger UI: /internal/swagger-ui.html) -->

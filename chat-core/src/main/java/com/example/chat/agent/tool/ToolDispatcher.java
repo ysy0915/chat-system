@@ -50,6 +50,10 @@ public class ToolDispatcher {
             .connectTimeout(Duration.ofSeconds(30))
             .build();
 
+    /** 技能自进化服务（Step 3，同 app.agent.enabled 开关） */
+    @Autowired(required = false)
+    private com.example.chat.agent.skill.SkillEvolutionService skillEvolutionService;
+
     @Value("${app.agent.max-tool-calls:3}")
     private int maxToolCalls;
 
@@ -97,6 +101,8 @@ public class ToolDispatcher {
                 ? config.apiKeyEncrypted : defaultApiKey;
 
         int callCount = 0;
+        // Step3 技能自进化：记录本任务链实际执行的工具名
+        List<String> executedTools = new ArrayList<>();
         while (callCount < maxToolCalls) {
             // 带工具调用 LLM
             Map<String, Object> llmResp = callLLMWithTools(config, baseUrl, apiKey, workingMessages,
@@ -127,6 +133,9 @@ public class ToolDispatcher {
                 String toolResult = executeOneToolCall(tc);
                 Map<String, Object> functionCall = asFunction(tc);
                 String toolCallId = functionCall != null ? String.valueOf(functionCall.get("name")) : "tool";
+                if (!executedTools.contains(toolCallId)) {
+                    executedTools.add(toolCallId);
+                }
 
                 Map<String, Object> toolMsg = new LinkedHashMap<>();
                 toolMsg.put("role", "tool");
@@ -140,13 +149,36 @@ public class ToolDispatcher {
                     callCount, toolCalls.size(), scene);
 
             // 调用 LLM 生成最终回答（仍带 tools，允许 LLM 继续调用工具直到 maxToolCalls）
-            return llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
+            String finalAnswer = llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
                     defaultBaseUrl, defaultApiKey);
+            // Step3：任务链成功执行工具后，异步触发技能复盘沉淀
+            triggerEvolution(userInput, executedTools, finalAnswer, scene, config,
+                    defaultBaseUrl, defaultApiKey);
+            return finalAnswer;
         }
 
         log.warn("[ToolDispatcher] 达到最大工具调用次数 {}，停止 (scene={})", maxToolCalls, scene);
         // 超过上限：用最后一条消息直接调 LLM（不带工具，强制输出文本）
-        return llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene, defaultBaseUrl, defaultApiKey);
+        String lastAnswer = llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
+                defaultBaseUrl, defaultApiKey);
+        triggerEvolution(userInput, executedTools, lastAnswer, scene, config, defaultBaseUrl, defaultApiKey);
+        return lastAnswer;
+    }
+
+    /**
+     * Step3 技能自进化：成功执行过工具的任务链，异步复盘沉淀技能。
+     */
+    private void triggerEvolution(String userInput, List<String> executedTools, String finalAnswer,
+                                  String scene, ModelConfig config,
+                                  String defaultBaseUrl, String defaultApiKey) {
+        if (skillEvolutionService == null || executedTools == null || executedTools.isEmpty()) return;
+        try {
+            skillEvolutionService.evolveAsync(config, userInput,
+                    String.join("; ", executedTools), finalAnswer, scene,
+                    defaultBaseUrl, defaultApiKey);
+        } catch (Exception e) {
+            log.debug("[ToolDispatcher] 技能复盘触发失败: {}", e.getMessage());
+        }
     }
 
     /** 将 Map 消息列表转回 LLMMessage */

@@ -256,8 +256,9 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
             StringBuilder sb = new StringBuilder();
             String line;
             while ((line = r.readLine()) != null) sb.append(line);
-            String s = sb.toString();
-            return s.length() > 1000 ? s.substring(0, 1000) + "..." : s;
+            // 注意：绝不能截断响应体！中转网关的双嵌套响应/计划 JSON 常超 1000 字符，
+            // 截断会导致 parseResponse 失败、上游收到残缺 JSON（曾引发 answerLen=1003 恒定的假"截断"现象）。
+            return sb.toString();
         }
     }
 
@@ -272,7 +273,7 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
             if (choices != null && !choices.isEmpty()) {
                 Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
                 if (message != null) {
-                    content = (String) message.getOrDefault("content", "");
+                    content = extractContent(message.get("content"));
                     toolCalls = (List<Map<String, Object>>) message.get("tool_calls");
                 }
             }
@@ -298,5 +299,32 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
             try { return Integer.parseInt(s); } catch (NumberFormatException ignored) {}
         }
         return null;
+    }
+
+    /**
+     * 结构化 content 提取：兼容 OpenAI 新版 content 数组（[{type,text}]）、
+     * 对象（{text:...}）与普通字符串。提取失败返回空串，绝不回退整个响应体。
+     */
+    @SuppressWarnings("unchecked")
+    private static String extractContent(Object content) {
+        if (content == null) return "";
+        if (content instanceof String s) return s;
+        if (content instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> m) {
+                    Object text = m.get("text");
+                    if (text != null) sb.append(text);
+                } else if (item != null) {
+                    sb.append(item);
+                }
+            }
+            return sb.toString();
+        }
+        if (content instanceof Map<?, ?> m) {
+            Object text = m.get("text");
+            return text != null ? text.toString() : content.toString();
+        }
+        return content.toString();
     }
 }

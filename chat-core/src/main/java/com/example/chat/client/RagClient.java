@@ -150,6 +150,47 @@ public class RagClient {
         }
     }
 
+    // ──────────── 长期事实记忆（L2：user_memory） ────────────
+
+    /**
+     * 异步保存用户关键事实（LLM 抽取 + 向量化存 Milvus user_memory，fire-and-forget）。
+     */
+    public void saveFactsAsync(String scene, Long userId, String question, String answer) {
+        if (userId == null || question == null || question.isBlank()) return;
+        asyncExecutor.submit(() -> {
+            try {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("scene", scene);
+                body.put("userId", userId);
+                body.put("question", question);
+                body.put("answer", answer != null ? answer : "");
+                postJson("/internal/rag/memory/facts/save", body);
+            } catch (Exception e) {
+                log.debug("[RagClient] 事实记忆保存失败 scene={} user={}: {}", scene, userId, e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * 语义召回用户相关事实（供注入 System Prompt），失败返回空列表。
+     */
+    public List<String> recallFacts(Long userId, String question, int topK) {
+        try {
+            Map<String, Object> body = Map.of("userId", userId, "question", question, "topK", topK);
+            Map<String, Object> resp = postJson("/internal/rag/memory/facts/recall", body);
+            if (resp == null || !Boolean.TRUE.equals(resp.get("success"))) {
+                return List.of();
+            }
+            @SuppressWarnings("unchecked")
+            List<Object> facts = (List<Object>) resp.get("facts");
+            if (facts == null || facts.isEmpty()) return List.of();
+            return facts.stream().map(String::valueOf).toList();
+        } catch (Exception e) {
+            log.debug("[RagClient] 事实记忆召回失败 user={}: {}", userId, e.getMessage());
+            return List.of();
+        }
+    }
+
     // ──────────── RAG 回答（非流式） ────────────────────
 
     /**

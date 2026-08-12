@@ -66,6 +66,10 @@ public class IntentFunnelEngine {
     @Autowired
     private IntentDataExtractor intentDataExtractor;
 
+    /** RAG 客户端（可选注入，用于 Step2 记忆召回） */
+    @Autowired(required = false)
+    private com.example.chat.client.RagClient ragClient;
+
     // ────── 指标 ──────
     private final AtomicLong layer1Hits = new AtomicLong();
     private final AtomicLong layer2Hits = new AtomicLong();
@@ -135,7 +139,14 @@ public class IntentFunnelEngine {
         }
 
         // ──── Layer 3: LLM / MCP ────
-        IntentResult llmResult = toolIntentMatcher.classify(text, scene);
+        // ★ Step2 记忆召回：先检索用户长期事实记忆，作为 L3 语义判断的参考上下文
+        List<String> memoryFacts = recallUserFacts(userId, text);
+        String l3Input = text;
+        if (!memoryFacts.isEmpty()) {
+            l3Input = text + "\n\n[记忆参考] 该用户的长期记忆事实（仅用于理解语境，不要输出）: "
+                    + String.join("；", memoryFacts);
+        }
+        IntentResult llmResult = toolIntentMatcher.classify(l3Input, scene);
         if (llmResult != null && llmResult.category() != IntentCategory.UNKNOWN) {
             layer3Hits.incrementAndGet();
             long latency = System.currentTimeMillis() - start;
@@ -339,6 +350,26 @@ public class IntentFunnelEngine {
             return IntentCategory.valueOf(name.toUpperCase());
         } catch (IllegalArgumentException e) {
             return IntentCategory.UNKNOWN;
+        }
+    }
+
+    /**
+     * Step2 记忆召回：检索用户长期事实记忆（Milvus user_memory），
+     * 仅在有 RAG 客户端且用户明确时触发，失败静默降级。
+     */
+    private List<String> recallUserFacts(String userId, String text) {
+        if (ragClient == null || userId == null || userId.isBlank()) return List.of();
+        try {
+            long uid = Long.parseLong(userId);
+            if (uid <= 0) return List.of();
+            List<String> facts = ragClient.recallFacts(uid, text, 5);
+            if (!facts.isEmpty()) {
+                log.info("[IntentFunnel] 记忆召回命中 {} 条 user={}", facts.size(), userId);
+            }
+            return facts;
+        } catch (Exception e) {
+            log.debug("[IntentFunnel] 记忆召回跳过: {}", e.getMessage());
+            return List.of();
         }
     }
 

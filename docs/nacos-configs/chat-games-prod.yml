@@ -1,0 +1,10 @@
+# chat-games 专属生产配置（公共配置在 chat-common-prod.yml）
+server:
+  port: 8083
+  tomcat:
+    threads:
+      max: 50
+      min-spare: 5
+    accept-count: 50
+    max-connections: 500
+    connection-timeout: 5000

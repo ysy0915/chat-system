@@ -1,4 +1,25 @@
-# chat-media 本地配置 (覆盖 Nacos / application-prod.yml)
+# chat-media 配置
+spring:
+  application:
+    name: chat-media
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:chat-common-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+      - optional:nacos:chat-media-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        ip: ${NACOS_IP:}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yml
+        group: CHAT
+
 springdoc:
   api-docs:
     path: /media/v3/api-docs

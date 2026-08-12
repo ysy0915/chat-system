@@ -5,6 +5,7 @@ import com.example.chat.dto.LangChainResponse;
 import com.example.chat.llm.rag.legacy.ConversationMemoryService;
 import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import com.example.chat.llm.rag.legacy.LegacyVectorStoreService;
+import com.example.chat.llm.rag.legacy.UserFactMemoryService;
 import com.example.chat.llm.service.LLMInvokeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,7 @@ public class LegacyRagController {
     private final ConversationMemoryService memoryService;
     private final LegacyEmbeddingService embeddingService;
     private final LLMInvokeService llmInvokeService;
+    private final UserFactMemoryService factMemoryService;
 
     private final ExecutorService streamExecutor = new ThreadPoolExecutor(
             2, 8, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>(100),
@@ -60,11 +62,13 @@ public class LegacyRagController {
     public LegacyRagController(LegacyVectorStoreService vectorStoreService,
                                ConversationMemoryService memoryService,
                                LegacyEmbeddingService embeddingService,
-                               LLMInvokeService llmInvokeService) {
+                               LLMInvokeService llmInvokeService,
+                               UserFactMemoryService factMemoryService) {
         this.vectorStoreService = vectorStoreService;
         this.memoryService = memoryService;
         this.embeddingService = embeddingService;
         this.llmInvokeService = llmInvokeService;
+        this.factMemoryService = factMemoryService;
     }
 
     // ──────────── 知识库检索 ────────────────────────────
@@ -120,6 +124,8 @@ public class LegacyRagController {
             String q = question;
             String a = answer;
             streamExecutor.submit(() -> memoryService.updateUserProfile(s, uid, q, a));
+            // L2: 异步抽取关键事实存 user_memory（长期记忆）
+            streamExecutor.submit(() -> factMemoryService.saveFacts(s, uid, q, a));
             return Map.of("success", true);
         } catch (Exception e) {
             log.warn("[Memory] 内部保存失败 scene={} user={} error={}", scene, userId, e.getMessage());
@@ -134,6 +140,43 @@ public class LegacyRagController {
         String question = (String) req.get("question");
         String memory = memoryService.buildMemoryContext(scene, userId, question);
         return Map.of("success", true, "memory", memory);
+    }
+
+    // ──────────── 长期记忆（事实型，L2） ─────────────────
+
+    /**
+     * 异步保存用户关键事实到 Milvus user_memory collection。
+     */
+    @PostMapping("/memory/facts/save")
+    public Map<String, Object> saveFacts(@RequestBody Map<String, Object> req) {
+        String scene = (String) req.get("scene");
+        Long userId = ((Number) req.get("userId")).longValue();
+        String question = (String) req.get("question");
+        String answer = (String) req.get("answer");
+        try {
+            factMemoryService.saveFacts(scene, userId, question, answer);
+            return Map.of("success", true);
+        } catch (Exception e) {
+            log.warn("[FactMemory] 内部保存失败 scene={} user={} error={}", scene, userId, e.getMessage());
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
+
+    /**
+     * 语义召回用户相关事实（供 chat-core 注入 System Prompt）。
+     */
+    @PostMapping("/memory/facts/recall")
+    public Map<String, Object> recallFacts(@RequestBody Map<String, Object> req) {
+        Long userId = ((Number) req.get("userId")).longValue();
+        String question = (String) req.get("question");
+        int k = req.get("topK") != null ? ((Number) req.get("topK")).intValue() : 5;
+        try {
+            List<String> facts = factMemoryService.recallFacts(userId, question, k);
+            return Map.of("success", true, "facts", facts);
+        } catch (Exception e) {
+            log.warn("[FactMemory] 召回失败 user={} error={}", userId, e.getMessage());
+            return Map.of("success", false, "facts", List.of());
+        }
     }
 
     // ──────────── RAG 回答（非流式） ────────────────────

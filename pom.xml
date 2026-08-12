@@ -73,11 +73,17 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- SpringDoc OpenAPI (Swagger) -->
+            <!-- SpringDoc OpenAPI (Swagger) — 排除 swagger-ui webjars 静态资源 ~4M/模块，保留 /v3/api-docs JSON -->
             <dependency>
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.webjars</groupId>
+                        <artifactId>swagger-ui</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             <!-- Resilience4j BOM 统一版本管理 -->
             <dependency>

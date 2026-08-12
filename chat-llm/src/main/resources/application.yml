@@ -1,15 +1,28 @@
+# chat-llm 本地开发配置
+# 生产环境配置由 Nacos 提供: chat-llm-prod.yml + chat-common-prod.yml
 server:
   port: 9095
 
 spring:
   application:
     name: chat-llm
-
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:chat-common-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+      - optional:nacos:chat-llm-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
   cloud:
     nacos:
       discovery:
         enabled: ${NACOS_ENABLED:false}
         server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        ip: ${NACOS_IP:}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yml
+        group: CHAT
 
   datasource:
     url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:chat_system}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai
@@ -28,12 +41,23 @@ spring:
       username: ${NEO4J_USERNAME:neo4j}
       password: ${NEO4J_PASSWORD:}
 
-  # ── gRPC ──────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+# gRPC
 grpc:
   server:
     port: 9195
 
-# ── RAG（知识库 + 对话记忆，旧版 kbId 运行时）──────────────
+# RAG（本地开发默认关闭）
 app:
   rag:
     enabled: ${RAG_ENABLED:false}
@@ -54,10 +78,9 @@ app:
       long-term-top-k: 3
       long-term-threshold: 0.5
       redis-ttl-hours: 24
-      # 用户画像（情景/情绪/偏好）提炼配置
-      profile-ttl-days: 30          # 画像在 Redis 中的有效期（天）
-      profile-provider: qwen        # 提炼画像所用的 LLM 提供商
-      profile-model: qwen-plus      # 提炼画像所用的模型
+      profile-ttl-days: 30
+      profile-provider: qwen
+      profile-model: qwen-plus
     search:
       top-k: 5
       score-threshold: 0.3
@@ -66,21 +89,20 @@ app:
   knowledge-graph:
     enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
 
-# ── 新版 RAG（多数据源）─────── 与 app.rag 同开同关 ────────
+# 新版 RAG
 rag:
   enabled: ${RAG_ENABLED:false}
 
-# ── LLM 配置 ──────────────────────────────────────────────
+# LLM 配置（本地开发）
 llm:
-  invoke-timeout-seconds: 120   # 单次 LLM 调用超时 (秒)
-  max-retries: 2                # 最大重试次数
-  retry-backoff-millis: 1000    # 重试退避 (毫秒)
-
+  invoke-timeout-seconds: 120
+  max-retries: 2
+  retry-backoff-millis: 1000
   providers:
     - name: deepseek
-      type: rest          # rest (HTTP REST API) / sdk (OpenAI SDK)
+      type: rest
       base-url: https://api.deepseek.com
-      path: /chat/completions   # DeepSeek 官方端点不带 /v1
+      path: /chat/completions
       api-key: ${DEEPSEEK_API_KEY:}
       models:
         - deepseek-chat
@@ -97,156 +119,44 @@ llm:
     - name: doubao
       type: rest
       base-url: https://ark.cn-beijing.volces.com/api/v3
-      path: /chat/completions   # base-url 已含 /api/v3，不再拼 /v1
+      path: /chat/completions
       api-key: ${DOUBAO_API_KEY:}
       models:
         - doubao-seed-2-0-pro-260215
         - doubao-seed-2-0-lite-260215
-    # ── 示例: OpenAI SDK 方式 (type: sdk) ──
-    # - name: openai
-    #   type: sdk               # sdk → 走 OpenAI Java SDK
-    #   base-url: https://api.openai.com
-    #   api-key: ${OPENAI_API_KEY:}
-    #   models:
-    #     - gpt-4o
-    #     - gpt-4o-mini
-    # - name: azure-openai
-    #   type: sdk
-    #   base-url: https://your-resource.openai.azure.com
-    #   api-key: ${AZURE_OPENAI_KEY:}
-    #   models:
-    #     - gpt-4o
 
-# ── Resilience4j 弹性能力 ──────────────────────────────────
+# Resilience4j（本地开发简化配置）
 resilience4j:
   circuitbreaker:
-    configs:
-      default:
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 100
-        slow-call-duration-threshold: 30s
-        permitted-number-of-calls-in-half-open-state: 3
-        sliding-window-type: COUNT_BASED
-        sliding-window-size: 20
-        minimum-number-of-calls: 10
-        wait-duration-in-open-state: 30s
-        automatic-transition-from-open-to-half-open-enabled: true
-        record-exceptions:
-          - java.io.IOException
-          - java.util.concurrent.TimeoutException
-          - java.net.ConnectException
-          - java.net.SocketTimeoutException
     instances:
       llm-cb-default:
-        base-config: default
-      llm-cb-deepseek:
-        base-config: default
-      llm-cb-qwen:
-        base-config: default
-      llm-cb-doubao:
-        base-config: default
-
+        failure-rate-threshold: 50
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
   retry:
-    configs:
-      default:
+    instances:
+      llm-retry-default:
         max-attempts: 3
         wait-duration: 500ms
-        retry-exceptions:
-          - java.io.IOException
-          - java.util.concurrent.TimeoutException
-          - java.net.ConnectException
-          - java.net.SocketTimeoutException
-    instances:
-      llm-retry-deepseek:
-        base-config: default
-      llm-retry-qwen:
-        base-config: default
-      llm-retry-doubao:
-        base-config: default
-      llm-retry-graph:
-        max-attempts: 2
-        wait-duration: 1s
-        retry-exceptions:
-          - java.lang.RuntimeException
-
   ratelimiter:
-    configs:
-      default:
+    instances:
+      llm-rate-default:
         limit-for-period: 10
         limit-refresh-period: 1s
-        timeout-duration: 5s
-    instances:
-      llm-rate-deepseek:
-        base-config: default
-      llm-rate-qwen:
-        base-config: default
-      llm-rate-doubao:
-        base-config: default
-      # 业务域维度限流 — 命名规则 llm-biz-rate-{biz}-{provider}
-      # 未显式配置的实例自动继承 default，可按业务域单独调优
-      llm-biz-rate-chat-deepseek:
-        base-config: default
-      llm-biz-rate-chat-qwen:
-        base-config: default
-      llm-biz-rate-chat-doubao:
-        base-config: default
-      llm-biz-rate-media-deepseek:
-        base-config: default
-      llm-biz-rate-rag-deepseek:
-        base-config: default
-      llm-biz-rate-graph-deepseek:
-        base-config: default
 
-  timelimiter:
-    configs:
-      default:
-        timeout-duration: 120s
-        cancel-running-future: true
-    instances:
-      llm-time-deepseek:
-        base-config: default
-      llm-time-qwen:
-        base-config: default
-      llm-time-doubao:
-        base-config: default
-
-# ── Management / Actuator ──────────────────────────────────
+# Actuator
 management:
   endpoints:
     web:
       exposure:
         include: health,info,prometheus,metrics,circuitbreakers,retries,ratelimiters
-      base-path: /actuator
   endpoint:
     health:
       show-details: always
-      show-components: always
-    metrics:
-      enabled: true
-    prometheus:
-      enabled: true
-    circuitbreakers:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-        step: 30s
-    distribution:
-      percentiles-histogram:
-        "[llm.invoke.duration]": true
-        "[llm.graph.duration]": true
-        "[llm.graph.node.duration]": true
-      slo:
-        "[llm.invoke.duration]": 500ms, 1s, 2s, 5s, 10s, 30s
-        "[llm.graph.duration]": 1s, 5s, 10s, 30s, 60s
 
-# ── Logging (含 TraceId) ───────────────────────────────────
+# Logging
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
   level:
     com.example.chat.llm: DEBUG
-    io.github.resilience4j: INFO
-    io.micrometer: INFO

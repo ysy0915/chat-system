@@ -1,0 +1,18 @@
+# chat-web 专属生产配置（公共配置在 chat-common-prod.yml）
+server:
+  port: 8081
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    accept-count: 200
+    max-connections: 2000
+    connection-timeout: 5000
+
+app:
+  module:
+    core: false
+  core:
+    base-url: http://127.0.0.1:9090
+  cross-node:
+    enabled: true

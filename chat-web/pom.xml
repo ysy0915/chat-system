@@ -21,10 +21,14 @@
             <artifactId>chat-common</artifactId>
         </dependency>
 
-        <!-- Nacos 服务发现 -->
+        <!-- Nacos 服务发现 + 配置中心 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
 
         <!-- RabbitMQ（web 需要 CrossNodeMessageListener） -->

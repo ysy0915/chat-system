@@ -552,3 +552,54 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 | 代码/推理/计算 | "写个排序算法"、"1+1等于几" | ❌ 不查 | 意图本身不在第2层 |
 
 **实现**：`ChatProcessor` 新增 `isRealTimeOrPersonalQuery`（预编译正则：天气/时间/新闻/行情/比分/个人数据）；`intent-rules.json` 补充天气关键词规则（L1 直接归入 `TASK_EXECUTION`）。生产 core 9090/9092 已部署健康。
+
+---
+
+## 十九、Multi-Agent 并行工作流与可靠性加固（功能，2026-08-13）
+
+超长/跨域请求由单 Agent 串行处理升级为 **TaskPlanner → RabbitMQ → 双实例 Worker 并行 → 收敛** 的完整编排链路：一次 LLM 长回答拆解为最多 9 个子任务并行执行，主 Agent 收敛压缩输出（≤ 1000 字），复杂任务耗时大幅缩短。
+
+### 特性
+
+- **智能拆解**：`TaskPlanner.shouldDecompose` 按长度（≥ min-length）与 LLM 判定是否拆解；简单问题走普通流式，零开销
+- **Redis Lua 原子限流（全局并发控制）**：`agent:workflow:active` 用 Lua INCR/DECR 脚本做双实例共享计数，并行工作流上限 `max-concurrent=8`，超限自动降级普通流程（不排队、不拒绝）；修复早期 Semaphore 跨实例 acquire/release 错配（9092 曾释放 9090 许可致计数异常）
+- **manual ack + prefetch=1（公平分发 + 零丢失）**：Worker 忙时不 ack 不拉新消息、空闲即拉，按真实能力均衡分发；子任务执行中实例挂掉由 RabbitMQ requeue 自动重投，测试验证零丢失
+- **Redis 结果聚合 + 收敛锁**：结果按 taskId 幂等覆盖写 hash，`received` 原子 INCR，SETNX 锁保证双实例只收敛一次；失败结果回传 + `nack(requeue=false)` 防无限重试重复计数
+- **WorkflowReconciler 收敛对账（方案 A 可靠性兜底）**：每 30s 扫描 Redis 中"结果已齐但收敛未完成"的 plan 并重新触发收敛，兜底"收敛中途崩溃重启后卡死"盲区；以 `converged` 标记 + DB 状态双重去重，锁 TTL 5min
+- **输出压缩**：收敛用轻量模型（qwen-turbo）汇总 + `converge-max-chars` 硬截断，最终回答 ≤ 1000 字
+
+### 配置（Nacos `chat-core-prod.yml`）
+
+| 配置项 | 默认 | 说明 |
+|--------|------|------|
+| `app.agent.planner.enabled` | true | 并行工作流总开关 |
+| `app.agent.planner.min-length` | 120 | 触发拆解的最小问题长度 |
+| `app.agent.planner.max-tasks` | 9 | 最大子任务数 |
+| `app.agent.planner.task-timeout-ms` | 120000 | 子任务软超时 |
+| `app.agent.planner.max-concurrent` | 8 | 全局并行工作流上限（Redis 原子限流） |
+| `app.agent.planner.converge-max-chars` | 1000 | 收敛输出最大字数 |
+| `app.agent.planner.converge-model` | qwen-turbo | 收敛专用轻量模型 |
+| `app.agent.planner.reconcile-interval-ms` | 30000 | Reconciler 对账扫描周期 |
+| `spring.rabbitmq.listener.simple` | concurrency=10 / max-concurrency=20 / prefetch=1 | Worker 并发与预取 |
+
+### 实现
+
+| 文件 | 改动 |
+|------|------|
+| `chat-core/agent/planner/TaskPlanner.java` | 拆解判定 + LLM 计划生成 |
+| `chat-core/agent/planner/AgentWorkflowOrchestrator.java` | 编排：Redis Lua 限流 / 分发 / 收敛 / 许可释放；收敛成功写 `converged` 标记 |
+| `chat-core/agent/workflow/SubTaskRabbitConfig.java` | durable 交换机/队列定义 |
+| `chat-core/agent/workflow/SubTaskProducer.java` | 任务/结果投递 |
+| `chat-core/agent/workflow/SubAgentWorker.java` | Worker manual ack；失败回传 + nack(requeue=false) |
+| `chat-core/agent/workflow/SubTaskResultCollector.java` | 结果 hash 幂等聚合 + received INCR + 收敛锁触发；失败 requeue=true |
+| `chat-core/agent/workflow/WorkflowReconciler.java` | 新增：30s 周期对账，重新触发卡住 plan 的收敛 |
+| `chat-common/config/RabbitConfig.java` | `concurrentConsumers` 改为 `@Value` 注入（默认 10/20/5） |
+| `chat-common/agent/protocol/SubAgent*.java` | 计划/任务/结果协议 |
+
+### 验证（生产双实例）
+
+- 单请求全链路：queued → 分发 9 子任务 → 收敛 answerLen 540~790 ≤ 1000 → DB done
+- **20 并发压测：精确 8 并行 + 12 降级，合计 20 全有明确去向；8/8 全部收敛完成；`agent:workflow:active` 归零无泄漏**
+- **manual ack 零丢失：8 个 plan 子任务执行完成数 == 分发数**
+- **Reconciler 端到端**：伪造"结果已齐但收敛未执行"的卡住 plan → 30s 内自动重新收敛 → DB processing→done；删除锁模拟锁过期后不再重复触发（converged 标记去重）
+- 测试套件 `scripts/test-multiagent-suite.sh` 全量 PASS=12 / FAIL=0（T01-T06）

@@ -1,0 +1,90 @@
+# chat-core 生产配置（Nacos配置中心管理）
+server:
+  port: 9090
+  tomcat:
+    threads:
+      max: 100
+      min-spare: 20
+    accept-count: 100
+    max-connections: 1000
+    connection-timeout: 5000
+
+spring:
+  application:
+    name: chat-core
+  jpa:
+    open-in-view: false
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        server-addr: 127.0.0.1:8848
+        ip: 172.23.172.13
+      config:
+        enabled: true
+        server-addr: 127.0.0.1:8848
+        file-extension: yml
+        group: CHAT
+  datasource:
+    url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 600000
+    username: yangsy
+    password: ${DB_PASSWORD:YangSy@0915!}
+  data:
+    redis:
+      sentinel:
+        master: mymaster
+        nodes: 172.18.160.222:26379
+      database: 0
+      timeout: 5000ms
+  rabbitmq:
+    sentinel:
+        master: mymaster
+        nodes: 172.18.160.222:26379
+    port: 5672
+    username: chatapp
+    password: ${MQ_PASSWORD:chatapp2024}
+  neo4j:
+    uri: bolt://127.0.0.1:7687
+    authentication:
+      username: neo4j
+      password: ${NEO4J_PASSWORD:neo4j123456}
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+jwt:
+  secret: ${JWT_SECRET:k8Xp2mQ7vR3nF9wL5tY1bJ6cH4dA0eG8iS2uW7xZ}
+  expiration: 3600000
+
+app:
+  module:
+    core: true
+  knowledge-graph:
+    enabled: true
+  cross-node:
+    enabled: true
+  llm:
+    api-key: ${LLM_API_KEY:}
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    milvus:
+      enabled: ${MILVUS_ENABLED:false}
+      host: 127.0.0.1
+      port: 19530
+  langchain4j:
+    enabled: ${LANGCHAIN4J_ENABLED:false}
+  langgraph4j:
+    enabled: true
+    debate:
+      enabled: true
+      rounds: 3
+  observability:
+    enabled: true

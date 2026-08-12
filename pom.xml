@@ -149,11 +149,14 @@
                 <artifactId>resilience4j-spring-boot3</artifactId>
                 <version>${resilience4j.version}</version>
             </dependency>
-            <!-- Micrometer Prometheus -->
+            <!-- Micrometer Prometheus
+                 注意：必须与 Spring Boot 3.1.6 的 micrometer-core(1.11.6) 匹配。
+                 1.13.0 使用新的 prometheus-metrics-core 模型，与 micrometer 1.11 不兼容，
+                 会导致 PrometheusMeterRegistry 初始化失败、/actuator/prometheus 端点不注册。 -->
             <dependency>
                 <groupId>io.micrometer</groupId>
                 <artifactId>micrometer-registry-prometheus</artifactId>
-                <version>1.13.0</version>
+                <version>1.11.6</version>
             </dependency>
             <dependency>
                 <groupId>io.micrometer</groupId>

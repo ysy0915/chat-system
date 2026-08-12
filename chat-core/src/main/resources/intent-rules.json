@@ -252,6 +252,26 @@
     "description": "task execution regex",
     "source": "MANUAL"
   },
+  {
+    "id": 44,
+    "matchType": "KEYWORD",
+    "pattern": "天气",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 8,
+    "enabled": true,
+    "description": "weather query (实时天气走工具，知识库不检索)",
+    "source": "MANUAL"
+  },
+  {
+    "id": 45,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(天气|气温|温度|多少度|天气预报).*",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 5,
+    "enabled": true,
+    "description": "weather/temperature query",
+    "source": "MANUAL"
+  },
 
   {
     "id": 50,

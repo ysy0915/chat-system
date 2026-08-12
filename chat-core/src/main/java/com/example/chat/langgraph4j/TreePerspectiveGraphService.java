@@ -22,8 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 树状辩论单视角子图服务（数据化实现，不依赖 langgraph4j）
  *
  * <p>每个视角的内部辩论表达为 {@link LangGraphRequest}（图数据），由 chat-llm 图引擎执行：
- *   incrementRound → debate(三方并行分支) → shouldContinue ─┬─ true → incrementRound（循环）
- *                                                          └─ false → summary → END
+ *   incrementRound → debate(三方并行分支) → reflect(三方批判性反思) → shouldContinue
+ *       ─┬─ true → incrementRound（循环）
+ *       └─ false → summary（裁决式汇总） → END
  *
  * <p>SSE 流式事件映射为原有前端 WS 协议：
  *   tree_round_start / tree_stream_token(role+modelId) / tree_round_response /
@@ -159,7 +160,7 @@ public class TreePerspectiveGraphService {
         req.setProvider(conModel.provider);
         req.setModel(conModel.model);
         req.setEntryPoint("incrementRound");
-        req.setMaxSteps(maxRounds * 3 + 2);
+        req.setMaxSteps(maxRounds * 4 + 2);
 
         String fullQuestion = question + "（聚焦: " + perspectiveLabel + "——" + perspectiveFocus + "）";
 
@@ -173,6 +174,9 @@ public class TreePerspectiveGraphService {
         state.put("model1Answers", new ArrayList<String>());
         state.put("model2Answers", new ArrayList<String>());
         state.put("model3Answers", new ArrayList<String>());
+        state.put("model1Reflections", new ArrayList<String>());
+        state.put("model2Reflections", new ArrayList<String>());
+        state.put("model3Reflections", new ArrayList<String>());
         req.setState(state);
 
         LangGraphRequest.GraphNode inc = node("incrementRound");
@@ -198,6 +202,35 @@ public class TreePerspectiveGraphService {
         debate.getBranches().get(2).setSink("model2Answers");
         debate.getBranches().get(2).setSinkAppend(true);
 
+        // reflect：三方批判性反思（审视对方观点后修正立场）
+        LangGraphRequest.GraphNode reflect = node("reflect");
+        reflect.setBranches(List.of(
+                branch("pro", proModel,
+                        "你是一个AI辩论参与者，身份是「正方」。「" + perspectiveLabel + "」视角，议题：{{state.question}}\n\n" +
+                        "你的本轮观点：{{state.model1Answers[-1]}}\n" +
+                        "反方本轮观点：{{state.model3Answers[-1]}}\n" +
+                        "中立本轮观点：{{state.model2Answers[-1]}}\n\n" +
+                        "请批判性反思（50字以内）：1) 我的观点哪一点被反驳得有道理？2) 修正后的立场是什么？"),
+                branch("con", conModel,
+                        "你是一个AI辩论参与者，身份是「反方」。「" + perspectiveLabel + "」视角，议题：{{state.question}}\n\n" +
+                        "你的本轮观点：{{state.model3Answers[-1]}}\n" +
+                        "正方本轮观点：{{state.model1Answers[-1]}}\n" +
+                        "中立本轮观点：{{state.model2Answers[-1]}}\n\n" +
+                        "请批判性反思（50字以内）：1) 我的观点哪一点被反驳得有道理？2) 修正后的立场是什么？"),
+                branch("neutral", neutralModel,
+                        "你是一个AI辩论参与者，身份是「中立」。「" + perspectiveLabel + "」视角，议题：{{state.question}}\n\n" +
+                        "你的本轮分析：{{state.model2Answers[-1]}}\n" +
+                        "正方本轮观点：{{state.model1Answers[-1]}}\n" +
+                        "反方本轮观点：{{state.model3Answers[-1]}}\n\n" +
+                        "请批判性反思（50字以内）：1) 双方哪方论证更严谨、漏洞是什么？2) 修正后的客观评价是什么？")
+        ));
+        reflect.getBranches().get(0).setSink("model1Reflections");
+        reflect.getBranches().get(0).setSinkAppend(true);
+        reflect.getBranches().get(1).setSink("model3Reflections");
+        reflect.getBranches().get(1).setSinkAppend(true);
+        reflect.getBranches().get(2).setSink("model2Reflections");
+        reflect.getBranches().get(2).setSinkAppend(true);
+
         LangGraphRequest.GraphNode shouldContinue = node("shouldContinue");
         shouldContinue.setNodeType("logic");
         shouldContinue.setLogic("compare:{{state.currentRound}} < {{state.maxRounds}}");
@@ -208,13 +241,14 @@ public class TreePerspectiveGraphService {
         summary.setTemperature(0.3);
         summary.setSink("conclusion");
         summary.setTerminal(true);
-        summary.setUserPrompt("请综合你对「" + perspectiveLabel + "」视角下各方辩论的理解，" +
-                "给出该视角的核心结论。要求：30字以内，一句话总结。");
+        summary.setUserPrompt("请基于三方反思后的最终立场，综合你对「" + perspectiveLabel + "」视角下各方辩论的理解，" +
+                "给出该视角的核心结论。要求：一句话总结（30字以内），并指出各方论证的强弱点（20字以内）。");
 
-        req.setNodes(List.of(inc, debate, shouldContinue, summary));
+        req.setNodes(List.of(inc, debate, reflect, shouldContinue, summary));
         req.setEdges(List.of(
                 edge("incrementRound", "debate"),
-                edge("debate", "shouldContinue"),
+                edge("debate", "reflect"),
+                edge("reflect", "shouldContinue"),
                 condEdge("shouldContinue", "incrementRound", "contains({{output}}, 'true')"),
                 defaultEdge("shouldContinue", "summary")
         ));

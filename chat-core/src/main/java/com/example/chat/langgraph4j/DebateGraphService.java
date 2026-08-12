@@ -25,8 +25,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 辩论图服务（数据化实现，不依赖 langgraph4j）
  *
  * <p>将辩论编排表达为 {@link LangGraphRequest}（图数据），由 chat-llm 图引擎执行：
- *   incrementRound → debate(三方并行分支) → shouldContinue ─┬─ true → incrementRound（循环）
- *                                                          └─ false → summary → END
+ *   incrementRound → debate(三方并行分支) → reflect(三方批判性反思) → shouldContinue
+ *       ─┬─ true → incrementRound（循环）
+ *       └─ false → summary（裁决式汇总） → END
  *
  * <p>SSE 流式事件（node_start / delta / branch_end / node_end）由回调映射为原有前端 WS 协议：
  *   round_start / stream_token(model_id=1/3/2) / round_response / round_end /
@@ -193,7 +194,7 @@ public class DebateGraphService {
         req.setProvider(conModel.provider);
         req.setModel(conModel.model);
         req.setEntryPoint("incrementRound");
-        req.setMaxSteps(maxRounds * 3 + 2);
+        req.setMaxSteps(maxRounds * 4 + 2);
 
         // 初始状态
         Map<String, Object> state = new LinkedHashMap<>();
@@ -205,6 +206,9 @@ public class DebateGraphService {
         state.put("proArguments", new ArrayList<String>());
         state.put("conArguments", new ArrayList<String>());
         state.put("neutralArguments", new ArrayList<String>());
+        state.put("proReflections", new ArrayList<String>());
+        state.put("conReflections", new ArrayList<String>());
+        state.put("neutralReflections", new ArrayList<String>());
         req.setState(state);
 
         // incrementRound：轮次 +1
@@ -226,12 +230,38 @@ public class DebateGraphService {
         debate.getBranches().get(2).setSink("neutralArguments");
         debate.getBranches().get(2).setSinkAppend(true);
 
+        // reflect：三方批判性反思（Reflection 循环——审视自己/对方观点后修正立场）
+        LangGraphRequest.GraphNode reflect = node("reflect");
+        reflect.setBranches(List.of(
+                branch("pro", proModel, "你是辩论的正方。话题：「{{state.topic}}」\n" +
+                        "你的本轮观点：{{state.proArguments[-1]}}\n" +
+                        "反方本轮观点：{{state.conArguments[-1]}}\n" +
+                        "中立方本轮观点：{{state.neutralArguments[-1]}}\n\n" +
+                        "请批判性反思（100 字以内）：1) 我的观点哪一点被对方反驳得有道理？2) 我是否要修正或补充？3) 修正后的最终立场是什么？"),
+                branch("con", conModel, "你是辩论的反方。话题：「{{state.topic}}」\n" +
+                        "你的本轮观点：{{state.conArguments[-1]}}\n" +
+                        "正方本轮观点：{{state.proArguments[-1]}}\n" +
+                        "中立方本轮观点：{{state.neutralArguments[-1]}}\n\n" +
+                        "请批判性反思（100 字以内）：1) 我的观点哪一点被对方反驳得有道理？2) 我是否要修正或补充？3) 修正后的最终立场是什么？"),
+                branch("neutral", summaryModel, "你是辩论的中立方评论员。话题：「{{state.topic}}」\n" +
+                        "你的本轮分析：{{state.neutralArguments[-1]}}\n" +
+                        "正方本轮观点：{{state.proArguments[-1]}}\n" +
+                        "反方本轮观点：{{state.conArguments[-1]}}\n\n" +
+                        "请批判性反思（100 字以内）：1) 正方与反方哪方论证更严谨？2) 双方各自的漏洞是什么？3) 修正后的客观评价是什么？")
+        ));
+        reflect.getBranches().get(0).setSink("proReflections");
+        reflect.getBranches().get(0).setSinkAppend(true);
+        reflect.getBranches().get(1).setSink("conReflections");
+        reflect.getBranches().get(1).setSinkAppend(true);
+        reflect.getBranches().get(2).setSink("neutralReflections");
+        reflect.getBranches().get(2).setSinkAppend(true);
+
         // shouldContinue：轮次判断
         LangGraphRequest.GraphNode shouldContinue = node("shouldContinue");
         shouldContinue.setNodeType("logic");
         shouldContinue.setLogic("compare:{{state.currentRound}} < {{state.maxRounds}}");
 
-        // summary：汇总共识
+        // summary：裁决式汇总（基于反思后的最终立场）
         LangGraphRequest.GraphNode summary = node("summary");
         summary.setProvider(summaryModel.provider);
         summary.setModel(summaryModel.model);
@@ -239,19 +269,21 @@ public class DebateGraphService {
         summary.setSink("summary");
         summary.setTerminal(true);
         summary.setUserPrompt("你是辩论主持人。话题：「{{state.topic}}」\n" +
-                "正方观点：\n{{state.proArguments}}\n" +
-                "反方观点：\n{{state.conArguments}}\n" +
-                "中立方观点：\n{{state.neutralArguments}}\n\n" +
-                "请按照以下格式汇总三方观点，每部分换行，每部分 50 字以内：\n" +
+                "正方最终立场：\n{{state.proReflections[-1]}}\n" +
+                "反方最终立场：\n{{state.conReflections[-1]}}\n" +
+                "中立方最终评价：\n{{state.neutralReflections[-1]}}\n\n" +
+                "请基于三方反思后的最终立场，按照以下格式给出裁决式结论，每部分换行，每部分 50 字以内：\n" +
                 "【正方强调】（正方核心观点）\n...\n\n" +
                 "【反方强调】（反方核心观点）\n...\n\n" +
-                "【中立强调】（中立方客观评价）\n...\n\n" +
-                "【共识结论】（三方共同认同的结论）\n...");
+                "【中立评价】（中立方客观评价）\n...\n\n" +
+                "【关键分歧】（双方根本分歧点）\n...\n\n" +
+                "【共识结论】（最具说服力的结论）\n...");
 
-        req.setNodes(List.of(inc, debate, shouldContinue, summary));
+        req.setNodes(List.of(inc, debate, reflect, shouldContinue, summary));
         req.setEdges(List.of(
                 edge("incrementRound", "debate"),
-                edge("debate", "shouldContinue"),
+                edge("debate", "reflect"),
+                edge("reflect", "shouldContinue"),
                 condEdge("shouldContinue", "incrementRound", "contains({{output}}, 'true')"),
                 defaultEdge("shouldContinue", "summary")
         ));

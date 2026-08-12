@@ -30,7 +30,12 @@ export function formatFinalText(text) {
     // 如果行内包含多个句子（以。或；结尾），分割成多行
     const sentences = displayLine.split(/(?<=[。；])/g).filter(s => s.trim())
     return sentences.map((sentence, j) => {
-      const parts = sentence.split(/(\*\*[^*]+\*\*)/g)
+      // 清理孤立的 **（不成对标记会原样显示）；成对 **...** 先保护再还原，保留加粗渲染
+      const cleaned = sentence
+        .replace(/\*\*([^*]+)\*\*/g, (m, inner) => '\u0000' + inner + '\u0000')
+        .replace(/\*\*/g, '')
+        .replace(/\u0000/g, '**')
+      const parts = cleaned.split(/(\*\*[^*]+\*\*)/g)
       const formatted = parts.map((part, k) => {
         if (part.startsWith('**') && part.endsWith('**')) {
           return <strong key={k}>{part.slice(2, -2)}</strong>

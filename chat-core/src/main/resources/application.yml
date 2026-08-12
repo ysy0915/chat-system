@@ -95,6 +95,13 @@ app:
       enabled: ${MILVUS_ENABLED:false}
       host: ${MILVUS_HOST:121.40.188.98}
       port: 19530
+    # 对话自动 RAG 增强：知识问答/任务类问题（如天气、资料性查询）自动检索知识库增强生成
+    chat:
+      enabled: ${CHAT_RAG_ENABLED:true}
+      kb-id: ${CHAT_RAG_KB_ID:0}      # 默认检索的知识库 ID，<=0 表示未配置（不增强）
+      top-k: 3
+      score-threshold: 0.3
+      max-chars: 2000
   langchain4j:
     enabled: ${LANGCHAIN4J_ENABLED:false}
     treehole:

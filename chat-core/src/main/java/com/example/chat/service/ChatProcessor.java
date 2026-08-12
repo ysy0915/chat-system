@@ -1,5 +1,6 @@
 package com.example.chat.service;
 
+import com.example.chat.client.RagClient;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.config.ThreadPoolFactory;
 import com.example.chat.dto.LLMMessage;
@@ -64,6 +65,26 @@ public class ChatProcessor {
     @org.springframework.beans.factory.annotation.Value("${app.langchain4j.personal.enabled:false}")
     private boolean langChain4jPersonalEnabled;
 
+    /** 对话自动 RAG 增强：知识问答/任务类问题自动检索知识库（RAG 索引增强生成） */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.enabled:true}")
+    private boolean chatRagEnabled;
+
+    /** 对话自动 RAG 默认检索的知识库 ID（<=0 表示未配置，不增强） */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.kb-id:0}")
+    private long chatRagKbId;
+
+    /** 对话自动 RAG 检索 topK */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.top-k:3}")
+    private int chatRagTopK;
+
+    /** 对话自动 RAG 相似度阈值 */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.score-threshold:0.3}")
+    private float chatRagScoreThreshold;
+
+    /** 对话自动 RAG 参考资料的字符上限 */
+    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.max-chars:2000}")
+    private int chatRagMaxChars;
+
     /** 对话摘要服务（可选注入，失败不阻塞主流程） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SummaryService summaryService;
@@ -85,6 +106,21 @@ public class ChatProcessor {
     private IntentRoutingHelper intentRouting;
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
+
+    /** 实时数据类问题：知识库无此类内容，跳过检索（由工具/模型实时回答） */
+    private static final java.util.regex.Pattern[] REALTIME_PATTERNS = {
+            java.util.regex.Pattern.compile("(今天|明天|后天|现在|当前|这几天|最近).*(天气|气温|温度|多少度|几度|下雨|下雪|有雨|晴天|阴天|降温|刮风)"),
+            java.util.regex.Pattern.compile("(天气|气温|温度|天气预报).*(怎么样|如何|怎样|多少|几度|适合|穿|出门)"),
+            java.util.regex.Pattern.compile("(几点|几点了|现在几点|现在时间|今天星期几|星期几|几月几号|今天是)"),
+            java.util.regex.Pattern.compile("(今天|今日|最新|热点).*(新闻|时事|头条|快讯)"),
+            java.util.regex.Pattern.compile("(股票|股价|行情|汇率|金价|油价|大盘|基金|涨跌|A股|港股)"),
+            java.util.regex.Pattern.compile("(比分|比赛结果|赛果|赛况)"),
+    };
+
+    /** 个人数据类问题：知识库无个人数据，跳过检索 */
+    private static final java.util.regex.Pattern[] PERSONAL_PATTERNS = {
+            java.util.regex.Pattern.compile("我的(订单|账户|余额|消息|设置|资料|记录|聊天|历史|收藏|足迹|状态|积分|会员)"),
+    };
 
     /** 流式生成停止管理 */
     public void requestStop(String reqId) {
@@ -324,8 +360,20 @@ public class ChatProcessor {
                 // LLM 流式调用（意图驱动温度 + 思考链展示）
                 boolean enableThinking = isComplexIntent(intent);
                 List<LLMMessage> effectiveHistory = history;
+                // 知识问答/任务类问题：自动检索知识库，RAG 索引增强生成
+                if (shouldAutoRag(intent, question)) {
+                    String ragContext = buildChatRagContext(question);
+                    if (ragContext != null) {
+                        effectiveHistory = new java.util.ArrayList<>(history);
+                        effectiveHistory.add(0, new LLMMessage("system", buildChatRagSystemPrompt(ragContext)));
+                        log.info("[doPersonalStream] req_id={} 知识库RAG增强命中 kb={} ctxLen={}",
+                                reqId, chatRagKbId, ragContext.length());
+                    }
+                }
                 if (enableThinking) {
-                    effectiveHistory = new java.util.ArrayList<>(history);
+                    if (effectiveHistory == history) {
+                        effectiveHistory = new java.util.ArrayList<>(history);
+                    }
                     effectiveHistory.add(0, new LLMMessage("system",
                             "如果问题复杂需要推理分析，请先把分析路径写在 <thinking>...</thinking> 标签中，"
                             + "再给出最终回答。简单问题直接回答即可，不需要 <thinking> 标签。"));
@@ -412,11 +460,28 @@ public class ChatProcessor {
         log.info("[doGroupConcurrent] req_id={} userId={} models={} intent={} temp={}",
                 reqId, userId, totalModels, intentLabel(intent), temperature);
 
+        // 知识问答/任务类问题：自动检索知识库，RAG 索引增强（检索一次，注入所有并发模型）
+        final List<LLMMessage> historyForCall;
+        if (shouldAutoRag(intent, question)) {
+            String ragContext = buildChatRagContext(question);
+            if (ragContext != null && history != null) {
+                List<LLMMessage> ragEnhanced = new java.util.ArrayList<>(history);
+                ragEnhanced.add(0, new LLMMessage("system", buildChatRagSystemPrompt(ragContext)));
+                historyForCall = ragEnhanced;
+                log.info("[doGroupConcurrent] req_id={} 知识库RAG增强命中 kb={} ctxLen={}",
+                        reqId, chatRagKbId, ragContext.length());
+            } else {
+                historyForCall = history;
+            }
+        } else {
+            historyForCall = history;
+        }
+
         for (ModelConfig config : configs) {
             CompletableFuture<LLMResult> future = CompletableFuture.supplyAsync(() -> {
                 try {
                     String answer;
-                    if (history != null) {
+                    if (historyForCall != null) {
                         answer = llmInvoker.invoke(config, history, temperature, "chat",
                                 llmConfig.getBaseUrl(), llmConfig.getApiKey());
                     } else {
@@ -762,6 +827,73 @@ public class ChatProcessor {
             || c == IntentCategory.CODE_GENERATION
             || c == IntentCategory.KNOWLEDGE_QA
             || c == IntentCategory.TASK_EXECUTION;
+    }
+
+    /**
+     * 是否需要自动检索知识库增强回答。
+     *
+     * <p>三层判定：</p>
+     * 1. 开关/配置：启用且配置了默认知识库；
+     * 2. 意图判定：知识问答（KNOWLEDGE_QA）或任务执行（TASK_EXECUTION）——概念/资料性查询；
+     * 3. 可查性判定：排除实时数据类（天气、时间、新闻、行情、比分）与个人数据类（我的订单/消息）——
+     *    知识库中不存在此类内容，检索只会浪费一次 Embedding，改由工具或模型实时回答。
+     *
+     * <p>检索后还有相似度判定（buildChatRagContext：score &lt; threshold 的片段丢弃），
+     * 三层都不命中时完全回退普通回答。</p>
+     */
+    private boolean shouldAutoRag(IntentResult intent, String question) {
+        if (!chatRagEnabled || chatRagKbId <= 0 || ragClient == null) return false;
+        if (intent == null || intent.category() == null) return false;
+        IntentCategory c = intent.category();
+        if (c != IntentCategory.KNOWLEDGE_QA && c != IntentCategory.TASK_EXECUTION) return false;
+        // 实时/个人数据类问题知识库没有答案，跳过检索
+        return !isRealTimeOrPersonalQuery(question);
+    }
+
+    /**
+     * 判断问题是否为实时数据/个人数据类查询（知识库中不存在此类内容）。
+     * <p>实时：天气、时间、新闻、金融行情、体育比分；个人：订单/账户/消息等。</p>
+     */
+    private boolean isRealTimeOrPersonalQuery(String question) {
+        if (question == null || question.isBlank()) return false;
+        for (java.util.regex.Pattern p : REALTIME_PATTERNS) {
+            if (p.matcher(question).find()) return true;
+        }
+        for (java.util.regex.Pattern p : PERSONAL_PATTERNS) {
+            if (p.matcher(question).find()) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 检索默认知识库，构建 RAG 参考资料（无命中返回 null，检索失败不影响主流程）。
+     */
+    private String buildChatRagContext(String question) {
+        if (question == null || question.isBlank()) return null;
+        try {
+            List<RagClient.SearchResult> results = ragClient.search(chatRagKbId, question, chatRagTopK);
+            if (results == null || results.isEmpty()) return null;
+            StringBuilder sb = new StringBuilder();
+            int total = 0;
+            for (RagClient.SearchResult r : results) {
+                if (r.score() < chatRagScoreThreshold) continue;
+                if (total + r.text().length() > chatRagMaxChars) break;
+                sb.append("--- 资料（相似度 ").append(String.format("%.2f", r.score())).append("）---\n");
+                sb.append(r.text()).append("\n\n");
+                total += r.text().length();
+            }
+            return sb.length() > 0 ? sb.toString() : null;
+        } catch (Exception e) {
+            log.warn("[ChatRAG] 知识库检索失败 kb={} err={}", chatRagKbId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 构建 RAG 增强的 system prompt（引导依据知识库资料作答） */
+    private String buildChatRagSystemPrompt(String context) {
+        return "以下是用户知识库中检索到的参考资料。回答时请优先依据参考资料作答，"
+                + "如果参考资料不足以回答，可结合你的知识回答并简要说明。\n\n"
+                + "【参考资料】\n" + context;
     }
 
     /**

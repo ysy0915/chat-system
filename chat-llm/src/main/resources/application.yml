@@ -54,6 +54,10 @@ app:
       long-term-top-k: 3
       long-term-threshold: 0.5
       redis-ttl-hours: 24
+      # 用户画像（情景/情绪/偏好）提炼配置
+      profile-ttl-days: 30          # 画像在 Redis 中的有效期（天）
+      profile-provider: qwen        # 提炼画像所用的 LLM 提供商
+      profile-model: qwen-plus      # 提炼画像所用的模型
     search:
       top-k: 5
       score-threshold: 0.3

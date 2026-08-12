@@ -422,3 +422,133 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 - 后端编译、前端构建成功
 - 生产部署：core 9090/9092 + web 8081/8082 全部重启健康（HTTP 200），主服务器 SPA `/chat/debate` 200
 - 生产 jar 内 `DebateGraphService` 已含 `effectiveRounds` 逻辑（python3 校验 class 字节码）
+
+---
+
+## 十五、编排范式术语规范化（文档）
+
+对齐业界范式命名，无代码改动：
+
+- **树状辩论 = Plan-and-Execute 混合模式**：`decompose()`（Plan：LLM 拆解视角）→ 视角并行执行（Execute）→ `aggregate()`（汇总），详见 `架构设计说明.md` §6.3 / `架构全盘说明.md` 5.3 / `部署运维手册.md` §8 / `项目概述.md`
+- **工具调度 = ReAct（Reasoning and Acting）循环**：`ToolDispatcher` 带 `tools` 调 LLM → 提取 `tool_calls` → 执行工具 → 结果回填 → 再决策（`maxToolCalls=3`），仅个人对话场景，详见 `方案PPT内容.md` §7.3 / §8.3
+- **标准辩论**保持 LangGraph4j `StateGraph` 图式循环描述（非 plan-and-execute）
+- 涉及文档：`架构设计说明.md`、`架构全盘说明.md`、`部署运维手册.md`、`项目概述.md`、`方案PPT内容.md`、`系统架构说明.md`
+
+---
+
+## 十六、辩论引入 Reflection 反思循环（功能）
+
+标准辩论与树状辩论加入 **Reflection（批判性反思）** 节点，解决"对抗但不迭代"的质量短板——每轮辩论后三方不再直接堆叠观点，而是审视对方反驳后修正立场。
+
+### 特性
+
+- **reflect 反思节点**：每轮 `debate` 之后新增三方并行反思分支，各自读取「本轮自己观点 + 对方观点」，输出：1) 被反驳得有道理的点 2) 是否修正 3) 修正后的立场（≤100 字）
+- **裁决式汇总**：`summary` 基于反思后的最终立场（`{{state.proReflections[-1]}}` 等）输出【正方强调 / 反方强调 / 中立评价 / 关键分歧 / 共识结论】，替代机械归纳
+- **对前端无感**：reflect 节点事件（nodeId=`reflect`）不匹配现有 WS 协议分支，静默执行；前端看到的仍是 `round_start → round_response → round_end`，无协议变更
+- **成本**：每轮辩论 LLM 调用从 3 次增至 6 次（3 辩论 + 3 反思），`maxSteps` 相应调整为 `rounds*4+2`
+
+### 实现
+
+| 文件 | 改动 |
+|------|------|
+| `DebateGraphService.java` | 图增加 `reflect` 节点（三方分支 sink 到 `proReflections/conReflections/neutralReflections`）；`summary` 提示词改为基于反思后立场裁决；边 `debate → reflect → shouldContinue` |
+| `TreePerspectiveGraphService.java` | 同上（sink 到 `model1Reflections/model2Reflections/model3Reflections`，50 字限制） |
+
+### 验证
+
+- chat-core 全量 154 测试通过
+- 生产部署：core 9090/9092 重启健康（HTTP 200）
+- 生产 jar 字节码校验：`DebateGraphService`/`TreePerspectiveGraphService` 均含 reflect 节点逻辑
+
+---
+
+## 十七、情绪树洞 Memory 记忆增强（用户画像，功能）
+
+情绪树洞开启 **记忆增强**：不再只记忆对话原文，而是由 LLM 从每次倾诉中提炼出用户画像——**情景 + 情绪 + 个人偏好**，逐步累积，后续回答根据偏好自动调整风格。
+
+### 特性
+
+- **三层记忆架构**：
+  1. 短期记忆（Redis）：最近 5 轮对话原文
+  2. 长期记忆（Milvus）：全部历史向量化，按语义相关性检索（top-3，阈值 0.5）
+  3. **用户画像**（Redis `user_profile:{scene}:{userId}`，TTL 30 天）：LLM 提炼的结构化画像
+- **画像提炼**：每次对话保存后异步调用 LLM（默认 qwen/qwen-plus，`app.rag.memory.profile-*` 可配），从"用户倾诉 + 树洞回应"中提炼 `scene`（当前情景）、`emotions`（情绪 ≤3）、`preferences`（偏好风格 ≤3）、`context`（背景）
+- **增量合并**：情景/情绪取最新；偏好合并去重（上限 10 条）持续累积；背景追加最近 5 条——画像随对话越聊越懂用户
+- **回答贴合偏好**：`buildMemoryContext` 将【用户画像】段落注入记忆上下文，并附引导"请根据用户画像中的情绪与偏好调整你的回应风格"，经 `TreeHoleHistoryBuilder` 拼入树洞 system prompt
+- **异步无侵入**：画像提炼在 chat-llm 线程池异步执行，失败仅告警不影响保存主流程；LLM 输出自动剥离 ```json 代码块包裹
+
+### 实现
+
+| 文件 | 改动 |
+|------|------|
+| `chat-llm/ConversationMemoryService.java` | 新增 `updateUserProfile` / `extractUserProfile` / `mergeProfile` / `getUserProfileContext` 等；`buildMemoryContext` 前置注入【用户画像】段落 |
+| `chat-llm/LegacyRagController.java` | `/internal/rag/memory/save` 保存对话后异步 submit 触发画像提炼 |
+| `chat-llm/application.yml` | 新增 `app.rag.memory.profile-ttl-days` / `profile-provider` / `profile-model` 配置 |
+
+### 验证
+
+- 生产验证：保存测试对话后 2 秒内画像生成；第二次对话后偏好增量合并（保留旧偏好 + 新增新偏好）；`/internal/rag/memory/context` 返回含【用户画像】段落
+- 生产部署：chat-llm 双实例 9095/9096 重启健康（HTTP 200）
+- 测试数据已清理（Redis `user_profile:treehole:999999` / `memory:treehole:999999`）
+
+---
+
+## 十八、对话自动 RAG 增强（功能）
+
+个人对话空间与 AI 伙伴群聊接入 **自动 RAG 检索增强**：当用户询问知识/事实类信息（如天气、资料性查询）时，自动从默认知识库检索相关内容注入回答，让 AI 依据知识库作答。
+
+### 特性
+
+- **意图驱动检索**：三层漏斗识别出 `KNOWLEDGE_QA`（知识问答）/ `TASK_EXECUTION`（任务执行，含天气）意图时自动触发知识库检索；闲聊/情感类不触发，零成本
+- **命中增强、未命中降级**：检索到相关资料（相似度 ≥ 0.3）才把【参考资料】注入 system prompt 引导作答；知识库为空、未命中或检索失败时完全回退普通回答，不影响对话
+- **个人 + 群聊全覆盖**：个人对话（流式）与群聊（并发竞速）均接入；群聊检索一次，注入所有并发模型
+- **与工具互补**：天气等实时信息仍优先走 `weather` 工具（wttr.in）获取实时数据；知识库有资料时 RAG 提供本地/定制资料依据
+
+### 配置
+
+| 配置项 | 默认 | 说明 |
+|--------|------|------|
+| `app.rag.chat.enabled`（`CHAT_RAG_ENABLED`） | true | 对话自动 RAG 总开关 |
+| `app.rag.chat.kb-id`（`CHAT_RAG_KB_ID`） | 0 | 默认检索的知识库 ID（`rag_knowledge_bases.id`），≤0 表示未配置不检索 |
+| `app.rag.chat.top-k` | 3 | 检索返回条数 |
+| `app.rag.chat.score-threshold` | 0.3 | 相似度阈值 |
+| `app.rag.chat.max-chars` | 2000 | 参考资料字符上限 |
+
+### 实现
+
+| 文件 | 改动 |
+|------|------|
+| `chat-core/ChatProcessor.java` | 新增 `shouldAutoRag` / `buildChatRagContext` / `buildChatRagSystemPrompt`；个人流式（`doPersonalStream`）与群聊并发（`doGroupConcurrent`）在 LLM 调用前注入 RAG 参考资料 |
+| `chat-core/application.yml` | 新增 `app.rag.chat.*` 配置段 |
+
+### 验证
+
+- chat-core 编译通过，生产部署 core 9090/9092 重启健康（HTTP 200）
+- 生产现状：知识库尚无内容（`rag_knowledge_bases` 表 0 条 / 新版数据源 retrieve 0 命中）→ 功能安全待命；上传知识库后设置 `CHAT_RAG_KB_ID=<ID>` 即自动生效（服务器 `.env` 已预置配置项）
+
+### 知识库可查性判断框架（哪些问题值得从 Milvus 查）
+
+是否检索知识库由**三层判定**决定（`ChatProcessor.shouldAutoRag`）：
+
+```
+第1层 开关/配置   → RAG 启用 && 配置了默认知识库（CHAT_RAG_KB_ID>0）
+第2层 意图判定    → KNOWLEDGE_QA（知识问答）或 TASK_EXECUTION（任务执行）
+第3层 可查性判定  → 排除实时数据类 + 个人数据类（知识库无此类内容）
+检索后相似度判定  → score < 0.3 的片段丢弃，全部低于阈值则不注入（降级普通回答）
+```
+
+| 问题类型 | 例子 | 查知识库？ | 处理 |
+|----------|------|:---:|------|
+| 概念/定义/百科 | "什么是蒙特卡洛模拟"、"退货政策是什么" | ✅ 查 | RAG 依据知识库作答 |
+| 产品/资料性查询 | "你们支持哪些支付方式" | ✅ 查 | RAG 依据知识库作答 |
+| 专业知识 | "解释一下贝叶斯定理" | ✅ 查 | RAG + LLM 补充 |
+| 教程/操作 | "怎么配置接口鉴权" | ✅ 查 | RAG 检索文档 |
+| 实时天气 | "今天北京天气怎么样" | ❌ 不查 | weather 工具（wttr.in）或模型回答 |
+| 实时时间/日期 | "现在几点"、"今天星期几" | ❌ 不查 | 模型/工具 |
+| 实时新闻/行情 | "今天有什么热点新闻"、"A股现在什么行情" | ❌ 不查 | 模型/工具 |
+| 体育比分 | "昨晚比赛结果" | ❌ 不查 | 模型/工具 |
+| 个人数据 | "我的订单/余额/消息" | ❌ 不查 | 系统无此数据 |
+| 闲聊/情感/创作/翻译 | "你好"、"我很焦虑" | ❌ 不查 | 意图本身不在第2层 |
+| 代码/推理/计算 | "写个排序算法"、"1+1等于几" | ❌ 不查 | 意图本身不在第2层 |
+
+**实现**：`ChatProcessor` 新增 `isRealTimeOrPersonalQuery`（预编译正则：天气/时间/新闻/行情/比分/个人数据）；`intent-rules.json` 补充天气关键词规则（L1 直接归入 `TASK_EXECUTION`）。生产 core 9090/9092 已部署健康。

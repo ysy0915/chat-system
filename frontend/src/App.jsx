@@ -403,6 +403,14 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         <div className="announcement-content">
                             <p><strong>博思AI智能体 · 最近更新</strong></p>
 
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>✨ 8月12日 · 记忆与辩论升级</p>
+                            <p style={{ fontWeight: 700 }}>🗣️ 辩论场次自由选择</p>
+                            <p>观点辩论场支持 1-5 轮场次自由选择（默认 3 轮），输入框上方即可切换；辩论阵容升级为豆包、DeepSeek、千问三方对决。</p>
+                            <p style={{ fontWeight: 700 }}>🧠 辩论反思升级</p>
+                            <p>每轮辩论后三方模型会批判性审视对方反驳并修正自身立场，交锋更有深度，最终结论经过多轮思辨沉淀，质量更高。</p>
+                            <p style={{ fontWeight: 700 }}>💌 情绪树洞 · 记忆增强</p>
+                            <p>树洞现在会记住你的情景、情绪与个人偏好，越聊越懂你——后续回答会自动贴合你习惯的回应方式。</p>
+
                             <p style={{ marginTop: '16px', fontWeight: 700 }}>🚀 8月12日 · 高可用与监控升级</p>
                             <p style={{ fontWeight: 700 }}>🛡️ 双实例高可用部署</p>
                             <p>核心 AI 与接入层升级为双实例运行，请求自动分摊到多节点，单个实例故障不影响服务，聊天更稳定。</p>

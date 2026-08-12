@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { extractAnswer, formatAnswer, formatText } from './format'
+import { extractAnswer, formatAnswer, formatText, stripMarkdownSymbols } from './format'
+
+describe('stripMarkdownSymbols', () => {
+    it('null/undefined 返回空串', () => {
+        expect(stripMarkdownSymbols(null)).toBe('')
+        expect(stripMarkdownSymbols(undefined)).toBe('')
+    })
+
+    it('去掉成对的 ** 加粗标记，保留内容', () => {
+        expect(stripMarkdownSymbols('这是**重点**内容')).toBe('这是重点内容')
+    })
+
+    it('去掉多个成对标记', () => {
+        expect(stripMarkdownSymbols('**第一**和**第二**')).toBe('第一和第二')
+    })
+
+    it('去掉孤立的 ** 标记', () => {
+        expect(stripMarkdownSymbols('未闭合的**标记')).toBe('未闭合的标记')
+        expect(stripMarkdownSymbols('**只有开头')).toBe('只有开头')
+    })
+
+    it('混合场景：成对+孤立', () => {
+        expect(stripMarkdownSymbols('**重要**说明**')).toBe('重要说明')
+    })
+
+    it('非字符串转字符串处理', () => {
+        expect(stripMarkdownSymbols(123)).toBe('123')
+    })
+})
 
 describe('extractAnswer', () => {
     it('null/undefined 返回空串', () => {

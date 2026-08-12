@@ -4,8 +4,7 @@ import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import '../styles/treehole.css'
-import { formatAnswer } from '../utils/format'
-import { extractAnswer } from '../utils/format'
+import { formatAnswer, extractAnswer, stripMarkdownSymbols } from '../utils/format'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
 
@@ -433,7 +432,7 @@ export default function TreeHole() {
                                         <div className="treehole-bubble-ai">
                                             {msg.thinking && (
                                                 <div className="thinking-block">
-                                                    {msg.thinking}
+                                                    {stripMarkdownSymbols(msg.thinking)}
                                                     {msg.streaming && msg.thinking && !msg.text && (
                                                         <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'#6b7280'}}>▋</span>
                                                     )}

@@ -114,6 +114,12 @@ public class LegacyRagController {
         String answer = (String) req.get("answer");
         try {
             memoryService.saveConversation(scene, userId, question, answer);
+            // 异步提炼用户画像（情景/情绪/偏好），失败不影响保存主流程
+            String s = scene;
+            Long uid = userId;
+            String q = question;
+            String a = answer;
+            streamExecutor.submit(() -> memoryService.updateUserProfile(s, uid, q, a));
             return Map.of("success", true);
         } catch (Exception e) {
             log.warn("[Memory] 内部保存失败 scene={} user={} error={}", scene, userId, e.getMessage());

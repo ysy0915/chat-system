@@ -3,7 +3,7 @@ import axios from 'axios'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
-import { formatAnswer, extractAnswer } from '../utils/format'
+import { formatAnswer, extractAnswer, stripMarkdownSymbols } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useAutoScroll } from '../hooks/useAutoScroll'
@@ -681,7 +681,7 @@ export default function PersonalChat() {
               <div className="msg ai">
                 {m.thinking && (
                   <div className="thinking-block">
-                    {m.thinking}
+                    {stripMarkdownSymbols(m.thinking)}
                     {m.streaming && m.thinking && !m.content && (
                       <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'#6b7280'}}>▋</span>
                     )}

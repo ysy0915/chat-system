@@ -1,3 +1,13 @@
+// 去掉 AI 回答中的 markdown 加粗符号 **（保留内容），避免 ** 符号原样展示
+// 先移除成对的 **加粗** 标记，再移除残留的孤立 **（未闭合或 LLM 输出的杂散标记）
+export function stripMarkdownSymbols(text) {
+    if (text == null) return ''
+    let s = String(text)
+    s = s.replace(/\*\*([^*]+)\*\*/g, '$1')
+    s = s.replace(/\*\*/g, '')
+    return s
+}
+
 // 从 AI 返回的内容中提取纯文本回答
 // 有些模型（特别是 DeepSeek）会把回答包装成 JSON 字符串，如：
 //   {"answer": "..."}  {"response": "..."}  {"content": "..."}  {"text": "..."}  {"result": "..."}
@@ -7,7 +17,7 @@ export function extractAnswer(raw) {
     if (raw == null) return ''
     if (typeof raw !== 'string') {
         // 已经是对象/数组，尝试取常见字段
-        return extractFromObject(raw) || String(raw)
+        return stripMarkdownSymbols(extractFromObject(raw) || String(raw))
     }
     let text = raw.trim()
     if (!text) return ''
@@ -23,12 +33,12 @@ export function extractAnswer(raw) {
         try {
             const parsed = JSON.parse(text)
             const extracted = extractFromObject(parsed)
-            if (extracted) return extracted
+            if (extracted) return stripMarkdownSymbols(extracted)
         } catch {
             // 不是合法 JSON，返回原文
         }
     }
-    return text
+    return stripMarkdownSymbols(text)
 }
 
 // 从对象中提取回答文本，支持多种常见字段名
@@ -59,6 +69,8 @@ export function formatAnswer(text) {
     if (typeof text !== 'string') {
         try { text = String(text) } catch { return [''] }
     }
+    // 去掉 markdown 加粗符号 **
+    text = stripMarkdownSymbols(text)
     // 先把 \n 转真换行，再用句号+换行切分；句号保留在上一段末尾
     return text
         .replace(/\\n/g, '\n')
@@ -88,5 +100,5 @@ export function formatText(text) {
     if (typeof text !== 'string') {
         try { text = String(text) } catch { return [''] }
     }
-    return text.split('\n').filter(s => s.trim())
+    return stripMarkdownSymbols(text).split('\n').filter(s => s.trim())
 }

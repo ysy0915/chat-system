@@ -92,13 +92,13 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 多 AI 模型同时参与公开对话，支持流式输出
 
 ### 个人对话空间
-JWT 认证的私密对话，历史记录持久化，基于 LangChain4j ChatMemory
+JWT 认证的私密对话，历史记录持久化，基于 LangChain4j ChatMemory，知识/事实类问题自动触发 RAG 检索增强（可查性三层判定）
 
 ### 观点辩论场
-LangGraph4j 实现三 AI 并行辩论（豆包/千问/DeepSeek），场次可选（默认 3 轮，1~10），结构化论点输出
+LangGraph4j 实现三 AI 并行辩论（豆包/千问/DeepSeek），场次可选（默认 3 轮，1~10），每轮反思修正 + 裁决式汇总
 
 ### 情绪树洞
-匿名情绪倾诉，AI 共情回复，内容安全过滤
+匿名情绪倾诉，AI 共情回复，内容安全过滤，Memory 记忆增强：LLM 提炼用户画像（情景+情绪+偏好），回答逐步贴合个人偏好
 
 ### 多模态生成
 - 文生图 / 文生视频
@@ -112,6 +112,8 @@ Milvus 向量检索 + 文档解析 + 文本分块 + 对话记忆融合，**运�
 - chat-core 经 `RagClient` 跨进程调用 chat-llm `/internal/rag/*`（检索/向量化/记忆/RAG 回答）
 - chat-web 知识库管理 API 经 `CoreClient` 代理到 chat-llm `/api/v1/rag/*`
 - 两套 Embedding 并存：legacy 知识库 1024 维（`LegacyEmbeddingService`）与新版 RAG 1536 维（`EmbeddingService`）
+- **对话自动 RAG**：个人对话与群聊中，知识问答/任务执行意图（含天气）自动检索默认知识库（`app.rag.chat.*`），相似度 ≥0.3 命中片段注入【参考资料】增强回答；知识库为空/未命中自动降级普通回答
+- **可查性三层判定**：开关配置 → 意图判定（KNOWLEDGE_QA / TASK_EXECUTION）→ 排除实时/个人数据类查询（天气、时间、新闻、行情、订单等），避免无效检索
 
 ### 知识图谱
 Neo4j 实体/关系存储 + LLM 三元组抽取，**已迁移至 chat-llm**（`KnowledgeGraphService` 编排 Neo4j 连接与抽取）

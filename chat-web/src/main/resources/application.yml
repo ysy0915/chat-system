@@ -35,10 +35,13 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
-# chat-core 内部 API 地址
+# 内部服务地址
 app:
   core:
     base-url: ${CORE_BASE_URL:http://127.0.0.1:9090}
+  # chat-llm 服务地址（RAG 知识库 /api/v1/rag/* 已迁移至 chat-llm）
+  llm-service:
+    base-url: ${LLM_SERVICE_BASE_URL:http://127.0.0.1:9095}
   # web 层需要内容安全检查，但不需 LLM 调用
   module:
     core: false

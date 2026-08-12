@@ -2,9 +2,9 @@ package com.example.chat.internal;
 
 import com.example.chat.entity.DebateRecord;
 import com.example.chat.repository.DebateRecordRepository;
+import com.example.chat.client.GraphClient;
 import com.example.chat.service.ChatProcessor;
 import com.example.chat.service.DebateProcessor;
-import com.example.chat.service.KnowledgeGraphService;
 import com.example.chat.service.TreeHoleQueryService;
 import com.example.chat.service.TreeHoleService;
 import com.example.chat.repository.ModelConfigRepository;
@@ -57,7 +57,7 @@ public class InternalApiController {
     private final UserRepository userRepository;
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
-    private final KnowledgeGraphService knowledgeGraphService;
+    private final GraphClient graphClient;
     private final com.example.chat.observability.TraceRecorder traceRecorder;
     private final com.example.chat.observability.ErrorAggregator errorAggregator;
 
@@ -72,7 +72,7 @@ public class InternalApiController {
             UserRepository userRepository,
             ModelConfigRepository modelConfigRepository,
             ObjectMapper objectMapper,
-            @Autowired(required = false) KnowledgeGraphService knowledgeGraphService,
+            @Autowired(required = false) GraphClient graphClient,
             @Autowired(required = false) com.example.chat.observability.TraceRecorder traceRecorder,
             @Autowired(required = false) com.example.chat.observability.ErrorAggregator errorAggregator) {
         this.chatProcessor = chatProcessor;
@@ -85,7 +85,7 @@ public class InternalApiController {
         this.userRepository = userRepository;
         this.modelConfigRepository = modelConfigRepository;
         this.objectMapper = objectMapper;
-        this.knowledgeGraphService = knowledgeGraphService;
+        this.graphClient = graphClient;
         this.traceRecorder = traceRecorder;
         this.errorAggregator = errorAggregator;
     }
@@ -431,64 +431,57 @@ public class InternalApiController {
                 "topErrors", errorAggregator.getTopErrors(10)));
     }
 
-    // ==================== 知识图谱 ====================
+    // ==================== 知识图谱（运行时已迁至 chat-llm，经 GraphClient 跨进程调用） ====================
 
-    @Operation(summary = "获取知识图谱", description = "获取知识图谱的全部节点和关系边")
+    @Operation(summary = "获取知识图谱", description = "获取知识图谱的全部节点和关系边（chat-llm）")
     @GetMapping("/graph")
     public ResponseEntity<?> getGraph(
             @Parameter(description = "返回节点数上限，默认100") @RequestParam(value = "limit", defaultValue = "100") int limit,
             @Parameter(description = "实体最低权重（关系数），默认1") @RequestParam(value = "minEntityWeight", defaultValue = "1") int minEntityWeight,
             @Parameter(description = "关系最低权重（累计次数），默认1") @RequestParam(value = "minRelationWeight", defaultValue = "1") int minRelationWeight) {
-        if (knowledgeGraphService == null) {
+        if (graphClient == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "nodes", Collections.emptyList(), "edges", Collections.emptyList()));
         }
-        return ResponseEntity.ok(knowledgeGraphService.getGraph(limit, minEntityWeight, minRelationWeight));
+        return ResponseEntity.ok(graphClient.getGraph(limit, minEntityWeight, minRelationWeight));
     }
 
-    @Operation(summary = "搜索知识图谱", description = "按关键词在知识图谱中搜索实体和关系")
+    @Operation(summary = "搜索知识图谱", description = "按关键词在知识图谱中搜索实体和关系（chat-llm）")
     @GetMapping("/graph/search")
     public ResponseEntity<?> searchGraph(
             @Parameter(description = "搜索关键词") @RequestParam("keyword") String keyword,
             @Parameter(description = "返回结果数上限，默认30") @RequestParam(value = "limit", defaultValue = "30") int limit,
             @Parameter(description = "实体最低权重（关系数），默认1") @RequestParam(value = "minEntityWeight", defaultValue = "1") int minEntityWeight,
             @Parameter(description = "关系最低权重（累计次数），默认1") @RequestParam(value = "minRelationWeight", defaultValue = "1") int minRelationWeight) {
-        if (knowledgeGraphService == null) {
+        if (graphClient == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "nodes", Collections.emptyList(), "edges", Collections.emptyList()));
         }
-        return ResponseEntity.ok(knowledgeGraphService.searchEntities(keyword, limit, minEntityWeight, minRelationWeight));
+        return ResponseEntity.ok(graphClient.searchEntities(keyword, limit, minEntityWeight, minRelationWeight));
     }
 
-    @Operation(summary = "知识图谱统计", description = "获取知识图谱的实体数和关系数统计")
+    @Operation(summary = "知识图谱统计", description = "获取知识图谱的实体数和关系数统计（chat-llm）")
     @GetMapping("/graph/stats")
     public ResponseEntity<?> getGraphStats() {
-        if (knowledgeGraphService == null) {
+        if (graphClient == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "entityCount", 0, "relationCount", 0));
         }
-        return ResponseEntity.ok(knowledgeGraphService.getStats());
+        return ResponseEntity.ok(graphClient.getStats());
     }
 
-    @Operation(summary = "批量导入知识图谱", description = "触发批量从数据库导入数据到知识图谱")
+    @Operation(summary = "批量导入知识图谱", description = "触发批量从数据库导入数据到知识图谱（chat-llm）")
     @PostMapping("/graph/import")
     public ResponseEntity<?> importToGraph() {
-        if (knowledgeGraphService == null) {
+        if (graphClient == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "message", "知识图谱服务未启用"));
         }
-        boolean started = knowledgeGraphService.startBatchImport();
-        return ResponseEntity.ok(Map.of(
-                "started", started,
-                "importing", knowledgeGraphService.isImporting()
-        ));
+        return ResponseEntity.ok(graphClient.startBatchImport());
     }
 
-    @Operation(summary = "导入状态查询", description = "查询知识图谱批量导入的进度和状态")
+    @Operation(summary = "导入状态查询", description = "查询知识图谱批量导入的进度和状态（chat-llm）")
     @GetMapping("/graph/import/status")
     public ResponseEntity<?> getImportStatus() {
-        if (knowledgeGraphService == null) {
+        if (graphClient == null) {
             return ResponseEntity.ok(Map.of("enabled", false, "importing", false));
         }
-        return ResponseEntity.ok(Map.of(
-                "importing", knowledgeGraphService.isImporting(),
-                "stats", knowledgeGraphService.getStats()
-        ));
+        return ResponseEntity.ok(graphClient.getImportStatus());
     }
 }

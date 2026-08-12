@@ -1,4 +1,4 @@
-package com.example.chat.service;
+package com.example.chat.llm.service;
 
 import com.example.chat.entity.DebateRecord;
 import com.example.chat.entity.Message;

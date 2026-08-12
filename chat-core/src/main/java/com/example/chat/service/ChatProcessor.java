@@ -52,9 +52,9 @@ public class ChatProcessor {
     private final StreamStopManager streamStopManager;
     private final LlmConfigProperties llmConfig;
 
-    /** 对话记忆服务（可选注入） */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.chat.rag.service.ConversationMemoryService memoryService;
+    /** RAG 客户端（通过 /internal/rag/* 调用 chat-llm 的知识库检索与对话记忆） */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.chat.client.RagClient ragClient;
 
     /** LangChain4j 个人对话服务（可选注入） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -68,9 +68,9 @@ public class ChatProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SummaryService summaryService;
 
-    /** 知识图谱服务（可选注入，失败不阻塞主流程） */
+    /** 知识图谱客户端（可选注入，失败不阻塞主流程；运行时已迁至 chat-llm） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private KnowledgeGraphService knowledgeGraphService;
+    private com.example.chat.client.GraphClient graphClient;
 
     /** 工具调度器（可选注入，仅在 app.agent.enabled=true 时存在） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -444,13 +444,7 @@ public class ChatProcessor {
                         try {
                             completeWithAnswer(reqId, userId, question, result.answer,
                                     result.config.provider, result.config.model, startTime);
-                            if (memoryService != null) {
-                                try {
-                                    memoryService.saveConversation("chat", userId, question, result.answer);
-                                } catch (Exception memEx) {
-                                    log.warn("群聊记忆保存失败 user={} error={}", userId, memEx.getMessage());
-                                }
-                            }
+                            ragClient.saveMemoryAsync("chat", userId, question, result.answer);
                         } catch (Exception e) {
                             log.error("completeWithAnswer 失败", e);
                         }
@@ -654,14 +648,8 @@ public class ChatProcessor {
             log.warn("[WARN] Redis write failed: {}", ex.getMessage());
         }
 
-        // 保存对话记忆
-        if (memoryService != null) {
-            try {
-                memoryService.saveConversation("personal", userId, question, answer);
-            } catch (Exception ex) {
-                log.warn("[Memory] 个人对话记忆保存失败 user={} error={}", userId, ex.getMessage());
-            }
-        }
+        // 保存对话记忆（异步 fire-and-forget）
+        ragClient.saveMemoryAsync("personal", userId, question, answer);
 
         Message m = messageRepository.findByReqId(reqId);
         if (m != null) {
@@ -685,10 +673,10 @@ public class ChatProcessor {
                 }
             }
 
-            // 触发知识图谱抽取（异步，失败不阻塞主流程）
-            if (knowledgeGraphService != null && m.id != null) {
+            // 触发知识图谱抽取（异步，失败不阻塞主流程；经 GraphClient 跨进程调 chat-llm）
+            if (graphClient != null && m.id != null) {
                 try {
-                    knowledgeGraphService.extractAndSaveAsync(m.id, question, answer, "chat");
+                    graphClient.extractAndSaveAsync(m.id, question, answer, "chat");
                 } catch (Exception ex) {
                     log.warn("[KnowledgeGraph] 触发知识抽取失败 messageId={}: {}", m.id, ex.getMessage());
                 }

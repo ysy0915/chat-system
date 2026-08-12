@@ -2,7 +2,6 @@ package com.example.chat.service;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.TreeHoleMessage;
-import com.example.chat.rag.service.ConversationMemoryService;
 import com.example.chat.repository.TreeHoleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,8 +35,8 @@ public class TreeHoleHistoryBuilder {
     private final TreeHoleRepository treeHoleRepository;
     private final ChatHistoryBuilder chatHistoryBuilder;
 
-    @Autowired(required = false)
-    private ConversationMemoryService memoryService;
+    @Autowired
+    private com.example.chat.client.RagClient ragClient;
 
     @Autowired(required = false)
     private HistorySummaryService historySummaryService;
@@ -67,11 +66,9 @@ public class TreeHoleHistoryBuilder {
         }
 
         StringBuilder systemPrompt = new StringBuilder(SYSTEM_PROMPT);
-        if (memoryService != null) {
-            String memory = memoryService.buildMemoryContext("treehole", userId, question);
-            if (memory != null && !memory.isBlank()) {
-                systemPrompt.append("\n\n").append(memory);
-            }
+        String memory = ragClient.memoryContext("treehole", userId, question);
+        if (memory != null && !memory.isBlank()) {
+            systemPrompt.append("\n\n").append(memory);
         }
         // 历史过长时压缩早期消息为摘要
         historyMsgs = compress(userId, historyMsgs, systemPrompt);
@@ -93,15 +90,11 @@ public class TreeHoleHistoryBuilder {
     }
 
     /**
-     * 保存对话记忆（包装 try-catch，失败不阻塞）
+     * 保存对话记忆（异步 fire-and-forget，失败不阻塞）
      */
     public void saveMemoryIfAvailable(Long userId, String question, String answerJson) {
-        if (memoryService != null && answerJson != null) {
-            try {
-                memoryService.saveConversation("treehole", userId, question, answerJson);
-            } catch (Exception e) {
-                log.warn("[Memory] 树洞记忆保存失败 user={} error={}", userId, e.getMessage());
-            }
+        if (answerJson != null) {
+            ragClient.saveMemoryAsync("treehole", userId, question, answerJson);
         }
     }
 }

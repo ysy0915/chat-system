@@ -48,8 +48,9 @@ public class TreeHoleService {
 
     // --- 可选注入 ---
 
-    @Autowired(required = false)
-    private com.example.chat.rag.service.RAGService ragService;
+    /** RAG 客户端（通过 /internal/rag/* 调用 chat-llm 的知识库 RAG 回答） */
+    @Autowired
+    private com.example.chat.client.RagClient ragClient;
 
     @Autowired(required = false)
     private com.example.chat.langchain4j.LangChain4jTreeHoleService langChain4jTreeHoleService;
@@ -287,9 +288,9 @@ public class TreeHoleService {
 
         try {
             String rawAnswer;
-            if (ragService != null && treeholeKbId > 0) {
-                rawAnswer = ragService.invokeWithRAGStream(config, treeholeKbId, question, messages,
-                        0.85, "treehole", llmConfig.getBaseUrl(), effectiveApiKey,
+            if (ragClient != null && treeholeKbId > 0) {
+                rawAnswer = ragClient.ragInvokeStream(treeholeKbId, question, messages,
+                        0.85, config.provider, config.model,
                         token -> parser.feed(token));
             } else {
                 rawAnswer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
@@ -417,9 +418,9 @@ public class TreeHoleService {
 
         try {
             String answer;
-            if (ragService != null && treeholeKbId > 0) {
-                answer = ragService.invokeWithRAG(config, treeholeKbId, question, messages,
-                        0.85, "treehole", llmConfig.getBaseUrl(), llmConfig.getApiKey());
+            if (ragClient != null && treeholeKbId > 0) {
+                answer = ragClient.ragInvoke(treeholeKbId, question, messages,
+                        0.85, config.provider, config.model);
             } else {
                 answer = llmInvoker.invoke(config, messages, 0.85, "treehole", llmConfig.getBaseUrl(), llmConfig.getApiKey());
             }

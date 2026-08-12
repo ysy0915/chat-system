@@ -205,8 +205,8 @@ chat-core (:9090)
 ├── 思考链展示 (ThinkingStreamParser 状态机)
 ├── 标准辩论 (LangGraph4j StateGraph)
 ├── 树状辩论 (Java 上层 + LangGraph 子图混合编排)
-├── RAG 知识库 (异步上传 + 向量化)
-├── 知识图谱 (Neo4j, 60s 自动重连)
+├── RagClient (跨进程调 chat-llm /internal/rag/*)
+├── 知识图谱 (Neo4j, 60s 自动重连) — 运行时仍在本模块
 └── AI 错误自愈 + 熔断降级
 
 chat-web (:8081)
@@ -219,6 +219,32 @@ chat-web (:8081)
 
 chat-games (:8083)   — 游戏服务 + SQL 执行台 (登录锁定 + 频率限流)
 chat-media (:8084)   — 多模态生成 (用户级限流)
-chat-llm  (:9095)    — 独立 LLM 服务 (REST + gRPC :9195)
+chat-llm  (:9095)    — 独立 LLM 服务 + RAG 运行时 (REST + gRPC :9195)
 frontend             — 可拖拽树状辩论画布 + 思考链渲染
 ```
+
+---
+
+## 九、RAG / 知识图谱运行时迁移至 chat-llm（2026-08-12）
+
+### 变更内容
+
+| 能力 | 迁移前 | 迁移后 |
+|------|--------|--------|
+| RAG 运行时 | chat-core（`rag` 包：知识库 CRUD、向量检索、对话记忆、RAG 回答） | **chat-llm**（`rag/legacy` 包 + 新版多数据源 `rag` 包），chat-core 删除旧 `rag` 包 |
+| chat-core 调用 | 本地 `VectorStoreService` / `ConversationMemoryService` | `RagClient`（Java 11 HttpClient）跨进程调 `/internal/rag/*` |
+| chat-web 知识库代理 | `CoreClient` → chat-core | `CoreClient` → chat-llm `/api/v1/rag/*`（`app.llm-service.base-url`） |
+| 知识图谱 | chat-core（`KnowledgeGraphService` 等 4 服务直连 Neo4j） | **chat-llm**（`KnowledgeGraphService` / `TripleExtractionService` / `GraphRepositoryService` / `BatchImportService`，`app.knowledge-graph.enabled` 开关），chat-core 删除本地实现并移除 Neo4j 依赖，改 `GraphClient` 跨进程调 `/internal/graph/*` |
+
+### 架构要点
+
+- **两套 RAG 并存**：新版多数据源 RAG（`rag.enabled`，`EmbeddingService` 默认 1536 维）与 legacy kbId 模型（`app.rag.enabled`，`LegacyEmbeddingService` 1024 维）同驻 chat-llm，配置开关独立
+- **维度隔离**：旧知识库 / 意图匹配 Milvus 集合为 1024 维，与新版 1536 维不兼容，故 `LegacyEmbeddingService`（知识库）与 `IntentEmbeddingService`（意图 L2）独立实现
+- **chat-llm bean 注册**：`LlmApplication` 通过 `@MapperScan` 扫描 chat-common `repository` 包与 `rag.legacy` 包；`@Import` 显式注册 `LlmConfigProperties` / `DirectLLMClient` / `BaseUrlResolver` / `JwtUtil`（均位于 `com.example.chat.*` 默认扫描路径外）
+- **条件注册**：`/internal/rag/*` 与 `/api/v1/rag/*` 需 `app.rag.enabled=true`，新版 `/api/v1/llm/rag/*` 需 `rag.enabled=true`
+
+### 部署要点
+
+- `.env` 需配置：`RAG_ENABLED=true`、`LLM_SERVICE_BASE_URL=http://127.0.0.1:9095`、`NEO4J_PASSWORD`、`EMBEDDING_*`
+- 重启顺序：llm → core → web（chat-core 启动时经 `RagClient` 探测 chat-llm）
+- 验证：`/internal/rag/embed` 200、`/api/v1/rag/kb` 401（未登录拦截）、`/api/v1/llm/rag/datasources` 200

@@ -1,4 +1,4 @@
-package com.example.chat.rag.service;
+package com.example.chat.llm.rag.legacy;
 
 import com.example.chat.exception.ChatServiceException;
 import org.apache.pdfbox.Loader;
@@ -18,7 +18,7 @@ import java.util.Locale;
  * 文档解析器：从上传的文件中提取纯文本
  * 支持 PDF、Word(.docx)、TXT/Markdown
  */
-@Service
+@Service("legacyDocumentParser")
 public class DocumentParser {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentParser.class);

@@ -1,5 +1,6 @@
-package com.example.chat.rag.service;
+package com.example.chat.llm.rag.legacy;
 
+import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.grpc.DataType;
 import io.milvus.grpc.SearchResults;
@@ -39,12 +40,16 @@ import java.util.List;
  */
 @Service
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
-public class VectorStoreService {
+public class LegacyVectorStoreService {
 
-    private static final Logger log = LoggerFactory.getLogger(VectorStoreService.class);
+    private static final Logger log = LoggerFactory.getLogger(LegacyVectorStoreService.class);
 
     private final MilvusServiceClient milvusClient;
-    private final EmbeddingService embeddingService;
+    private final LegacyEmbeddingService embeddingService;
+
+    /** Embedding 维度（text-embedding-v3 = 1024） */
+    @Value("${app.rag.milvus.dimension:1024}")
+    private int dimension;
 
     @Value("${app.rag.milvus.collection-prefix:kb_}")
     private String collectionPrefix;
@@ -61,7 +66,7 @@ public class VectorStoreService {
     @Value("${app.rag.milvus.search-ef:64}")
     private int searchEf;
 
-    public VectorStoreService(MilvusServiceClient milvusClient, EmbeddingService embeddingService) {
+    public LegacyVectorStoreService(MilvusServiceClient milvusClient, LegacyEmbeddingService embeddingService) {
         this.milvusClient = milvusClient;
         this.embeddingService = embeddingService;
     }
@@ -71,7 +76,7 @@ public class VectorStoreService {
      */
     public void ensureCollection(Long knowledgeBaseId) {
         String collectionName = getCollectionName(knowledgeBaseId);
-        int dim = embeddingService.getDimension();
+        int dim = dimension;
 
         FieldType idField = FieldType.newBuilder()
                 .withName("id")

@@ -143,6 +143,13 @@
             <version>2.3.4</version>
         </dependency>
 
+        <!-- Neo4j Java Driver（知识图谱） -->
+        <dependency>
+            <groupId>org.neo4j.driver</groupId>
+            <artifactId>neo4j-java-driver</artifactId>
+            <version>5.27.0</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

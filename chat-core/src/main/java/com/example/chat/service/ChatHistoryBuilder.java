@@ -21,9 +21,9 @@ public class ChatHistoryBuilder {
     private final MessageRepository messageRepository;
     private final ObjectMapper objectMapper;
 
-    /** 对话记忆服务（可选注入） */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.chat.rag.service.ConversationMemoryService memoryService;
+    /** RAG 客户端（通过 /internal/rag/* 调用 chat-llm 的对话记忆） */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.chat.client.RagClient ragClient;
 
     /** 历史对话摘要服务（可选注入） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -104,15 +104,13 @@ public class ChatHistoryBuilder {
     }
 
     private void appendMemory(String scene, Long userId, String question, StringBuilder prompt) {
-        if (memoryService != null) {
-            try {
-                String memory = memoryService.buildMemoryContext(scene, userId, question);
-                if (memory != null && !memory.isBlank()) {
-                    prompt.append("\n\n").append(memory);
-                }
-            } catch (Exception ex) {
-                log.warn("[Memory] buildMemoryContext failed scene={} user={}: {}", scene, userId, ex.getMessage());
+        try {
+            String memory = ragClient.memoryContext(scene, userId, question);
+            if (memory != null && !memory.isBlank()) {
+                prompt.append("\n\n").append(memory);
             }
+        } catch (Exception ex) {
+            log.warn("[Memory] buildMemoryContext failed scene={} user={}: {}", scene, userId, ex.getMessage());
         }
     }
 

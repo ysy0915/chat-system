@@ -20,9 +20,9 @@
 ```
 chat-system-project/
 ├── chat-common/       # 公共库（实体、DTO、安全、工具、拦截器）
-├── chat-core/         # 核心 AI 服务（LLM调用、RAG、Agent工具、策略路由） 端口 9090
+├── chat-core/         # 核心 AI 服务（业务编排、Agent工具、意图识别）      端口 9090
 ├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081(生产)
-├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、gRPC） 端口 9095 / gRPC 9195
+├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、知识图谱、gRPC） 端口 9095 / gRPC 9195
 ├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
 ├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
 ├── flink-log-analyzer/# 日志分析（Kafka → Flink → ES 实时流式处理）
@@ -52,16 +52,20 @@ brew services start rabbitmq
 # 2. 打包
 mvn clean install -DskipTests
 
-# 3. 启动 chat-core（核心 AI 服务）
+# 3. 启动 chat-llm（LLM 独立服务：RAG / 知识图谱已迁移至此，需先于 core 启动）
+java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=local --server.port=9095
+
+# 4. 启动 chat-core（核心 AI 服务）
 java -jar chat-core/target/chat-core-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=local --server.port=9090
 
-# 4. 新终端启动 chat-web（Web 接入层）
+# 5. 新终端启动 chat-web（Web 接入层）
 java -jar chat-web/target/chat-web-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=local --server.port=8080 \
   --app.core.base-url=http://127.0.0.1:9090
 
-# 5. 启动前端
+# 6. 启动前端
 cd frontend && npm install && npm run dev
 ```
 
@@ -104,7 +108,13 @@ LangGraph4j 实现三 AI 并行辩论，结构化论点输出
 Calculator、Weather、Time、KnowledgeSearch 四工具，LLM 自主决定调用
 
 ### 知识库 RAG
-Milvus 向量检索 + 文档解析 + 文本分块 + 对话记忆融合
+Milvus 向量检索 + 文档解析 + 文本分块 + 对话记忆融合，**运行时已迁移至 chat-llm 独立服务**：
+- chat-core 经 `RagClient` 跨进程调用 chat-llm `/internal/rag/*`（检索/向量化/记忆/RAG 回答）
+- chat-web 知识库管理 API 经 `CoreClient` 代理到 chat-llm `/api/v1/rag/*`
+- 两套 Embedding 并存：legacy 知识库 1024 维（`LegacyEmbeddingService`）与新版 RAG 1536 维（`EmbeddingService`）
+
+### 知识图谱
+Neo4j 实体/关系存储 + LLM 三元组抽取，**已迁移至 chat-llm**（`KnowledgeGraphService` 编排 Neo4j 连接与抽取）
 
 ### 可观测性
 - **熔断器** — 模型连续失败自动熔断，半开恢复

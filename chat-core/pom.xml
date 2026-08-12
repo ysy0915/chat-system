@@ -74,13 +74,6 @@
             <version>3.17.4</version>
         </dependency>
 
-        <!-- Neo4j Java Driver（知识图谱） -->
-        <dependency>
-            <groupId>org.neo4j.driver</groupId>
-            <artifactId>neo4j-java-driver</artifactId>
-            <version>5.27.0</version>
-        </dependency>
-
         <!-- SpringDoc OpenAPI (Swagger UI: /internal/swagger-ui.html) -->
         <dependency>
             <groupId>org.springdoc</groupId>

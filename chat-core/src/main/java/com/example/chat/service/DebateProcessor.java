@@ -42,9 +42,9 @@ public class DebateProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private DebateTreeProcessor debateTreeProcessor;
 
-    /** 知识图谱服务（可选注入，失败不阻塞主流程） */
+    /** 知识图谱客户端（可选注入，失败不阻塞主流程；运行时已迁至 chat-llm） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private KnowledgeGraphService knowledgeGraphService;
+    private com.example.chat.client.GraphClient graphClient;
 
     /** 是否启用 LangGraph4j 辩论模式 */
     @org.springframework.beans.factory.annotation.Value("${app.langgraph4j.debate.enabled:false}")
@@ -291,9 +291,9 @@ public class DebateProcessor {
                 debateRecordRepository.updateAnswer(debateRecord);
             }
 
-            // 触发知识图谱抽取
-            if (knowledgeGraphService != null && m != null && m.id != null) {
-                knowledgeGraphService.extractAndSaveAsync(m.id, question, finalAnswer, "debate");
+            // 触发知识图谱抽取（经 GraphClient 跨进程调 chat-llm）
+            if (graphClient != null && m != null && m.id != null) {
+                graphClient.extractAndSaveAsync(m.id, question, finalAnswer, "debate");
             }
         } catch (JsonProcessingException | DataAccessException ex) {
             log.warn("[Debate] 结果持久化失败: {}", ex.getMessage());

@@ -22,10 +22,49 @@ spring:
       idle-timeout: 30000
       connection-timeout: 10000
 
+  neo4j:
+    uri: ${NEO4J_URI:bolt://127.0.0.1:7687}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:}
+
   # ── gRPC ──────────────────────────────────────────────
 grpc:
   server:
     port: 9195
+
+# ── RAG（知识库 + 对话记忆，旧版 kbId 运行时）──────────────
+app:
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    embedding:
+      provider: dashscope
+      mode: ${EMBEDDING_MODE:dashscope}
+      base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/api/v1}
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${EMBEDDING_MODEL:text-embedding-v3}
+      dimension: ${EMBEDDING_DIMENSION:1024}
+    milvus:
+      host: ${MILVUS_HOST:127.0.0.1}
+      port: ${MILVUS_PORT:19530}
+      dimension: 1024
+      collection-prefix: kb_
+    memory:
+      short-term-rounds: 5
+      long-term-top-k: 3
+      long-term-threshold: 0.5
+      redis-ttl-hours: 24
+    search:
+      top-k: 5
+      score-threshold: 0.3
+    context:
+      max-chars: 3000
+  knowledge-graph:
+    enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
+
+# ── 新版 RAG（多数据源）─────── 与 app.rag 同开同关 ────────
+rag:
+  enabled: ${RAG_ENABLED:false}
 
 # ── LLM 配置 ──────────────────────────────────────────────
 llm:

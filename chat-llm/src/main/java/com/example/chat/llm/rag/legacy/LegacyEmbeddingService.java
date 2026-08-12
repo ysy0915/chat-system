@@ -1,4 +1,4 @@
-package com.example.chat.rag.service;
+package com.example.chat.llm.rag.legacy;
 
 import com.example.chat.exception.LLMCallException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,22 +20,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Embedding 服务：将文本转为向量。
- * <p>
- * 支持两种模式（由 app.rag.embedding.mode 控制）：
- * <ul>
- *   <li><b>dashscope</b>（默认）：DashScope 原生 API，
- *       不需要 WorkspaceId，URL 为 dashscope.aliyuncs.com/api/v1/...，
- *       兼容老 API Key。</li>
- *   <li><b>openai-compat</b>：OpenAI 兼容模式，URL 需要 WorkspaceId。</li>
- * </ul>
- * 默认模型 text-embedding-v3（1024 维），可通过 app.rag.embedding 前缀覆盖。
+ * 旧版 RAG Embedding 服务（text-embedding-v3 / 1024 维）。
+ *
+ * <p>知识库 kbId 模型的向量集合为 text-embedding-v3 1024 维，
+ * 与新版多数据源 RAG（默认 text-embedding-3-small 1536 维）不兼容，
+ * 因此旧版运行时保留独立的向量化实现，行为与迁移前的 chat-core 完全一致。
  */
 @Service
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
-public class EmbeddingService {
+public class LegacyEmbeddingService {
 
-    private static final Logger log = LoggerFactory.getLogger(EmbeddingService.class);
+    private static final Logger log = LoggerFactory.getLogger(LegacyEmbeddingService.class);
 
     @Value("${app.rag.embedding.provider:dashscope}")
     private String provider;
@@ -62,13 +57,13 @@ public class EmbeddingService {
             .connectTimeout(Duration.ofSeconds(30))
             .build();
 
-    public EmbeddingService(ObjectMapper objectMapper) {
+    public LegacyEmbeddingService(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
     @PostConstruct
     void init() {
-        log.info("[Embedding] 初始化 apiMode={} baseUrl={} model={} dim={}", apiMode, baseUrl, model, dimension);
+        log.info("[LegacyEmbedding] 初始化 apiMode={} baseUrl={} model={} dim={}", apiMode, baseUrl, model, dimension);
     }
 
     /**
@@ -125,7 +120,7 @@ public class EmbeddingService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                log.warn("[Embedding] status={} url={} body={}", response.statusCode(), url,
+                log.warn("[LegacyEmbedding] status={} url={} body={}", response.statusCode(), url,
                         response.body().length() > 500 ? response.body().substring(0, 500) : response.body());
                 throw new LLMCallException(response.statusCode(),
                         "Embedding API 失败 status=" + response.statusCode());
@@ -136,7 +131,7 @@ public class EmbeddingService {
         } catch (LLMCallException e) {
             throw e;
         } catch (Exception e) {
-            log.error("[Embedding] 转向量失败 provider={} model={} error={}", provider, model, e.getMessage());
+            log.error("[LegacyEmbedding] 转向量失败 provider={} model={} error={}", provider, model, e.getMessage());
             throw new LLMCallException("Embedding 失败", e);
         }
     }

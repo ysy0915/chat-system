@@ -1,12 +1,12 @@
-package com.example.chat.rag.controller;
+package com.example.chat.llm.rag.controller;
 
 import com.example.chat.config.ThreadPoolFactory;
-import com.example.chat.rag.entity.KnowledgeBase;
-import com.example.chat.rag.entity.KnowledgeDocument;
-import com.example.chat.rag.repository.RAGRepository;
-import com.example.chat.rag.service.DocumentParser;
-import com.example.chat.rag.service.TextChunker;
-import com.example.chat.rag.service.VectorStoreService;
+import com.example.chat.llm.rag.legacy.DocumentParser;
+import com.example.chat.llm.rag.legacy.KnowledgeBase;
+import com.example.chat.llm.rag.legacy.KnowledgeDocument;
+import com.example.chat.llm.rag.legacy.LegacyVectorStoreService;
+import com.example.chat.llm.rag.legacy.RAGRepository;
+import com.example.chat.llm.rag.legacy.TextChunker;
 import com.example.chat.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -55,7 +55,7 @@ public class KnowledgeController {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeController.class);
 
     private final RAGRepository ragRepository;
-    private final VectorStoreService vectorStoreService;
+    private final LegacyVectorStoreService vectorStoreService;
     private final DocumentParser documentParser;
     private final TextChunker textChunker;
     private final JwtUtil jwtUtil;
@@ -67,7 +67,7 @@ public class KnowledgeController {
     private long maxUploadSize;
 
     public KnowledgeController(RAGRepository ragRepository,
-                               @org.springframework.beans.factory.annotation.Autowired(required = false) VectorStoreService vectorStoreService,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false) LegacyVectorStoreService vectorStoreService,
                                DocumentParser documentParser,
                                TextChunker textChunker,
                                JwtUtil jwtUtil) {
@@ -193,7 +193,7 @@ public class KnowledgeController {
             String text = documentParser.parse(fileName, bytes);
 
             // 3. 分片
-            List<VectorStoreService.ChunkText> chunks = textChunker.chunk(text);
+            List<LegacyVectorStoreService.ChunkText> chunks = textChunker.chunk(text);
             log.info("[RAG] 文档 {} 解析+分片完成 共 {} 片", fileName, chunks.size());
 
             // 4. 向量化入库
@@ -257,7 +257,7 @@ public class KnowledgeController {
             return ResponseEntity.internalServerError().body(Map.of("error", "向量库未启用"));
         }
 
-        List<VectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, topK);
+        List<LegacyVectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, topK);
         return ResponseEntity.ok(results.stream().map(r -> Map.of(
                 "text", r.text,
                 "source", r.source,

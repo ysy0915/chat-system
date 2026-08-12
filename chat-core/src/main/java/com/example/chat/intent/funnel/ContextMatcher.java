@@ -2,7 +2,6 @@ package com.example.chat.intent.funnel;
 
 import com.example.chat.intent.IntentResult;
 import com.example.chat.intent.IntentCategory;
-import com.example.chat.rag.service.EmbeddingService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.milvus.client.MilvusServiceClient;
@@ -66,7 +65,7 @@ public class ContextMatcher {
     private MilvusServiceClient milvusClient;
 
     @Autowired(required = false)
-    private EmbeddingService embeddingService;
+    private IntentEmbeddingService embeddingService;
 
     /** 默认相似度阈值（低于此分值的舍弃） */
     private volatile double matchThreshold = 0.75;

@@ -1,4 +1,4 @@
-package com.example.chat.service;
+package com.example.chat.llm.service;
 
 import com.example.chat.config.ThreadPoolFactory;
 import org.neo4j.driver.AuthTokens;

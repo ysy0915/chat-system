@@ -206,8 +206,9 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 
 ## 9. 知识库管理 (RAG)
 
-> 需要 `admin` 角色，通过 `chat-web` (KnowledgeBaseController) 代理转发到 `chat-core` (KnowledgeController)
+> 需要 `admin` 角色，通过 `chat-web` (KnowledgeBaseController) 代理转发到 **`chat-llm`** (KnowledgeController)，RAG 运行时已迁至 chat-llm（2026-08）
 > 内部调用需要 `User-Agent: chat-web` 请求头（防止被 `IpRateLimitInterceptor` 拦截）
+> 需 `chat-llm` 开启 `app.rag.enabled=true` 才注册 `/api/v1/rag/*` 路由；chat-core 内部经 `RagClient` 调 `/internal/rag/*`（知识检索/向量化/记忆/RAG 回答）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|

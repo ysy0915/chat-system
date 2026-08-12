@@ -1,15 +1,15 @@
-package com.example.chat.service;
+package com.example.chat.llm.service;
 
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
+import com.example.chat.service.DirectLLMClient;
 import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 三元组抽取服务 —— 负责 LLM 调用 + JSON 解析，屏蔽 LLMInvoker / DirectLLMClient 两种调用路径。
+ * 三元组抽取服务 —— 负责 LLM 调用 + JSON 解析，通过 DirectLLMClient 直连调用。
  * 不涉及 Neo4j 操作。
  */
 @Service
@@ -34,9 +34,6 @@ public class TripleExtractionService {
     private final BaseUrlResolver baseUrlResolver;
     private final LlmConfigProperties llmConfig;
     private final DirectLLMClient directLLMClient;
-
-    @Autowired(required = false)
-    private LLMInvoker llmInvoker;
 
     public TripleExtractionService(ObjectMapper objectMapper,
                                    ModelConfigRepository modelConfigRepository,
@@ -85,32 +82,9 @@ public class TripleExtractionService {
 
     private String callLLM(String prompt) {
         try {
-            if (llmInvoker != null) {
-                ModelConfig config = resolveModelConfig();
-                if (config != null) {
-                    String content = llmInvoker.invoke(config, prompt, 0.1, "knowledge-graph",
-                            llmConfig.getBaseUrl(), llmConfig.getApiKey());
-                    if (content != null && !content.isBlank()) return content;
-                }
-            }
-            // 降级为直接 HTTP 调用
             return callLLMDirect(prompt);
         } catch (Exception e) {
             log.warn("[KnowledgeGraph] LLM 抽取异常: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    private ModelConfig resolveModelConfig() {
-        try {
-            List<ModelConfig> configs = modelConfigRepository.findAllEnabledByType("chat");
-            if (configs == null || configs.isEmpty()) return null;
-            return configs.stream()
-                    .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "deepseek".equalsIgnoreCase(c.provider))
-                    .findFirst()
-                    .orElse(configs.get(0));
-        } catch (DataAccessException e) {
-            log.warn("[KnowledgeGraph] 获取模型配置失败: {}", e.getMessage());
             return null;
         }
     }

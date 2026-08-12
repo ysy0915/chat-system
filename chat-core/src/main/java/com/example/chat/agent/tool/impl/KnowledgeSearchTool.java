@@ -1,7 +1,7 @@
 package com.example.chat.agent.tool.impl;
 
 import com.example.chat.agent.tool.Tool;
-import com.example.chat.rag.service.VectorStoreService;
+import com.example.chat.client.RagClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,10 +14,7 @@ import java.util.Map;
 
 /**
  * 知识库搜索工具
- * 调用 VectorStoreService 进行语义检索
- *
- * 依赖 app.rag.enabled=true（VectorStoreService 仅在 RAG 启用时存在），
- * 因此本工具也要求 RAG 开启；未开启时不会被实例化。
+ * 通过 RagClient 调用 chat-llm 的 /internal/rag/search 进行语义检索
  */
 @Component
 @ConditionalOnProperty(name = "app.agent.enabled", havingValue = "true")
@@ -33,13 +30,11 @@ public class KnowledgeSearchTool implements Tool {
     @Value("${app.rag.search.top-k:5}")
     private int topK;
 
-    private final VectorStoreService vectorStoreService;
+    private final RagClient ragClient;
 
     @Autowired
-    public KnowledgeSearchTool(
-            @org.springframework.beans.factory.annotation.Autowired(required = false)
-            VectorStoreService vectorStoreService) {
-        this.vectorStoreService = vectorStoreService;
+    public KnowledgeSearchTool(RagClient ragClient) {
+        this.ragClient = ragClient;
     }
 
     @Override
@@ -62,9 +57,6 @@ public class KnowledgeSearchTool implements Tool {
 
     @Override
     public String execute(Map<String, Object> params) {
-        if (vectorStoreService == null) {
-            return "[知识库服务未启用，请设置 app.rag.enabled=true]";
-        }
         Object queryObj = params.get("query");
         if (queryObj == null || queryObj.toString().isBlank()) {
             return "[缺少参数: query]";
@@ -82,17 +74,17 @@ public class KnowledgeSearchTool implements Tool {
         }
 
         try {
-            List<VectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, topK);
+            List<RagClient.SearchResult> results = ragClient.search(kbId, query, topK);
             if (results == null || results.isEmpty()) {
                 return "[未检索到相关内容，query=" + query + "]";
             }
             StringBuilder sb = new StringBuilder();
             sb.append("检索到 ").append(results.size()).append(" 条相关内容：\n");
             for (int i = 0; i < results.size(); i++) {
-                VectorStoreService.SearchResult r = results.get(i);
+                RagClient.SearchResult r = results.get(i);
                 sb.append("--- 结果 ").append(i + 1).append(" (相似度: ")
-                  .append(String.format("%.3f", r.score)).append(", 来源: ").append(r.source).append(") ---\n");
-                sb.append(r.text).append('\n');
+                  .append(String.format("%.3f", r.score())).append(", 来源: ").append(r.source()).append(") ---\n");
+                sb.append(r.text()).append('\n');
             }
             log.info("[KnowledgeSearchTool] kb={} query=\"{}\" 命中 {}", kbId, query, results.size());
             return sb.toString().trim();

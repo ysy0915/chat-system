@@ -30,6 +30,10 @@ public class CoreClient {
     @Value("${app.core.base-url:http://127.0.0.1:9090}")
     private String coreBaseUrl;
 
+    /** chat-llm 服务地址（RAG 知识库 /api/v1/rag/* 已迁移至 chat-llm） */
+    @Value("${app.llm-service.base-url:http://127.0.0.1:9095}")
+    private String llmBaseUrl;
+
     // =========================== RAG 知识库 ===========================
 
     private org.springframework.http.HttpHeaders authHeaders(String authHeader) {
@@ -41,37 +45,37 @@ public class CoreClient {
         return h;
     }
 
-    /** GET /api/v1/rag/kb - 知识库列表 */
+    /** GET /api/v1/rag/kb - 知识库列表（chat-llm） */
     public Object listKnowledgeBases(String authHeader) {
         org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
     }
 
-    /** POST /api/v1/rag/kb - 创建知识库 */
+    /** POST /api/v1/rag/kb - 创建知识库（chat-llm） */
     public Object createKnowledgeBase(Map<String, Object> body, String authHeader) {
         org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
-        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
     }
 
-    /** DELETE /api/v1/rag/kb/{id} - 删除知识库 */
+    /** DELETE /api/v1/rag/kb/{id} - 删除知识库（chat-llm） */
     public Object deleteKnowledgeBase(Long id, String authHeader) {
         org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb/" + id, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb/" + id, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
     }
 
-    /** GET /api/v1/rag/kb/{id}/documents - 文档列表 */
+    /** GET /api/v1/rag/kb/{id}/documents - 文档列表（chat-llm） */
     public Object listDocuments(Long kbId, String authHeader) {
         org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
     }
 
-    /** DELETE /api/v1/rag/documents/{docId} - 删除文档 */
+    /** DELETE /api/v1/rag/documents/{docId} - 删除文档（chat-llm） */
     public Object deleteDocument(Long docId, String authHeader) {
         org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(coreBaseUrl + "/api/v1/rag/documents/" + docId, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/documents/" + docId, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
     }
 
-    /** POST /api/v1/rag/kb/{id}/documents - 上传文档 (multipart, param="file") */
+    /** POST /api/v1/rag/kb/{id}/documents - 上传文档 (multipart, param="file"，chat-llm) */
     public Object uploadDocument(Long kbId, MultipartFile file, String authHeader) {
         try {
             java.io.InputStream is = file.getInputStream();
@@ -90,7 +94,7 @@ public class CoreClient {
             headers.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA);
             org.springframework.http.HttpEntity<?> entity =
                     new org.springframework.http.HttpEntity<>(parts, headers);
-            return restTemplate.postForObject(coreBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", entity, Object.class);
+            return restTemplate.postForObject(llmBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", entity, Object.class);
         } catch (java.io.IOException e) {
             throw new ChatServiceException("rag", "UPLOAD_IO_ERROR", "读取文件失败: " + e.getMessage(), e);
         }

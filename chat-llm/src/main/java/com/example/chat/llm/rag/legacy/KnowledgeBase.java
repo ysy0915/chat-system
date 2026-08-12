@@ -1,4 +1,4 @@
-package com.example.chat.rag.entity;
+package com.example.chat.llm.rag.legacy;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 

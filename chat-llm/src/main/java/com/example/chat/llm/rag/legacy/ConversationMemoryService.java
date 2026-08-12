@@ -1,5 +1,6 @@
-package com.example.chat.rag.service;
+package com.example.chat.llm.rag.legacy;
 
+import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,8 +44,8 @@ public class ConversationMemoryService {
     private static final Logger log = LoggerFactory.getLogger(ConversationMemoryService.class);
 
     private StringRedisTemplate redisTemplate;
-    private EmbeddingService embeddingService;
-    private VectorStoreService vectorStoreService;
+    private LegacyEmbeddingService embeddingService;
+    private LegacyVectorStoreService vectorStoreService;
     private final ObjectMapper objectMapper;
 
     @Value("${app.rag.memory.short-term-rounds:5}")
@@ -73,12 +74,12 @@ public class ConversationMemoryService {
     }
 
     @Autowired(required = false)
-    public void setEmbeddingService(EmbeddingService embeddingService) {
+    public void setEmbeddingService(LegacyEmbeddingService embeddingService) {
         this.embeddingService = embeddingService;
     }
 
     @Autowired(required = false)
-    public void setVectorStoreService(VectorStoreService vectorStoreService) {
+    public void setVectorStoreService(LegacyVectorStoreService vectorStoreService) {
         this.vectorStoreService = vectorStoreService;
     }
 
@@ -133,8 +134,8 @@ public class ConversationMemoryService {
             List<Float> vec = new ArrayList<>();
             for (float v : vector) vec.add(v);
 
-            List<VectorStoreService.ChunkText> chunks = List.of(
-                    new VectorStoreService.ChunkText(combined, 0)
+            List<LegacyVectorStoreService.ChunkText> chunks = List.of(
+                    new LegacyVectorStoreService.ChunkText(combined, 0)
             );
             // 用固定 kbId=-1 表示记忆库，source 记录场景和时间
             String source = scene + "|" + userId + "|" + System.currentTimeMillis();
@@ -220,11 +221,11 @@ public class ConversationMemoryService {
         }
         try {
             ensureMemoryCollection();
-            List<VectorStoreService.SearchResult> results =
+            List<LegacyVectorStoreService.SearchResult> results =
                     vectorStoreService.search(-1L, query, longTermTopK);
 
             List<ConversationEntry> result = new ArrayList<>();
-            for (VectorStoreService.SearchResult r : results) {
+            for (LegacyVectorStoreService.SearchResult r : results) {
                 if (r.score < longTermThreshold) continue;
 
                 // 解析对话内容（格式: "用户: xxx\nAI: xxx"）

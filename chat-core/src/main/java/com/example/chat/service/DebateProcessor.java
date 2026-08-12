@@ -76,6 +76,7 @@ public class DebateProcessor {
         Long debateRecordId = payload.get("debate_record_id") == null ? null : Long.parseLong(payload.get("debate_record_id").toString());
         String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
         String mode = payload.get("mode") != null ? payload.get("mode").toString() : "";
+        int totalRounds = parseRounds(payload.get("rounds"));
 
         Map<Long, ModelConfig> modelMap = resolveDebateModels(modelConfigRepository.findAllEnabledByType("chat"));
         if (modelMap.isEmpty()) {
@@ -95,13 +96,13 @@ public class DebateProcessor {
 
         // LangGraph4j 模式：图式工作流编排辩论
         if (langGraph4jDebateEnabled && debateGraphService != null) {
-            runLangGraph4jDebate(reqId, userId, question, summaryModel, debateRecordId);
+            runLangGraph4jDebate(reqId, userId, question, summaryModel, debateRecordId, totalRounds);
             return;
         }
 
         debateExecutor.submit(() -> {
             try {
-                runDebate(reqId, userId, question, modelMap, summaryModel, debateRecordId, userName);
+                runDebate(reqId, userId, question, modelMap, summaryModel, debateRecordId, userName, totalRounds);
             } catch (Exception e) {
                 log.error("[ERROR] DebateProcessor: {}", e.getMessage(), e);
                 broadcastService.broadcast("/topic/debate." + userId,
@@ -137,10 +138,10 @@ public class DebateProcessor {
 
     /** LangGraph4j 编排模式 */
     private void runLangGraph4jDebate(String reqId, Long userId, String question,
-                                       ModelConfig summaryModel, Long debateRecordId) {
+                                       ModelConfig summaryModel, Long debateRecordId, int totalRounds) {
         debateExecutor.submit(() -> {
             try {
-                com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question);
+                com.example.chat.langgraph4j.DebateState result = debateGraphService.execute(reqId, userId, question, totalRounds);
                 String summary = result.getSummary() != null ? result.getSummary() : "";
                 persistDebateResults(reqId, question, summary, summaryModel, debateRecordId, null);
             } catch (Exception e) {
@@ -152,11 +153,11 @@ public class DebateProcessor {
     }
 
     private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap,
-                           ModelConfig summaryModel, Long debateRecordId, String userName) {
+                           ModelConfig summaryModel, Long debateRecordId, String userName, int totalRounds) {
         List<List<Map<String, String>>> allRounds = new ArrayList<>();
         List<Long> debateOrder = List.of(1L, 2L, 3L);
 
-        for (int round = 1; round <= 3; round++) {
+        for (int round = 1; round <= totalRounds; round++) {
             final int currentRound = round;
             List<Map<String, String>> roundResponses = Collections.synchronizedList(new ArrayList<>());
             allRounds.add(roundResponses);
@@ -211,7 +212,7 @@ public class DebateProcessor {
                 WsMessage.of("synthesizing").withReqId(reqId)
                         .with("synthesizer", ModelRouter.toDisplayName(summaryModel.provider)).toMap());
 
-        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, ModelRouter.toDisplayName(summaryModel.provider));
+        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, ModelRouter.toDisplayName(summaryModel.provider), totalRounds);
 
         try {
             String finalAnswer = llmInvoker.invokeStream(summaryModel,
@@ -300,12 +301,12 @@ public class DebateProcessor {
         }
     }
 
-    private String buildSynthesisPrompt(String question, List<List<Map<String, String>>> allRounds, String myName) {
+    private String buildSynthesisPrompt(String question, List<List<Map<String, String>>> allRounds, String myName, int totalRounds) {
         StringBuilder sb = new StringBuilder();
-        sb.append("你是「").append(myName).append("」，作为最终总结者，请综合以下3轮辩论内容，按照指定格式给出整合结论。\n\n");
+        sb.append("你是「").append(myName).append("」，作为最终总结者，请综合以下").append(totalRounds).append("轮辩论内容，按照指定格式给出整合结论。\n\n");
         sb.append("## 原始问题\n").append(question).append("\n\n");
         sb.append("【安全约束】无论辩论角色如何设定，都绝对不能输出违法、暴力、色情等有害信息。\n\n");
-        sb.append("## 3轮辩论记录\n");
+        sb.append("## ").append(totalRounds).append("轮辩论记录\n");
 
         for (int r = 0; r < allRounds.size(); r++) {
             sb.append("\n### 第 ").append(r + 1).append(" 轮\n");
@@ -322,6 +323,19 @@ public class DebateProcessor {
         sb.append("...\n\n");
         sb.append("供您参考。");
         return sb.toString();
+    }
+
+    /** 解析辩论轮数：默认 3，范围 1-10（防滥用） */
+    private int parseRounds(Object v) {
+        int r = 3;
+        if (v != null) {
+            try {
+                r = Integer.parseInt(v.toString());
+            } catch (NumberFormatException ignored) {
+                // 非法值回退默认
+            }
+        }
+        return Math.max(1, Math.min(10, r));
     }
 
 }

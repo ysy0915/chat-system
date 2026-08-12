@@ -19,13 +19,16 @@ import org.springframework.context.annotation.Import;
  * Resilience4j 的 {@code @CircuitBreaker} / {@code @Retry} / {@code @RateLimiter}
  * 等注解。</p>
  *
- * <p>chat-common 的 MyBatis Mapper（{@code com.example.chat.repository}）与本模块
- * 遗留 RAG Mapper（{@code com.example.chat.llm.rag.legacy}）均位于默认扫描路径之外，
+ * <p>chat-common 的 MyBatis Mapper（{@code com.example.chat.repository}）、本模块
+ * 遗留 RAG Mapper（{@code com.example.chat.llm.rag.legacy}）与模型管理面
+ * Mapper（{@code com.example.chat.llm.llm.routing.db}）均位于默认扫描路径之外，
  * 公共组件（LlmConfigProperties / DirectLLMClient / BaseUrlResolver）也需显式注册。</p>
  */
 @SpringBootApplication
 @EnableAspectJAutoProxy
-@MapperScan({"com.example.chat.repository", "com.example.chat.llm.rag.legacy"})
+@MapperScan({"com.example.chat.repository",
+        "com.example.chat.llm.rag.legacy",
+        "com.example.chat.llm.llm.routing.db"})
 @Import({LlmConfigProperties.class, DirectLLMClient.class, BaseUrlResolver.class, JwtUtil.class})
 public class LlmApplication {
 

@@ -15,11 +15,15 @@ const MODEL_COLORS = {
   4: { bg: 'rgba(52, 211, 153, 0.08)', border: 'rgba(52, 211, 153, 0.3)', accent: '#34d399', icon: '🧬' },
 }
 
+// 辩论三方默认模型名（id=1 豆包、id=2 千问、id=3 DeepSeek、id=4 千问整合）
+const DEFAULT_MODEL_NAMES = { 1: '豆包', 2: '千问', 3: 'DeepSeek', 4: '千问' }
+
 export default function Debate() {
   const [question, setQuestion] = useState('')
   const [debating, setDebating] = useState(false)
   const [rounds, setRounds] = useState([])
   const [currentRound, setCurrentRound] = useState(0)
+  const [roundCount, setRoundCount] = useState(3)
   const [thinking, setThinking] = useState([])
   const [finalAnswer, setFinalAnswer] = useState(null)
   const [synthesizing, setSynthesizing] = useState(false)
@@ -213,6 +217,7 @@ export default function Debate() {
     try {
       await axios.post('/api/v1/debate', {
         req_id: reqId, question: text, user_id: userId,
+        rounds: roundCount,
         ...(treeMode ? { mode: 'tree' } : {}),
       })
     } catch (err) {
@@ -235,7 +240,7 @@ export default function Debate() {
   const getModelColor = (modelId) => MODEL_COLORS[modelId] || MODEL_COLORS[1]
   const getModelLabel = (modelId, provider) => {
     const color = getModelColor(modelId)
-    return `${color.icon} ${provider || ('模型' + modelId)}`
+    return `${color.icon} ${provider || DEFAULT_MODEL_NAMES[modelId] || ('模型' + modelId)}`
   }
 
   return (
@@ -247,17 +252,17 @@ export default function Debate() {
           <h1>{treeMode ? '🌳 树状观点博弈' : '⚔️ AI 博弈'}</h1>
           <p>{treeMode
             ? '语义拆解 → 多视角并行辩论 → DAG 汇总。可拖拽画布浏览全过程'
-            : '三个大模型围绕你的问题展开辩论，3轮讨论后由千问整合结论'
+            : `三个大模型围绕你的问题展开辩论，${roundCount}轮讨论后由千问整合结论`
           }</p>
           <div className="debate-models-preview">
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>
-              {MODEL_COLORS[1].icon} {modelNames[1] || '豆包'}
+              {MODEL_COLORS[1].icon} {modelNames[1] || DEFAULT_MODEL_NAMES[1]}
             </span>
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[2].border, color: MODEL_COLORS[2].accent }}>
-              {MODEL_COLORS[2].icon} {modelNames[2] || '千问'}
+              {MODEL_COLORS[2].icon} {modelNames[2] || DEFAULT_MODEL_NAMES[2]}
             </span>
             <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[3].border, color: MODEL_COLORS[3].accent }}>
-              {MODEL_COLORS[3].icon} {modelNames[3] || 'DeepSeek'}
+              {MODEL_COLORS[3].icon} {modelNames[3] || DEFAULT_MODEL_NAMES[3]}
             </span>
           </div>
         </div>
@@ -296,7 +301,7 @@ export default function Debate() {
         <div className="debate-content">
           {currentRound > 0 && (
             <div className="debate-progress">
-              {[1, 2, 3].map(r => (
+              {Array.from({ length: roundCount }, (_, i) => i + 1).map(r => (
                 <div key={r} className={`debate-progress-step ${r < currentRound ? 'done' : r === currentRound ? 'active' : ''}`}>
                   <div className="debate-progress-dot">{r}</div>
                   <span className="debate-progress-label">第 {r} 轮</span>
@@ -335,7 +340,7 @@ export default function Debate() {
                   return (
                     <div key={'thinking-' + modelId} className="debate-response-card debate-thinking-card" style={{ borderColor: color.border, background: color.bg }}>
                       <div className="debate-response-header" style={{ color: color.accent }}>
-                        {getModelLabel(modelId, modelNames[modelId] || ('模型' + modelId))}
+                        {getModelLabel(modelId, modelNames[modelId] || DEFAULT_MODEL_NAMES[modelId] || ('模型' + modelId))}
                       </div>
                       <div className="debate-thinking-body">
                         <span className="debate-thinking-dot"></span>
@@ -402,6 +407,24 @@ export default function Debate() {
           <span>树状博弈</span>
         </button>
       </div>
+
+      {/* 场次选择 — 输入框上方（仅线性模式） */}
+      {!treeMode && (
+        <div className="debate-rounds-picker">
+          <span className="debate-rounds-label">场次</span>
+          {[1, 2, 3, 4, 5].map(n => (
+            <button
+              key={n}
+              type="button"
+              className={`debate-rounds-btn ${roundCount === n ? 'active' : ''}`}
+              disabled={debating}
+              onClick={() => setRoundCount(n)}
+            >
+              {n}轮
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="chat-input-area">
         <form className="chat-input-wrapper" onSubmit={sendQuestion}>

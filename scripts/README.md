@@ -7,13 +7,41 @@
 ### 部署相关
 | 脚本 | 说明 |
 |------|------|
-| `deploy.sh` | 一键CI/CD部署（前端+后端+重启+健康检查） |
+| `deploy.sh` | **一键自动化部署**（安装+构建+上传+重启+健康检查），支持双 core/双 web/llm 与单模块部署 |
+| `install-server.sh` | 服务器端一键安装（幂等）：JDK17/Docker/中间件(Nacos/Neo4j/Milvus)/Prometheus监控栈/.env，`--main` 安装主服务器 |
 | `restart-all.sh` | 重启全部服务 |
-| `restart-core.sh` | 重启core服务 |
-| `restart-web.sh` | 重启web服务 |
+| `restart-core.sh` | 重启core服务（支持 9090/9092/all） |
+| `restart-web.sh` | 重启web服务（双实例 8081/8082） |
 | `restart-games.sh` | 重启games服务 |
 | `restart-media.sh` | 重启media服务 |
+| `restart-llm.sh` | 重启llm服务 |
 | `restart-all-after-resize.sh` | 服务器扩容后重启全部 |
+
+### 一键部署用法（开发机执行）
+
+```bash
+# 全新上线：安装两台服务器环境 + 构建 + 上传 + 启动 + 健康检查
+bash deploy.sh install-all
+
+# 首次只装 Milvus 服务器环境（Java服务 + 中间件 + 监控栈）
+bash deploy.sh install
+# 首次只装主服务器环境（Nginx/Redis/RabbitMQ/前端目录）
+bash deploy.sh install --main   # 或 bash deploy.sh install-main
+
+# 日常全量部署（前端 + 全部后端）
+bash deploy.sh all
+
+# 仅前端
+bash deploy.sh frontend
+# 仅单个后端模块（双实例/单实例自动识别）
+bash deploy.sh core    # 9090 + 9092 双实例
+bash deploy.sh web     # 8081 + 8082 双实例
+bash deploy.sh llm     # 9095
+bash deploy.sh games   # 8083
+bash deploy.sh media   # 8084
+```
+
+> 服务器上首次安装后需编辑 `/opt/app/.env` 填写真实凭据（DB/Redis/LLM Key），再执行 `bash deploy.sh all`。
 
 ### 本地开发
 | 脚本 | 说明 |

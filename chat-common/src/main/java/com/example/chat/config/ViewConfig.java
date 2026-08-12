@@ -24,7 +24,8 @@ public class ViewConfig implements WebMvcConfigurer {
                         "/chat/assets/**",
                         "/chat/index.html",
                         "/favicon.ico",
-                        "/actuator/**"
+                        "/actuator/**",
+                        "/api/v1/llm/admin/**"
                 );
     }
 

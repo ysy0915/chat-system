@@ -401,8 +401,15 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         >✕</button>
                         <h3 className="announcement-title">📢 系统公告</h3>
                         <div className="announcement-content">
-                            <p><strong>博思AI智能体 v3.0 重磅更新！</strong></p>
-                            <p>架构全面升级，带来 9 大核心能力跃迁。</p>
+                            <p><strong>博思AI智能体 · 最近更新</strong></p>
+
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🚀 8月12日 · 高可用与监控升级</p>
+                            <p style={{ fontWeight: 700 }}>🛡️ 双实例高可用部署</p>
+                            <p>核心 AI 与接入层升级为双实例运行，请求自动分摊到多节点，单个实例故障不影响服务，聊天更稳定。</p>
+                            <p style={{ fontWeight: 700 }}>📊 全链路监控告警上线</p>
+                            <p>服务状态、内存、磁盘、接口延迟实现自动化监控，异常秒级告警并推送运维，替代人工巡检，保障服务 7×24 稳定运行。</p>
+                            <p style={{ fontWeight: 700 }}>🔁 多轮会话记忆修复</p>
+                            <p>修复了"回答完就断开"的问题，个人对话与树洞的多轮上下文现在跨实例完整共享，对话不再失忆。</p>
 
                             <p style={{ marginTop: '16px', fontWeight: 700 }}>🌳 树状辩论模式</p>
                             <p>复杂问题 LLM 自动拆解为多个视角，豆包、DeepSeek、千问三方辩论后综合汇总。前端可拖拽 DAG 画布，缩放流畅，结论逐句展示。</p>
@@ -422,16 +429,10 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                             <p style={{ fontWeight: 700 }}>⚡ 500 并发性能优化</p>
                             <p>全链路调优后，AI 模式下 500 并发 P50 从 4.3s 降至 154ms，零失败。</p>
 
-                            <p style={{ fontWeight: 700 }}>🔌 LLM Fluent Builder API</p>
-                            <p>场景化调用 + Nacos 动态配置，修改 Temperature/模型参数无需重启。</p>
-
-                            <p style={{ fontWeight: 700 }}>📡 无状态化水平扩展</p>
-                            <p>WebSocket Session 迁移 Redis，chat-web 支持多实例部署，随时扩容。</p>
-
                             <p style={{ fontWeight: 700 }}>🔧 全面修复与增强</p>
                             <p>缩放按钮响应提至毫秒级、移动端双指缩放、前端报错日志、IP 管理面板。</p>
 
-                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月11日 · 博思AI团队</p>
+                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月12日 · 博思AI团队</p>
                         </div>
                     </div>
                 </div>

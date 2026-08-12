@@ -20,6 +20,8 @@ LlmBundleClient (统一多模型调用)
     │
     ├── DirectLLMClient          →  降级 HTTP 直连 (chat-core 内)
     └── chat-llm 独立服务 (:9095)
+            ├── LLMProviderFactory (SPI) + LLMProviderStrategyFactory
+            │       按 type 查字典创建策略 (Spring 自动收集 / 动态注册 / 回退 rest)
             ├── OpenAICompatProvider →  千问 (Qwen) / DeepSeek / 豆包 (REST)
             ├── OpenAISdkProvider    →  OpenAI SDK (type: sdk)
             └── LLMProviderRegistry  →  多 Provider 注册与路由
@@ -39,6 +41,12 @@ LlmBundleClient (统一多模型调用)
 |---------|------|---------|
 | `OpenAICompatProvider` | REST (`type: rest`) | 千问 (Qwen)、DeepSeek、豆包（OpenAI 兼容端点） |
 | `OpenAISdkProvider` | SDK (`type: sdk`) | OpenAI、Azure OpenAI 等官方 SDK 支持 |
+
+**策略工厂（2026-08-12 落地，SPI 插件化）**：
+- `LLMProviderFactory`：SPI 扩展点，`type()` 与配置 `llm.providers[].type` 对应
+- `LLMProviderStrategyFactory`：组合工厂，Spring Bean 自动收集所有 `LLMProviderFactory`、支持代码动态注册、未知 `type` 回退 `rest` 不中断路由、`supportedTypes()` 供管理面展示
+- `LLMProviderRegistry.init()` 策略创建统一走 `strategyFactory.create(pc)`，不再按 `isSdk()` 硬编码分支
+- 新增厂商 = 实现 `LLMProviderFactory` + `LLMProviderStrategy` 并标注 `@Component`，零改动注册中心
 
 **OpenAI 兼容 REST 调用特点**：
 - 使用 `java.net.http.HttpClient` 直接构建 HTTP 请求
@@ -123,6 +131,19 @@ LlmBundleClient (统一多模型调用)
 - 是否需要推理能力
 - 是否需要搜索增强
 - 是否需要多模态能力
+
+### 4.3 模型自助管理面（2026-08-12）
+
+运营侧无需改 YAML 即可接入/管理模型提供商，来源模型 **YAML 兜底 + DB 覆盖**：
+
+| 组件 | 说明 |
+|------|------|
+| `LlmProviderAdminService` / `LlmRoutingRepository`（chat-llm） | DB 三表（`llm_provider_config` / `llm_provider_props` / `llm_model_config`）读写 + 注册中心同步；`ApplicationReadyEvent` 自动加载 DB 覆盖 YAML |
+| `LlmProviderAdminController` | `/api/v1/llm/admin/providers` 增删改查 + `/types`（策略工厂 `supportedTypes()`）+ `/reload` 全量重载 |
+| chat-web 代理 | `LlmAdminProxyController` 透传（前端不可直达 chat-llm） |
+| 前端「模型管理」页 | `AdminModels.jsx` 动态管理：提供商卡片、新增/编辑弹窗、模型动态行、删除、重载 |
+
+接入一个厂商的完整路径（零代码）：管理页新增提供商（类型下拉选 `rest`/`sdk`）→ 填 baseUrl + apiKey + 模型列表 → 保存即时生效。apiKey 存 `llm_provider_props`（SECRET），列表仅回脱敏值。
 
 ---
 

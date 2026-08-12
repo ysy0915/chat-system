@@ -65,6 +65,16 @@ public class DebateController {
         // 树状模式：语义拆解 → 多视角并行辩论 → DAG 汇总
         String mode = body.get("mode") != null ? body.get("mode").toString() : "";
         debatePayload.put("mode", mode);
+        // 辩论轮数：默认 3，范围 1-10（防滥用，与 chat-core 校验一致）
+        int rounds = 3;
+        if (body.get("rounds") != null) {
+            try {
+                rounds = Integer.parseInt(body.get("rounds").toString());
+            } catch (NumberFormatException ignored) {
+                // 非法值回退默认
+            }
+        }
+        debatePayload.put("rounds", Math.max(1, Math.min(10, rounds)));
         coreClient.debateStart(debatePayload);
 
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "debating"));

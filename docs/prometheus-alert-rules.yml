@@ -1,5 +1,7 @@
-# 生产环境 Prometheus 告警规则
-# 依赖：各服务需暴露 actuator 指标（chat-core/web/games/media/llm 均已在 pom 引入 micrometer）
+# 生产环境 Prometheus 告警规则（已部署于 Milvus 服务器 /opt/app/prometheus/alerts.yml）
+# 依赖：各服务暴露 /actuator/prometheus（micrometer-registry-prometheus 必须用 1.11.6，
+#       1.13.0 与 Boot 3.1.6 不兼容会导致 PrometheusMeterRegistry 初始化失败、端点 404）
+# 通知链路：Prometheus → Alertmanager :9093 → alert-webhook :9950 → 钉钉（DINGTALK_WEBHOOK）
 groups:
   - name: chat-system-availability
     rules:
@@ -11,6 +13,54 @@ groups:
         annotations:
           summary: "服务 {{ $labels.job }} 不可用"
           description: "{{ $labels.job }} ({{ $labels.instance }}) 已持续 2 分钟不可达"
+
+  - name: chat-system-resource
+    rules:
+      # 宿主机可用内存 < 8% → 真实触发过（内存治理 P0 的依据）
+      - alert: HostMemoryPressure
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.08
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "宿主机可用内存不足 8%"
+          description: "{{ $labels.instance }} 可用内存低于 8%，持续 5 分钟，请清理进程或升内存"
+
+      - alert: DiskWillFill
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "根分区磁盘剩余不足 15%"
+          description: "{{ $labels.instance }} 根分区可用空间低于 15%，持续 10 分钟"
+
+      - alert: HighJvmMemory
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 堆内存使用率过高"
+          description: "{{ $labels.job }} ({{ $labels.instance }}) 堆内存使用率超过 85%，持续 10 分钟"
+
+      - alert: HighCpu
+        expr: process_cpu_usage > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} CPU 使用率过高"
+          description: "{{ $labels.job }} ({{ $labels.instance }}) CPU 使用率超过 90%，持续 10 分钟"
+
+      - alert: HighSystemLoad
+        expr: node_load1 > 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "服务器负载过高"
+          description: "{{ $labels.instance }} 1 分钟负载超过 4，持续 10 分钟"
 
   - name: chat-system-latency
     rules:
@@ -24,35 +74,6 @@ groups:
         annotations:
           summary: "接口 {{ $labels.uri }} 高延迟"
           description: "{{ $labels.job }} 的接口 {{ $labels.uri }} P95 延迟超过 3 秒，持续 5 分钟"
-
-  - name: chat-system-resource
-    rules:
-      - alert: HighJvmMemory
-        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.85
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "{{ $labels.job }} 堆内存使用率过高"
-          description: "{{ $labels.job }} 堆内存使用率超过 85%，持续 10 分钟"
-
-      - alert: HighCpu
-        expr: process_cpu_usage > 0.9
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "{{ $labels.job }} CPU 使用率过高"
-          description: "{{ $labels.job }} CPU 使用率超过 90%，持续 10 分钟"
-
-      - alert: HighSystemLoad
-        expr: node_load1 > 4
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "服务器负载过高"
-          description: "服务器 1 分钟负载超过 4，持续 10 分钟"
 
   - name: chat-system-errors
     rules:

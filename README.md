@@ -20,15 +20,15 @@
 ```
 chat-system-project/
 ├── chat-common/       # 公共库（实体、DTO、安全、工具、拦截器）
-├── chat-core/         # 核心 AI 服务（业务编排、Agent工具、意图识别）      端口 9090
-├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081(生产)
+├── chat-core/         # 核心 AI 服务（业务编排、Agent工具、意图识别）      端口 9090(主)/9092(从)，生产双实例
+├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081+8082(生产双实例)
 ├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、知识图谱、gRPC） 端口 9095 / gRPC 9195
 ├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
 ├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
 ├── flink-log-analyzer/# 日志分析（Kafka → Flink → ES 实时流式处理）
 ├── frontend/          # 前端 SPA（React + Vite）
 ├── scripts/           # 运维脚本（部署、重启、监控、迁移）
-└── docs/              # 完整文档（5份核心文档 + SQL迁移 + Nginx配置）
+└── docs/              # 完整文档（部署运维手册 + Prometheus 生产配置 + Nginx + 排障等）
 ```
 
 ## 快速开始
@@ -95,7 +95,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 JWT 认证的私密对话，历史记录持久化，基于 LangChain4j ChatMemory
 
 ### 观点辩论场
-LangGraph4j 实现三 AI 并行辩论，结构化论点输出
+LangGraph4j 实现三 AI 并行辩论（豆包/千问/DeepSeek），场次可选（默认 3 轮，1~10），结构化论点输出
 
 ### 情绪树洞
 匿名情绪倾诉，AI 共情回复，内容安全过滤
@@ -121,7 +121,7 @@ Neo4j 实体/关系存储 + LLM 三元组抽取，**已迁移至 chat-llm**（`K
 - **错误聚合** — 按模型/错误类型统计聚合
 - **调用链追踪** — Micrometer Tracing + Brave + Zipkin 全链路追踪
 - **自愈服务** — Resilience4j 熔断 + 重试 + 超时保护
-- **监控面板** — Prometheus + Grafana (docker-compose --profile monitoring)
+- **监控面板** — 开发: Prometheus + Grafana (docker-compose --profile monitoring)；生产: Prometheus 栈已上线 Milvus 服务器（Prometheus:9094 · Alertmanager:9093 · node-exporter:9100 · 钉钉告警 webhook:9950，6 条告警规则替代手工巡检）
 - **API 文档** — Swagger UI: http://localhost:8080/swagger-ui.html (开发)
 
 ---
@@ -152,6 +152,8 @@ mvn clean install -DskipTests
 
 | 文档 | 内容 |
 |------|------|
+| [docs/架构全盘说明.md](docs/架构全盘说明.md) | **总纲**：整体架构 → 模块细节 → 核心流程 → 数据流 → 部署（一册通览） |
+| [docs/架构评估报告.md](docs/架构评估报告.md) | 整体系统评分 91/100 + 架构说明 + 风险路线图 |
 | [docs/系统架构说明.md](docs/系统架构说明.md) | 前后端架构、数据流、调用链 |
 | [docs/api-design.md](docs/api-design.md) | 全部 REST API 设计 |
 | [docs/数据库设计说明.md](docs/数据库设计说明.md) | MySQL 表结构、Redis Key、索引策略 |
@@ -205,8 +207,10 @@ mvn clean install -DskipTests
 | 测试覆盖 | 24/25 | 源文件全面覆盖，真实测试持续扩充 |
 | 测试质量 | 14/20 | ✅ 空壳测试全清理 + chat-web 全 Controller 测试（54 个）+ 前端 hooks 测试 |
 | 代码规范 | 14/15 | ✅ Checkstyle 0违规, PMD 2000+→92, CI阻断就绪 |
-| 架构设计 | 13/15 | ✅ Resilience4j 熔断/重试 + Prometheus + Zipkin 分布式追踪 |
-| 文档 | 9/10 | ✅ springdoc + @Schema 全量注解 + Swagger UI |
+| 架构设计 | 14/15 | ✅ 双 core/双 web 高可用 + stop 广播 + nodeId 防堆积 + LangGraph 混合编排 |
+| 模型抽象与通用性 | 9.5/10 | ✅ Provider 策略+SPI 策略工厂(代码落地)+注册中心+动态路由+模型自助管理面(DB 持久化+即时生效+重载)+工具/存储接口抽象+配置分层；⚠️ 仅剩工具/存储元数据化 |
+| 可观测性 | 4/5 | ✅ Prometheus 栈 6 条告警上线、指标化替代巡检；⚠️ 告警覆盖尚缺业务指标 |
+| 文档 | 9/10 | ✅ 架构全盘说明 + 评估报告 + springdoc/Swagger + 部署运维手册 |
 | CI/CD | 9/10 | ✅ GitHub Actions CI + Deploy + Security + OWASP |
 | 安全性 | 5/5 | ✅ JWT弱密钥校验 + 三层限流 + DTO校验 + 上传限制 + CORS + CSP + OWASP |
-| **综合** | **88/100** | ✅ 87→88 提升中 → 目标90 |
+| **综合** | **91/100** | ✅ 90→91（策略工厂 SPI 代码落地）→ 同日模型管理面落地（短板清零，评分维持）→ 达成目标，向 92 迈进 |

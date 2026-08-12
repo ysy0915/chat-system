@@ -434,6 +434,58 @@
     font-size: 15px;
 }
 
+/* === 场次选择（输入框上方，仅线性模式） === */
+
+.debate-rounds-picker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 10px auto 0;
+    padding: 6px 10px;
+    max-width: 320px;
+    width: 100%;
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border-glow);
+}
+
+.debate-rounds-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-right: 4px;
+    white-space: nowrap;
+}
+
+.debate-rounds-btn {
+    padding: 5px 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.25s;
+    white-space: nowrap;
+}
+
+.debate-rounds-btn:hover:not(.active):not(:disabled) {
+    color: var(--text-primary);
+    background: rgba(148, 163, 184, 0.06);
+}
+
+.debate-rounds-btn.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(99, 102, 241, 0.12));
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(56, 189, 248, 0.15);
+}
+
+.debate-rounds-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* === 树状模式：最终结论区块 (始终占位) === */
 
 .debate-tree-conclusion {

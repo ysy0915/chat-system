@@ -2,12 +2,12 @@ package com.example.chat.llm.llm.routing;
 
 import com.example.chat.llm.config.LLMConfig;
 import com.example.chat.llm.strategy.LLMProviderStrategy;
-import com.example.chat.llm.strategy.OpenAICompatProvider;
-import com.example.chat.llm.strategy.OpenAISdkProvider;
+import com.example.chat.llm.strategy.LLMProviderStrategyFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -40,27 +40,52 @@ public class LLMProviderRegistry {
 
     private final LLMConfig llmConfig;
     private final ObjectMapper mapper;
+    private final LLMProviderStrategyFactory strategyFactory;
 
-    public LLMProviderRegistry(LLMConfig llmConfig, ObjectMapper mapper) {
+    /**
+     * Spring 构造器：注入策略工厂（内含 rest/sdk 及 SPI 自定义实现）。
+     */
+    @Autowired
+    public LLMProviderRegistry(LLMConfig llmConfig, ObjectMapper mapper,
+                               LLMProviderStrategyFactory strategyFactory) {
         this.llmConfig = llmConfig;
         this.mapper = mapper;
+        this.strategyFactory = strategyFactory;
+    }
+
+    /**
+     * 便捷构造器：内置默认策略工厂（单元测试 / 非 Spring 环境）。
+     */
+    public LLMProviderRegistry(LLMConfig llmConfig, ObjectMapper mapper) {
+        this(llmConfig, mapper, new LLMProviderStrategyFactory(mapper));
     }
 
     @PostConstruct
     void init() {
+        loadFromYaml();
+    }
+
+    /**
+     * 从 YAML 配置加载提供商（启动与全量重载共用）。
+     * <p>DB 管理面在 ApplicationReadyEvent 后调用 {@link #register} 覆盖同名项。</p>
+     */
+    public void loadFromYaml() {
         for (LLMConfig.ProviderConfig pc : llmConfig.getProviders()) {
             if (pc.getApiKey() == null || pc.getApiKey().isBlank()) {
                 log.debug("[LLMRegistry] 跳过无 key 的提供商: {}", pc.getName());
                 continue;
             }
 
-            // 构建 ProviderRoute
+            // 构建 ProviderRoute（id=null 表示 YAML 来源）
             ProviderRoute provider = new ProviderRoute();
             provider.setName(pc.getName());
             provider.setBaseUrl(pc.getBaseUrl());
-            provider.setApiKey(pc.getApiKey());
+            provider.setAuthType("api_key");
             provider.setInvokeType(pc.getType());
+            provider.setApiKey(pc.getApiKey());
             provider.setEnabled(true);
+            provider.setDefault(false);
+            provider.setPriority(0);
 
             // 构建 ModelRoute 列表
             List<ModelRoute> modelRoutes = new ArrayList<>();
@@ -68,7 +93,9 @@ public class LLMProviderRegistry {
                 String modelName = pc.getModels().get(i);
                 ModelRoute mr = new ModelRoute();
                 mr.setName(modelName);
+                mr.setDisplayName(modelName);
                 mr.setModelType("chat");
+                mr.setMaxTokens(4096);
                 mr.setEnabled(true);
                 mr.setDefault(i == 0);   // 第一个为默认
                 mr.setPriority(i);
@@ -76,13 +103,8 @@ public class LLMProviderRegistry {
             }
             provider.setModels(modelRoutes);
 
-            // 根据 invoke_type 创建策略适配器
-            LLMProviderStrategy strategy;
-            if (pc.isSdk()) {
-                strategy = new OpenAISdkProvider(pc, mapper);
-            } else {
-                strategy = new OpenAICompatProvider(pc, mapper);
-            }
+            // 按 invoke_type 经策略工厂创建适配器（SPI 插件化，未知类型自动回退 rest）
+            LLMProviderStrategy strategy = strategyFactory.create(pc);
 
             routes.put(pc.getName().toLowerCase(), new RouteContext(provider, strategy));
             log.info("[LLMRegistry] 注册提供商: {} ({}) [{}] 模型数: {}",
@@ -92,6 +114,23 @@ public class LLMProviderRegistry {
         if (routes.isEmpty()) {
             log.warn("[LLMRegistry] 没有注册任何 LLM 提供商！");
         }
+    }
+
+    /**
+     * 清空全部路由（全量重载前调用）。
+     */
+    public void reset() {
+        routes.clear();
+        log.info("[LLMRegistry] 已清空全部路由，等待重载");
+    }
+
+    /**
+     * 列出所有已注册提供商（管理面展示，含 YAML 与 DB 合并后的运行时视图）。
+     */
+    public List<ProviderRoute> allProviders() {
+        return routes.values().stream()
+                .map(c -> c.provider)
+                .collect(Collectors.toList());
     }
 
     // ── 路由 ──────────────────────────────────────────────

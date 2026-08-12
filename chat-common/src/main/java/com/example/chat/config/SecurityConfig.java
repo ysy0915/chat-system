@@ -60,6 +60,8 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()                    // 错误页面（async dispatch）
                 // 管理接口（自有 X-Admin-Password 密码鉴权）
                 .requestMatchers("/api/v1/admin/**").permitAll()
+                // LLM 模型管理（写操作自有 X-Admin-Pass 密码鉴权，与监控面板同源）
+                .requestMatchers("/api/v1/llm/admin/**").permitAll()
                 // SQL 执行器（自有 SQL_EXECUTOR_PASSWORD 密码鉴权 + 登录锁定 + 危险SQL拦截）
                 .requestMatchers("/api/v1/sql/**").permitAll()
                 // 其余接口需登录

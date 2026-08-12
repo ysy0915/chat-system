@@ -60,7 +60,12 @@ public class DebateGraphService {
      * @return 辩论结果状态（含最终汇总）
      */
     public DebateState execute(String reqId, Long userId, String topic) {
-        log.info("[DebateGraph] 开始辩论 reqId={} userId={} topic={}", reqId, userId, topic);
+        return execute(reqId, userId, topic, maxRounds);
+    }
+
+    public DebateState execute(String reqId, Long userId, String topic, int rounds) {
+        int effectiveRounds = Math.max(1, Math.min(10, rounds));
+        log.info("[DebateGraph] 开始辩论 reqId={} userId={} topic={} rounds={}", reqId, userId, topic, effectiveRounds);
 
         List<ModelConfig> chatModels = modelConfigRepository.findAllEnabledByType("chat");
         ModelConfig proModel = chatModels.stream()
@@ -73,13 +78,13 @@ public class DebateGraphService {
                 .filter(m -> "qwen".equalsIgnoreCase(m.provider)).findFirst()
                 .orElseThrow(() -> new RuntimeException("需要千问模型"));
 
-        LangGraphRequest graphReq = buildGraph(reqId, userId, topic, proModel, conModel, summaryModel);
+        LangGraphRequest graphReq = buildGraph(reqId, userId, topic, proModel, conModel, summaryModel, effectiveRounds);
 
         DebateState result = new DebateState();
         result.setTopic(topic);
         result.setUserId(userId != null ? userId : 0L);
         result.setReqId(reqId != null ? reqId : "");
-        result.setMaxRounds(maxRounds);
+        result.setMaxRounds(effectiveRounds);
 
         // 事件累积
         AtomicInteger round = new AtomicInteger(0);
@@ -183,7 +188,7 @@ public class DebateGraphService {
 
     private LangGraphRequest buildGraph(String reqId, Long userId, String topic,
                                         ModelConfig proModel, ModelConfig conModel,
-                                        ModelConfig summaryModel) {
+                                        ModelConfig summaryModel, int maxRounds) {
         LangGraphRequest req = new LangGraphRequest();
         req.setProvider(conModel.provider);
         req.setModel(conModel.model);

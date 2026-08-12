@@ -1,4 +1,5 @@
 # 生产环境 Prometheus 配置（部署在 Milvus 服务器 121.40.188.98）
+# 监控栈以 --network host 容器运行：Prometheus UI :9094（9090 被主 core 占用）
 # 所有 Java 服务直接跑在宿主机，使用内网 IP 172.23.172.13 抓取
 global:
   scrape_interval: 15s
@@ -6,24 +7,30 @@ global:
 
 # 告警规则（服务宕机 / 高延迟 / 高内存 / 高错误率）
 rule_files:
-  - "/etc/prometheus/prometheus-alert-rules.yml"
+  - "/etc/prometheus/alerts.yml"
 
-# 告警通知（Alertmanager 如需通知请取消注释并配置 webhook/邮箱）
+# 告警通知（Alertmanager :9093，须加 --cluster.listen-address= 启动）
 alerting:
   alertmanagers:
     - static_configs:
         - targets: ["127.0.0.1:9093"]
 
 scrape_configs:
+  # 双 core：9090 主实例 + 9092 从实例
   - job_name: "chat-core"
     metrics_path: "/actuator/prometheus"
     static_configs:
-      - targets: ["172.23.172.13:9090"]
+      - targets:
+          - "172.23.172.13:9090"
+          - "172.23.172.13:9092"
 
+  # 双 web：8081 + 8082
   - job_name: "chat-web"
     metrics_path: "/actuator/prometheus"
     static_configs:
-      - targets: ["172.23.172.13:8081"]
+      - targets:
+          - "172.23.172.13:8081"
+          - "172.23.172.13:8082"
 
   - job_name: "chat-games"
     metrics_path: "/actuator/prometheus"
@@ -40,8 +47,28 @@ scrape_configs:
     static_configs:
       - targets: ["172.23.172.13:9095"]
 
+  # 宿主机节点指标（CPU/内存/磁盘/负载 → 内存/磁盘告警数据源）
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+
+  # 黑盒探测（可选，服务端口可达性）
+  # - job_name: "blackbox"
+  #   metrics_path: "/probe"
+  #   params:
+  #     module: [tcp_connect]
+  #   static_configs:
+  #     - targets: ["127.0.0.1:8081", "127.0.0.1:8082", "127.0.0.1:9090", "127.0.0.1:9092"]
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: __param_target
+  #     - source_labels: [__param_target]
+  #       target_label: instance
+  #     - target_label: __address__
+  #       replacement: 127.0.0.1:9115
+
   # Nginx 指标（主服务器 112.124.106.108 上的 nginx-prometheus-exporter:9113）
   # 暴露公网端口 9113 或用专线，此处示例为主服务器公网 IP
-  - job_name: "nginx"
-    static_configs:
-      - targets: ["112.124.106.108:9113"]
+  # - job_name: "nginx"
+  #   static_configs:
+  #     - targets: ["112.124.106.108:9113"]

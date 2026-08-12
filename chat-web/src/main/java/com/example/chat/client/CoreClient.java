@@ -100,6 +100,56 @@ public class CoreClient {
         }
     }
 
+    // =========================== LLM 模型管理（chat-llm） ===========================
+
+    /** GET /api/v1/llm/admin/providers - 提供商列表（chat-llm，apiKey 脱敏） */
+    public Object listLlmProviders(String authHeader) {
+        org.springframework.http.HttpEntity<?> entity =
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers",
+                org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+    }
+
+    /** GET /api/v1/llm/admin/providers/types - 支持的调用类型（chat-llm） */
+    public Object listLlmProviderTypes(String authHeader) {
+        org.springframework.http.HttpEntity<?> entity =
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/types",
+                org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+    }
+
+    /** POST /api/v1/llm/admin/providers - 新增提供商（chat-llm） */
+    public Object createLlmProvider(Map<String, Object> body, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity =
+                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers",
+                org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+    }
+
+    /** PUT /api/v1/llm/admin/providers/{id} - 更新提供商（chat-llm） */
+    public Object updateLlmProvider(Long id, Map<String, Object> body, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity =
+                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/" + id,
+                org.springframework.http.HttpMethod.PUT, entity, Object.class).getBody();
+    }
+
+    /** DELETE /api/v1/llm/admin/providers/{id} - 删除提供商（chat-llm） */
+    public Object deleteLlmProvider(Long id, String authHeader) {
+        org.springframework.http.HttpEntity<?> entity =
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/" + id,
+                org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+    }
+
+    /** POST /api/v1/llm/admin/providers/reload - 全量重载（chat-llm） */
+    public Object reloadLlmProviders(String authHeader) {
+        org.springframework.http.HttpEntity<?> entity =
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
+        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/reload",
+                org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+    }
+
     @Value("${app.core.base-urls:}")
     private String coreBaseUrlsExtra;
 

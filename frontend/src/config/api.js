@@ -45,6 +45,13 @@ export const API = {
   MEDIA_STATUS: (recordId) => `${API_BASE}/api/v1/media/status/${recordId}`,
   MEDIA_3D_ACCESS: `${API_BASE}/api/v1/media/3d-access`,
 
+  // LLM 模型管理（经 chat-web 转发到 chat-llm，写操作需管理员密码）
+  LLM_ADMIN_LOGIN: `${API_BASE}/api/v1/llm/admin/login`,
+  LLM_PROVIDERS: `${API_BASE}/api/v1/llm/admin/providers`,
+  LLM_PROVIDER_TYPES: `${API_BASE}/api/v1/llm/admin/providers/types`,
+  LLM_PROVIDER: (id) => `${API_BASE}/api/v1/llm/admin/providers/${id}`,
+  LLM_PROVIDER_RELOAD: `${API_BASE}/api/v1/llm/admin/providers/reload`,
+
   // 用户
   LOGIN: `${API_BASE}/api/v1/auth/login`,
   REGISTER: `${API_BASE}/api/v1/auth/register`,

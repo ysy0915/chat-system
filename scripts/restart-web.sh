@@ -2,6 +2,8 @@
 # chat-web 重启脚本（端口 8081/8082）
 # 用法：bash /opt/app/restart-web.sh [8081|8082|all]
 # 不传参数默认重启全部两个实例
+# 加载环境变量
+[ -f /opt/app/.env ] && set -a && . /opt/app/.env && set +a
 
 PORT=${1:-all}
 APP_JAR=/opt/app/web/chat-web-0.0.1-SNAPSHOT.jar

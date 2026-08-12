@@ -15,8 +15,6 @@ FILES=(
   chat-core/src/main/java/com/example/chat/service/ModelRouter.java
   chat-core/src/main/java/com/example/chat/service/ChatProcessor.java
   chat-core/src/main/java/com/example/chat/factory/LLMStrategyFactory.java
-  chat-core/src/main/java/com/example/chat/router/TaskClassifier.java
-  chat-core/src/main/java/com/example/chat/router/ModelRouter.java
 )
 
 for f in "${FILES[@]}"; do

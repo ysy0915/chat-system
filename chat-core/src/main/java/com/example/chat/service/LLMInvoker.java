@@ -14,15 +14,10 @@ import com.example.chat.observability.ErrorType;
 import com.example.chat.observability.SelfHealingService;
 import com.example.chat.observability.TraceContext;
 import com.example.chat.observability.TraceRecorder;
-import com.example.chat.router.ModelRouter;
-import com.example.chat.router.RoutingDecision;
-import com.example.chat.router.TaskClassifier;
-import com.example.chat.router.TaskType;
 import com.example.chat.util.BaseUrlResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -57,15 +52,6 @@ public class LLMInvoker {
 
     @Autowired(required = false)
     private TraceContext traceContext;
-
-    /** 任务分类器（可选注入，app.classifier.enabled=true 时启用） */
-    @Autowired(required = false)
-    private TaskClassifier taskClassifier;
-
-    /** 模型路由器（可选注入，app.router.enabled=true 时启用） */
-    @Autowired(required = false)
-    @Qualifier("taskTypeModelRouter")
-    private ModelRouter modelRouter;
 
     /** 熔断器 */
     @Autowired(required = false)
@@ -437,53 +423,6 @@ public class LLMInvoker {
         List<LLMMessage> messages = List.of(
                 LLMMessage.user(prompt)
         );
-        return invoke(config, messages, temperature, scene, defaultBaseUrl, defaultApiKey);
-    }
-
-    /**
-     * 动态路由调用入口
-     * 流程：
-     *   a. classifier.classify(userInput, scene) → TaskType
-     *   b. router.route(taskType, scene, preferredModelId) → ModelConfig
-     *   c. 记录路由决策日志
-     *   d. 调用原有 invoke 方法
-     *
-     * 当 app.router.enabled=false 或 app.classifier.enabled=false 时，
-     * 路由组件未注入，此时方法降级为：使用 preferredModelId 或抛出异常提示未开启动态路由。
-     *
-     * @param userInput        用户原始输入（用于任务分类）
-     * @param scene            业务场景
-     * @param preferredModelId 用户偏好模型 ID（可为 null）
-     * @param messages         消息列表
-     * @param temperature      温度
-     * @param defaultBaseUrl   默认 baseUrl
-     * @param defaultApiKey    默认 API Key
-     * @return 完整回答
-     */
-    public String invokeWithRouting(String userInput, String scene, Long preferredModelId,
-                                    List<LLMMessage> messages, double temperature,
-                                    String defaultBaseUrl, String defaultApiKey) throws Exception {
-        // 路由组件未启用：直接抛出明确异常，避免误调用
-        if (taskClassifier == null || modelRouter == null) {
-            throw new IllegalStateException("动态路由未启用，请设置 app.router.enabled=true 和 app.classifier.enabled=true");
-        }
-
-        // a. 任务分类
-        TaskType taskType = taskClassifier.classify(userInput, scene);
-
-        // b. 模型路由
-        RoutingDecision decision = modelRouter.route(taskType, scene, preferredModelId);
-        if (decision == null || decision.selectedConfig == null) {
-            throw new IllegalStateException("动态路由未找到可用模型，taskType=" + taskType);
-        }
-        ModelConfig config = decision.selectedConfig;
-
-        // c. 记录路由决策日志
-        log.info("[LLMInvoker] routing scene={} taskType={} -> model={} provider={} reason={} decision={}",
-                scene, taskType, decision.selectedModel, decision.selectedProvider,
-                decision.reason, decision.toJson());
-
-        // d. 调用原有 invoke 方法（保持兼容，沿用现有统计/链路/自愈逻辑）
         return invoke(config, messages, temperature, scene, defaultBaseUrl, defaultApiKey);
     }
 

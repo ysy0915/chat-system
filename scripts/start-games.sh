@@ -24,7 +24,6 @@ nohup java -jar "$APP_JAR" \
     --spring.data.redis.port=6379 \
     --app.module.core=false \
     --app.observability.enabled=false \
-    --app.router.enabled=false \
     --app.langchain4j.enabled=false \
     --app.langgraph4j.enabled=false \
     --app.rag.enabled=false \

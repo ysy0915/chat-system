@@ -122,17 +122,6 @@ class LLMInvokerTest {
                 anyLong(), eq(0));
     }
 
-    // ---- invokeWithRouting 降级 ----
-
-    @Test
-    void shouldThrowWhenRoutingNotEnabled() {
-        LLMInvoker noRouter = new LLMInvoker(baseUrlResolver, callRecorder, directLLMClient);
-
-        assertThrows(IllegalStateException.class, () ->
-            noRouter.invokeWithRouting("hello", "chat", null,
-                    List.of(LLMMessage.user("hello")), 0.5, DEFAULT_URL, DEFAULT_KEY));
-    }
-
     // ---- 场景透传 ----
 
     @Test

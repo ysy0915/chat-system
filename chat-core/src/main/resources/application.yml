@@ -108,8 +108,6 @@ app:
       rounds: 3
   observability:
     enabled: ${OBSERVABILITY_ENABLED:true}
-  router:
-    enabled: ${ROUTER_ENABLED:true}
   # ═══ 意图识别 — 三层漏斗架构 ═══
   #   L1 规则层：关键词 Trie / 正则 / 状态机     — 0-1ms，命中率 5-15%
   #   L2 上下文层：Embedding + Milvus 语义匹配   — 30-80ms，命中率 70-85%

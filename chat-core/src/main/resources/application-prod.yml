@@ -93,5 +93,3 @@ app:
       rounds: 3
   observability:
     enabled: true
-  router:
-    enabled: true

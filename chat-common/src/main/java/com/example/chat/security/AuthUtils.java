@@ -59,4 +59,17 @@ public final class AuthUtils {
         if (subject != null && subject.contains("@")) return subject.substring(0, subject.indexOf('@'));
         return subject;
     }
+
+    /** 从 Bearer Token 字符串中提取角色，无效或未登录返回 null */
+    public static String extractRole(String authHeader, JwtUtil jwtUtil) {
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) return null;
+        String token = authHeader.substring(BEARER_PREFIX.length());
+        try {
+            if (!jwtUtil.validateToken(token)) return null;
+            return jwtUtil.getRole(token);
+        } catch (Exception e) {
+            log.debug("[AUTH] token 角色解析失败: {}", e.getMessage());
+            return null;
+        }
+    }
 }

@@ -1,6 +1,7 @@
 package com.example.chat.llm.service;
 
 import com.example.chat.config.ThreadPoolFactory;
+import com.example.chat.storage.GraphStore;
 import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
@@ -26,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  * 知识图谱服务（编排层）—— 管理 Neo4j 连接生命周期，将具体逻辑委托给子服务。
  */
 @Service
-public class KnowledgeGraphService {
+public class KnowledgeGraphService implements GraphStore {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeGraphService.class);
 
@@ -198,5 +199,55 @@ public class KnowledgeGraphService {
 
     public boolean isImporting() {
         return importing;
+    }
+
+    // ── GraphStore SPI 适配（存储平台化：通用图操作入口） ──
+
+    @Override
+    public boolean isConnected() {
+        return enabled && neo4jDriver != null;
+    }
+
+    @Override
+    public Map<String, Object> query(String cypher) {
+        if (!isConnected() || cypher == null || cypher.isBlank()) {
+            return new java.util.HashMap<>();
+        }
+        try (Session session = neo4jDriver.session()) {
+            org.neo4j.driver.Result result = session.run(cypher);
+            List<String> columns = result.keys();
+            List<List<Object>> rows = new java.util.ArrayList<>();
+            result.stream().forEach(record -> {
+                List<Object> row = new java.util.ArrayList<>();
+                record.values().forEach(v -> row.add(v.asObject()));
+                rows.add(row);
+            });
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("columns", columns);
+            out.put("rows", rows);
+            return out;
+        } catch (Exception e) {
+            log.warn("[KnowledgeGraph] Cypher 查询失败: {}", e.getMessage());
+            return new java.util.HashMap<>();
+        }
+    }
+
+    @Override
+    public int saveTriples(String source, List<Map<String, String>> triples) {
+        if (!isConnected() || triples == null || triples.isEmpty()) {
+            return 0;
+        }
+        try {
+            graphRepositoryService.saveTriples(neo4jDriver, triples, null, source, null);
+            return triples.size();
+        } catch (Exception e) {
+            log.warn("[KnowledgeGraph] SPI saveTriples 失败: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    @Override
+    public String name() {
+        return "neo4j";
     }
 }

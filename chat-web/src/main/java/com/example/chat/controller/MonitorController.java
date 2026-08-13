@@ -1,6 +1,8 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.example.chat.entity.OnlineCountRecord;
 import com.example.chat.repository.OnlineCountRepository;
@@ -60,7 +62,7 @@ public class MonitorController {
         if (pwd != null && adminAuthUtil.checkMonitorPassword(pwd)) {
             return ResponseEntity.ok(Map.of("ok", true));
         }
-        return ResponseEntity.status(401).body(Map.of("error", "密码错误"));
+        return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "密码错误"));
     }
 
     @Operation(summary = "在线历史", description = "获取在线人数历史曲线（按小时/天，支持 1-7 天）")

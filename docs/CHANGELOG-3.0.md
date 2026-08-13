@@ -4,6 +4,37 @@
 
 ---
 
+## 〇、B 档架构重构（2026-08-13）
+
+### 1. RAG 双体系二选一 → 保留 legacy，退役新版
+
+- 新版 RAG（多数据源 `RagService` / `RAGController` / `RagGrpcService` / `rag.enabled` 开关）无任何调用方，代码全部下线
+- 删除 18 个 Java/proto 文件 + `rag:` 配置段（本地 yml + Nacos `chat-llm-prod.yml`）
+- 保留 legacy 体系（`app.rag.enabled` 控制，`rag_knowledge_bases`/`rag_documents` + Milvus + `KnowledgeController`）
+
+### 2. LLM 配置三源归一 → 新表为唯一运行时源
+
+- 旧表 `model_configs` 退役（仅存档）；运行时统一读取 `llm_provider_config` / `llm_provider_props` / `llm_model_config` / `llm_model_props`
+- `ModelConfigRepository` 全部方法改查新表，`ModelConfig` 视图语义不变（39 个消费方零改动）
+- 迁移脚本 `docs/sql/migrate_model_configs_to_llm.sql`：实时读取 `model_configs` 数据（不硬编码密钥），保持模型 id 一致（Redis 个人绑定不失效）
+- `scripts/insert_model_configs_from_env.sh` 改写入新表
+- 注意：迁移前旧 Redis 中 `personal_model:{userId}` 绑定因模型 id 一致而自动保留
+
+### 3. 废弃表清理（2026-08-13）
+
+新版 RAG 体系下线 + LLM 三源归一后，以下 5 张表零代码读写（grep 全仓无 Java 引用），已从生产 RDS 删除：
+
+| 表 | 原因 |
+|----|------|
+| `model_configs` | 三源归一退役，运行时已切 `llm_*` 新表（9 行历史数据） |
+| `llm_data_source` / `llm_data_source_props` | 新版 RAG 数据源表，代码已删（1 行残留） |
+| `llm_vector_store_config` / `llm_vector_store_props` | 新版 RAG 向量库配置表，代码已删（1+5 行残留） |
+
+- 删除前备份：`/opt/app/backup/deprecated_tables_20260813.sql`（mysqldump 全量）
+- `llm_routing_schema.sql` 已同步移除废弃表 DDL 与示例数据
+
+---
+
 ## 一、树状辩论模式
 
 全新的多维分析辩论：将复杂问题拆解为多个视角，多模型并行辩论后汇总综合结论。

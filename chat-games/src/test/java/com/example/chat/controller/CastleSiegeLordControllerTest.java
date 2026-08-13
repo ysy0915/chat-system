@@ -27,7 +27,7 @@ class CastleSiegeLordControllerTest {
     @Test
     void shouldHaveSyncLeaderboardMethod() throws Exception {
         Method method = CastleSiegeLordController.class.getDeclaredMethod("syncLeaderboard",
-                String.class, java.util.Map.class);
+                java.util.Map.class);
         assertNotNull(method, "syncLeaderboard method should exist");
     }
 

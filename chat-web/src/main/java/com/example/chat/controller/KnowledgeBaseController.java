@@ -1,6 +1,8 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -69,7 +71,7 @@ public class KnowledgeBaseController {
                                               @RequestParam("files") List<MultipartFile> files,
                                               HttpServletRequest request) {
         if (files == null || files.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "请选择文件"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "请选择文件"));
         }
         String authHeader = auth(request);
         for (MultipartFile file : files) {

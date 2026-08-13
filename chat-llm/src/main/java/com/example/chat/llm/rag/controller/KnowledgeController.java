@@ -7,6 +7,9 @@ import com.example.chat.llm.rag.legacy.KnowledgeDocument;
 import com.example.chat.llm.rag.legacy.LegacyVectorStoreService;
 import com.example.chat.llm.rag.legacy.RAGRepository;
 import com.example.chat.llm.rag.legacy.TextChunker;
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -82,15 +85,14 @@ public class KnowledgeController {
     /** 校验 token 并要求 admin 角色，返回 null 表示通过，否则返回错误响应 */
     private ResponseEntity<?> checkAdmin(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(401).body(Map.of("error", "请先登录"));
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "请先登录"));
         }
-        String token = authHeader.substring(7);
-        if (!jwtUtil.validateToken(token)) {
-            return ResponseEntity.status(401).body(Map.of("error", "登录已过期，请重新登录"));
+        String role = AuthUtils.extractRole(authHeader, jwtUtil);
+        if (role == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "登录已过期，请重新登录"));
         }
-        String role = jwtUtil.getRole(token);
         if (!"admin".equals(role)) {
-            return ResponseEntity.status(403).body(Map.of("error", "仅管理员可操作知识库"));
+            return ResponseEntity.status(403).body(ApiResponse.error(ErrorCode.FORBIDDEN, "仅管理员可操作知识库"));
         }
         return null;
     }
@@ -108,7 +110,7 @@ public class KnowledgeController {
         kb.name = body.get("name");
         kb.description = body.getOrDefault("description", "");
         if (kb.name == null || kb.name.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "name 不能为空"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "name 不能为空"));
         }
 
         ragRepository.insertKnowledgeBase(kb);
@@ -153,7 +155,7 @@ public class KnowledgeController {
         if (err != null) return err;
 
         if (file.getSize() > maxUploadSize) {
-            return ResponseEntity.badRequest().body(Map.of("error", "文件超过 " + maxUploadSize + " 字节限制"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "文件超过 " + maxUploadSize + " 字节限制"));
         }
 
         final String fileName = file.getOriginalFilename();
@@ -182,7 +184,7 @@ public class KnowledgeController {
             ));
         } catch (Exception e) {
             log.error("[RAG] 文档上传失败 kb={} error={}", kbId, e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, e.getMessage()));
         }
     }
 
@@ -254,7 +256,7 @@ public class KnowledgeController {
         int topK = body.containsKey("topK") ? ((Number) body.get("topK")).intValue() : 5;
 
         if (vectorStoreService == null) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "向量库未启用"));
+            return ResponseEntity.internalServerError().body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, "向量库未启用"));
         }
 
         List<LegacyVectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, topK);

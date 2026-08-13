@@ -1,5 +1,7 @@
 #!/bin/bash
 # chat-games 重启脚本（端口 8083）
+# 加载环境变量
+[ -f /opt/app/.env ] && set -a && . /opt/app/.env && set +a
 # 用法：bash /opt/app/restart-games.sh
 
 PORT=8083
@@ -9,24 +11,31 @@ PID_FILE=/opt/app/logs/games-8083.pid
 
 echo "[games] 重启开始 $(date)"
 
-# 杀旧进程
+# 1. 通过 PID 文件杀进程
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if kill -0 "$OLD_PID" 2>/dev/null; then
         echo "[games] 杀死旧进程 PID=$OLD_PID"
-        kill "$OLD_PID"
-        sleep 3
+        kill "$OLD_PID" 2>/dev/null
+        sleep 2
         kill -9 "$OLD_PID" 2>/dev/null
     fi
+    rm -f "$PID_FILE"
 fi
 
-# 等端口释放
-for i in $(seq 1 10); do
-    if ! ss -tlnp | grep -q ":$PORT "; then
+# 2. pkill 兜底杀所有 chat-games 进程
+pkill -9 -f 'chat-games' 2>/dev/null
+sleep 1
+
+# 3. 端口强杀：如果端口仍被占用，找到占用进程并杀掉
+for i in $(seq 1 15); do
+    PORT_PID=$(ss -tlnp | grep ":$PORT " | grep -oP 'pid=\K\d+' | head -1)
+    if [ -z "$PORT_PID" ]; then
         echo "[games] 端口 $PORT 已释放"
         break
     fi
-    echo "[games] 端口 $PORT 仍被占用，等待... ($i/10)"
+    echo "[games] 端口 $PORT 仍被 PID=$PORT_PID 占用，强制杀死 ($i/15)"
+    kill -9 "$PORT_PID" 2>/dev/null
     sleep 2
 done
 
@@ -45,19 +54,18 @@ nohup java \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/opt/app/logs/games-heap-dump \
     -XX:+ExitOnOutOfMemoryError \
+    -XX:+UseContainerSupport \
+    -Xlog:gc*:file=/opt/app/logs/gc-games.log:time,uptime,level,tags:filecount=5,filesize=10m \
+    -DLOG_PATH=/opt/app/logs \
     -jar "$APP_JAR" \
     --spring.profiles.active=prod \
     --server.port=8083 \
     --server.tomcat.threads.max=50 \
     --server.tomcat.threads.min-spare=4 \
     --spring.application.name=chat-games \
-    --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
-    --spring.cloud.nacos.discovery.ip=172.23.172.13 \
-    --spring.cloud.nacos.discovery.enabled=true \
-    --spring.data.redis.host=172.18.160.222 \
-    --spring.data.redis.port=6379 \
     --app.module.core=false \
     --app.observability.enabled=false \
+    --app.router.enabled=false \
     --app.langchain4j.enabled=false \
     --app.langgraph4j.enabled=false \
     --app.rag.enabled=false \
@@ -67,10 +75,10 @@ nohup java \
 echo $! > "$PID_FILE"
 echo "[games] 启动中 PID=$(cat $PID_FILE)"
 
-# 等待健康检查
 for i in $(seq 1 20); do
     if curl -s -m 2 -o /dev/null -w '%{http_code}' http://localhost:$PORT/actuator/health 2>/dev/null | grep -q '200'; then
         echo "[games] 启动成功 (第 ${i} 次检测) $(date)"
+        rm -f /opt/app/logs/games-degraded
         exit 0
     fi
     sleep 3

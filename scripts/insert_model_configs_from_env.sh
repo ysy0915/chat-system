@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+# ============================================================
+# [B档] LLM 配置三源归一后：环境变量 upsert 脚本改写入 llm_* 新表
+# （旧表 model_configs 已退役，不再写入）
+#
+# 用法：
+#   export DEEPSEEK_API_KEY=... QWEN_API_KEY=... DOUBAO_API_KEY=...
+#   export MYSQL_HOST=... MYSQL_USER=... MYSQL_PWD=... MYSQL_DB=test_data
+#   bash scripts/insert_model_configs_from_env.sh
+#
+# 前置：docs/sql/llm_routing_schema.sql 已执行，新表已建。
+# ============================================================
 set -euo pipefail
 
 MYSQL_HOST=${MYSQL_HOST:-127.0.0.1}
@@ -36,48 +47,61 @@ deepseek_key_enc=$(encrypt_if_needed "${DEEPSEEK_API_KEY}")
 qwen_key_enc=$(encrypt_if_needed "${QWEN_API_KEY}")
 doubao_key_enc=$(encrypt_if_needed "${DOUBAO_API_KEY}")
 
-meta_deepseek=$(printf '%s' "{\"base_url\":\"$DEEPSEEK_BASE_URL\"}")
-meta_qwen=$(printf '%s' "{\"base_url\":\"$QWEN_BASE_URL\"}")
-meta_doubao=$(printf '%s' "{\"base_url\":\"$DOUBAO_BASE_URL\"}")
-
 # escape single quotes for SQL
 escape_sql(){ printf '%s' "$1" | sed "s/'/''/g"; }
 
 ks_deepseek=$(escape_sql "$deepseek_key_enc")
 ks_qwen=$(escape_sql "$qwen_key_enc")
 ks_doubao=$(escape_sql "$doubao_key_enc")
-ms_deepseek=$(escape_sql "$meta_deepseek")
-ms_qwen=$(escape_sql "$meta_qwen")
-ms_doubao=$(escape_sql "$meta_doubao")
+bs_deepseek=$(escape_sql "$DEEPSEEK_BASE_URL")
+bs_qwen=$(escape_sql "$QWEN_BASE_URL")
+bs_doubao=$(escape_sql "$DOUBAO_BASE_URL")
 
 run_sql() {
   local sql="$1"
   mysql -h"$MYSQL_HOST" -u"$MYSQL_USER" -p"$MYSQL_PWD" "$MYSQL_DB" -e "$sql"
 }
 
-upsert_model() {
-  local provider="$1"; shift
-  local model="$1"; shift
+# upsert 提供商（uk_provider_name 幂等），返回 provider_config_id
+upsert_provider() {
+  local name="$1"; shift
+  local base_url="$1"; shift
   local keyval="$1"; shift
-  local metav="$1"; shift
-
-  # check existing
-  local exist_id
-  exist_id=$(mysql -h"$MYSQL_HOST" -u"$MYSQL_USER" -p"$MYSQL_PWD" -D"$MYSQL_DB" -N -s -e "SELECT id FROM model_configs WHERE provider='${provider}' AND model='${model}' LIMIT 1;" || true)
-  if [ -n "${exist_id}" ]; then
-    echo "Updating existing model_configs id=${exist_id} provider=${provider} model=${model}"
-    run_sql "UPDATE model_configs SET api_key_encrypted='${keyval}', meta='${metav}', priority=100, enabled=1, updated_at=NOW() WHERE id=${exist_id};"
+  local provider_id
+  provider_id=$(mysql -h"$MYSQL_HOST" -u"$MYSQL_USER" -p"$MYSQL_PWD" -D"$MYSQL_DB" -N -s -e \
+    "SELECT id FROM llm_provider_config WHERE provider_name='${name}' LIMIT 1;" || true)
+  if [ -z "${provider_id}" ]; then
+    run_sql "INSERT INTO llm_provider_config (provider_name, base_url, auth_type, invoke_type, enabled, is_default, priority, description) VALUES ('${name}','${base_url}','api_key','rest',1,0,100,'环境变量脚本 upsert');"
+    provider_id=$(mysql -h"$MYSQL_HOST" -u"$MYSQL_USER" -p"$MYSQL_PWD" -D"$MYSQL_DB" -N -s -e \
+      "SELECT id FROM llm_provider_config WHERE provider_name='${name}' LIMIT 1;")
   else
-    echo "Inserting new model_configs provider=${provider} model=${model}"
-    run_sql "INSERT INTO model_configs (provider, model, api_key_encrypted, meta, priority, enabled, created_at) VALUES ('${provider}','${model}','${keyval}','${metav}',100,1,NOW());"
+    run_sql "UPDATE llm_provider_config SET base_url='${base_url}', enabled=1, updated_at=NOW() WHERE id=${provider_id};"
   fi
+  # llm_provider_props 无唯一键：先删该提供商旧 api_key 再插，保证幂等
+  run_sql "DELETE FROM llm_provider_props WHERE provider_config_id=${provider_id} AND prop_key='api_key';"
+  run_sql "INSERT INTO llm_provider_props (provider_config_id, prop_key, prop_value, prop_type, description) VALUES (${provider_id},'api_key','${keyval}','SECRET','环境变量脚本 upsert');"
+  echo "${provider_id}"
 }
 
-upsert_model "deepseek" "deepseek-chat" "${ks_deepseek}" "${ms_deepseek}"
-upsert_model "qwen" "qwen-plus" "${ks_qwen}" "${ms_qwen}"
-upsert_model "doubao" "doubao-seed-evolving" "${ks_doubao}" "${ms_doubao}"
+# upsert 模型（uk_provider_model 幂等）
+upsert_model() {
+  local provider_id="$1"; shift
+  local model="$1"; shift
+  run_sql "INSERT INTO llm_model_config (provider_config_id, model_name, display_name, model_type, max_tokens, enabled, is_default, priority, description) VALUES (${provider_id},'${model}','${model}','chat',4096,1,0,100,'环境变量脚本 upsert') ON DUPLICATE KEY UPDATE enabled=1, priority=100, updated_at=NOW();"
+  echo "upsert model=${model} (provider_id=${provider_id})"
+}
 
-echo "Upsert completed for deepseek, qwen, doubao."
+echo "== upsert providers =="
+DP=$(upsert_provider "deepseek" "${bs_deepseek}" "${ks_deepseek}")
+QP=$(upsert_provider "qwen"     "${bs_qwen}"     "${ks_qwen}")
+BO=$(upsert_provider "doubao"   "${bs_doubao}"   "${ks_doubao}")
+
+echo "== upsert models =="
+upsert_model "${DP}" "deepseek-chat"
+upsert_model "${QP}" "qwen-plus"
+upsert_model "${BO}" "doubao-seed-evolving"
+
+echo "Upsert completed for deepseek, qwen, doubao (new llm_* tables)."
 if [ -n "${APP_MASTER_KEY:-}" ]; then
   echo "API keys encrypted with APP_MASTER_KEY before storing."
 else

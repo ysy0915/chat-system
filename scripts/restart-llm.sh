@@ -60,16 +60,6 @@ restart_one() {
         --spring.profiles.active=prod \
         --server.port=${P} \
         --grpc.server.port=${GP} \
-        --spring.application.name=chat-llm \
-        --spring.datasource.url="$DB_URL" \
-        --spring.datasource.username="$DB_USERNAME" \
-        --spring.datasource.password="$DB_PASSWORD" \
-        --spring.data.redis.host=172.18.160.222 \
-        --spring.data.redis.port=6379 \
-        --spring.cloud.nacos.discovery.enabled=true \
-        --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
-        --spring.cloud.nacos.discovery.ip=172.23.172.13 \
-        --spring.cloud.consul.enabled=false \
         > "$LOG_FILE" 2>&1 &
 
     echo $! > "$PID_FILE"

@@ -63,10 +63,8 @@ restart_one() {
         --spring.profiles.active=prod \
         --server.port=${P} \
         --spring.application.name=chat-web \
-        --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
-        --spring.cloud.nacos.discovery.ip=172.23.172.13 \
-        --spring.cloud.nacos.discovery.enabled=true \
         --app.core.base-url=http://127.0.0.1:9090 \
+        --app.core.base-urls=http://127.0.0.1:9090,http://127.0.0.1:9092 \
         > "$LOG_FILE" 2>&1 &
 
     echo $! > "$PID_FILE"

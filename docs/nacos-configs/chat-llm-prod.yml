@@ -23,11 +23,7 @@ grpc:
   server:
     port: 9195
 
-# 新版 RAG（多数据源）—— 与 app.rag 同开同关
-rag:
-  enabled: ${RAG_ENABLED:false}
-
-# RAG 新版 store 配置（覆盖 app.rag.milvus）
+# RAG store 配置（legacy 体系，与 app.rag 同开同关）
 app:
   rag:
     embedding:

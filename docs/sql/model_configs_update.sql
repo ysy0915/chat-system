@@ -2,6 +2,10 @@
 -- model_configs 表结构变更 + 数据更新 SQL
 -- 适用于: chat-system-project
 -- 说明:   添加 model_type 字段并初始化所有模型配置
+--
+-- ⚠️ [B档] 已退役：model_configs 表不再读写（仅历史存档）。
+-- 运行时统一读取 llm_provider_config / llm_model_config 等新表，
+-- 数据迁移见 migrate_model_configs_to_llm.sql，本脚本仅供查档。
 -- ============================================================
 
 -- ─── 1. 表结构变更 ────────────────────────────────────────────

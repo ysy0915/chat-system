@@ -1,5 +1,7 @@
 package com.example.chat.controller;
 
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.security.AuthUtils;
@@ -33,11 +35,11 @@ public class ProfileController {
     public ResponseEntity<?> getProfile(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         Long userId = AuthUtils.extractUserId(authHeader, jwtUtil);
         if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         }
         User user = userRepository.findById(userId);
         if (user == null) {
-            return ResponseEntity.status(404).body(Map.of("error", "用户不存在"));
+            return ResponseEntity.status(404).body(ApiResponse.error(ErrorCode.NOT_FOUND, "用户不存在"));
         }
         return ResponseEntity.ok(Map.of(
                 "id", user.id,
@@ -55,11 +57,11 @@ public class ProfileController {
                                            @RequestBody Map<String, String> body) {
         Long userId = AuthUtils.extractUserId(authHeader, jwtUtil);
         if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         }
         User user = userRepository.findById(userId);
         if (user == null) {
-            return ResponseEntity.status(404).body(Map.of("error", "用户不存在"));
+            return ResponseEntity.status(404).body(ApiResponse.error(ErrorCode.NOT_FOUND, "用户不存在"));
         }
 
         String nickname = body.get("nickname");

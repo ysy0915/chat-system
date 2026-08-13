@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 覆盖：参数校验失败、请求体解析失败、缺少必填参数、参数类型错误、权限不足、未捕获异常兜底
+ * 统一断言格式：{"ok":false,"code":<HTTP状态码>,"error":"..."}
  */
 class GlobalExceptionHandlerTest {
 
@@ -43,21 +44,25 @@ class GlobalExceptionHandlerTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertTrue(response.getBody().get("message").toString().contains("username"));
-        assertTrue(response.getBody().get("message").toString().contains("email"));
+        assertEquals(Boolean.FALSE, response.getBody().get("ok"));
+        assertEquals(400, response.getBody().get("code"));
+        assertTrue(response.getBody().get("error").toString().contains("username"));
+        assertTrue(response.getBody().get("error").toString().contains("email"));
     }
 
     @Test
-    @DisplayName("参数校验失败响应体包含 timestamp 和 status")
-    void handleValidation_responseContainsTimestamp() {
+    @DisplayName("参数校验失败响应体为标准 ok/code/error 三字段结构")
+    void handleValidation_responseHasUnifiedStructure() {
         BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "test");
         bindingResult.addError(new FieldError("test", "field", "error"));
         MethodArgumentNotValidException ex = createValidationException(bindingResult);
 
         ResponseEntity<Map<String, Object>> response = handler.handleValidation(ex);
 
-        assertNotNull(response.getBody().get("timestamp"));
-        assertEquals(400, response.getBody().get("status"));
+        assertEquals(Boolean.FALSE, response.getBody().get("ok"));
+        assertEquals(400, response.getBody().get("code"));
+        assertNotNull(response.getBody().get("error"));
+        assertEquals(3, response.getBody().size());
     }
 
     @Test
@@ -68,7 +73,7 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Map<String, Object>> response = handler.handleBadBody(ex);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("请求体格式错误", response.getBody().get("message"));
+        assertEquals("请求体格式错误", response.getBody().get("error"));
     }
 
     @Test
@@ -79,7 +84,7 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Map<String, Object>> response = handler.handleMissingParam(ex);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertTrue(response.getBody().get("message").toString().contains("userId"));
+        assertTrue(response.getBody().get("error").toString().contains("userId"));
     }
 
     @Test
@@ -91,7 +96,7 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Map<String, Object>> response = handler.handleTypeMismatch(ex);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertTrue(response.getBody().get("message").toString().contains("id"));
+        assertTrue(response.getBody().get("error").toString().contains("id"));
     }
 
     @Test
@@ -102,7 +107,7 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Map<String, Object>> response = handler.handleAccessDenied(ex);
 
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
-        assertEquals("权限不足", response.getBody().get("message"));
+        assertEquals("权限不足", response.getBody().get("error"));
     }
 
     @Test
@@ -113,22 +118,21 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Map<String, Object>> response = handler.handleGeneral(ex);
 
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals("服务器内部错误", response.getBody().get("message"));
-        assertEquals(500, response.getBody().get("status"));
+        assertEquals("服务器内部错误", response.getBody().get("error"));
+        assertEquals(500, response.getBody().get("code"));
     }
 
     @Test
-    @DisplayName("所有异常响应包含 timestamp、status、error、message 四个字段")
-    void allResponses_haveStandardStructure() {
+    @DisplayName("所有异常响应为统一 ok/code/error 三字段结构")
+    void allResponses_haveUnifiedStructure() {
         Exception ex = new RuntimeException("test");
         ResponseEntity<Map<String, Object>> response = handler.handleGeneral(ex);
 
         Map<String, Object> body = response.getBody();
-        assertNotNull(body.get("timestamp"));
-        assertNotNull(body.get("status"));
+        assertEquals(Boolean.FALSE, body.get("ok"));
+        assertEquals(500, body.get("code"));
         assertNotNull(body.get("error"));
-        assertNotNull(body.get("message"));
-        assertEquals(4, body.size());
+        assertEquals(3, body.size());
     }
 
     /**

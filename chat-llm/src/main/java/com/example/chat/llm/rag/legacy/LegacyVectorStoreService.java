@@ -1,6 +1,9 @@
 package com.example.chat.llm.rag.legacy;
 
 import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
+import com.example.chat.storage.VectorStore;
+import com.example.chat.storage.VectorStore.VectorHit;
+import com.example.chat.storage.VectorStore.VectorRecord;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.grpc.DataType;
 import io.milvus.grpc.SearchResults;
@@ -40,7 +43,7 @@ import java.util.List;
  */
 @Service
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
-public class LegacyVectorStoreService {
+public class LegacyVectorStoreService implements VectorStore {
 
     private static final Logger log = LoggerFactory.getLogger(LegacyVectorStoreService.class);
 
@@ -213,7 +216,13 @@ public class LegacyVectorStoreService {
     public List<SearchResult> search(Long knowledgeBaseId, String query, int topK) {
         String collectionName = getCollectionName(knowledgeBaseId);
         float[] queryVec = embeddingService.embed(query);
+        return searchByVector(collectionName, queryVec, topK);
+    }
 
+    /**
+     * 按向量检索（内部复用；VectorStore SPI 适配走此路径，避免重复 embedding）。
+     */
+    private List<SearchResult> searchByVector(String collectionName, float[] queryVec, int topK) {
         List<Float> vec = new ArrayList<>();
         for (float v : queryVec) vec.add(v);
 
@@ -240,10 +249,10 @@ public class LegacyVectorStoreService {
 
                 results.add(new SearchResult(text, source, docId, score.getScore()));
             }
-            log.info("[VectorStore] 检索 kb={} query=\"{}\" topK={} 命中={}", knowledgeBaseId, query, topK, results.size());
+            log.info("[VectorStore] 检索 collection={} topK={} 命中={}", collectionName, topK, results.size());
             return results;
         } catch (Exception e) {
-            log.error("[VectorStore] 检索失败 kb={} error={}", knowledgeBaseId, e.getMessage());
+            log.error("[VectorStore] 检索失败 collection={} error={}", collectionName, e.getMessage());
             return Collections.emptyList();
         }
     }
@@ -261,6 +270,73 @@ public class LegacyVectorStoreService {
         } catch (Exception e) {
             log.warn("[VectorStore] 删除 Collection 失败: {}", e.getMessage());
         }
+    }
+
+    // ── VectorStore SPI 适配（通用 collection 语义 ↔ 内部 kbId 语义） ──
+
+    @Override
+    public void ensureCollection(String collection, int dimension) {
+        if (dimension > 0 && dimension != this.dimension) {
+            log.warn("[VectorStore] SPI ensureCollection 维度 {} 与配置 {} 不一致，以配置为准",
+                    dimension, this.dimension);
+        }
+        ensureCollection(kbIdOfCollection(collection));
+    }
+
+    @Override
+    public void insert(String collection, List<VectorRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Long kbId = kbIdOfCollection(collection);
+        String source = records.get(0).source;
+        List<ChunkText> chunks = new ArrayList<>();
+        int idx = 0;
+        for (VectorRecord r : records) {
+            chunks.add(new ChunkText(r.text, idx++));
+        }
+        insertChunks(kbId, -1L, chunks, source);
+    }
+
+    @Override
+    public List<VectorHit> search(String collection, float[] queryVector, int topK) {
+        List<SearchResult> results = searchByVector(collection, queryVector, topK);
+        List<VectorHit> hits = new ArrayList<>();
+        for (SearchResult r : results) {
+            hits.add(new VectorHit(r.text, r.source, r.score));
+        }
+        return hits;
+    }
+
+    @Override
+    public void dropCollection(String collection) {
+        dropCollection(kbIdOfCollection(collection));
+    }
+
+    @Override
+    public String name() {
+        return "milvus";
+    }
+
+    /** collection 名 → kbId（与 getCollectionName 互逆；非法名回退 -1 记忆库） */
+    private Long kbIdOfCollection(String collection) {
+        if (collection == null) {
+            return -1L;
+        }
+        if ("conversation_memory".equals(collection)) {
+            return -1L;
+        }
+        if (collection.startsWith(collectionPrefix)) {
+            try {
+                return Long.parseLong(collection.substring(collectionPrefix.length()));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        try {
+            return Long.parseLong(collection);
+        } catch (NumberFormatException ignored) {
+        }
+        return -1L;
     }
 
     /** 解析 collection 名（负数 kbId 用固定名字，避免非法字符） */

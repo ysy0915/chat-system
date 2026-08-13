@@ -1,5 +1,7 @@
 package com.example.chat.internal;
 
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.entity.DebateRecord;
 import com.example.chat.repository.DebateRecordRepository;
 import com.example.chat.client.GraphClient;
@@ -108,7 +110,7 @@ public class InternalApiController {
             String reqId = (String) payload.get("req_id");
             Object userIdObj = payload.get("user_id");
             if (userIdObj == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+                return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "缺少 user_id 字段"));
             }
             Long userId = ((Number) userIdObj).longValue();
             String question = (String) payload.get("question");
@@ -116,14 +118,14 @@ public class InternalApiController {
             String mimeType = (String) payload.get("mime_type");
             Object fileDataObj = payload.get("file_data");
             if (fileDataObj == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "缺少 file_data 字段"));
+                return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "缺少 file_data 字段"));
             }
             byte[] fileBytes = Base64.getDecoder().decode((String) fileDataObj);
             chatProcessor.processWithFile(reqId, userId, question, fileName, fileBytes, mimeType);
             return ResponseEntity.ok(Map.of("status", "accepted"));
         } catch (Exception e) {
             log.error("[Internal] processWithFile error", e);
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, e.getMessage()));
         }
     }
 
@@ -133,7 +135,7 @@ public class InternalApiController {
         String reqId = (String) payload.get("req_id");
         Object userIdObj = payload.get("user_id");
         if (userIdObj == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "缺少 user_id 字段"));
         }
         Long userId = ((Number) userIdObj).longValue();
         chatProcessor.regenerate(reqId, userId);
@@ -230,7 +232,7 @@ public class InternalApiController {
     public ResponseEntity<?> treeHoleAsk(@RequestBody Map<String, Object> payload) {
         Object userIdObj = payload.get("user_id");
         if (userIdObj == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "缺少 user_id 字段"));
         }
         treeHoleService.askAndStream(
                 ((Number) userIdObj).longValue(),
@@ -245,11 +247,11 @@ public class InternalApiController {
         try {
             Object userIdObj = payload.get("user_id");
             if (userIdObj == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "缺少 user_id 字段"));
+                return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "缺少 user_id 字段"));
             }
             Object fileDataObj = payload.get("file_data");
             if (fileDataObj == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "缺少 file_data 字段"));
+                return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "缺少 file_data 字段"));
             }
             TreeHoleMessage result = treeHoleService.askWithFile(
                     ((Number) userIdObj).longValue(),
@@ -259,7 +261,7 @@ public class InternalApiController {
                     Base64.getDecoder().decode((String) fileDataObj));
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, e.getMessage()));
         }
     }
 

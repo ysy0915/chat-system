@@ -1,6 +1,8 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.User;
 import com.example.chat.service.BroadcastService;
@@ -80,17 +82,13 @@ public class MessageController {
 
         if (!rateLimitService.isAllowed(userId)) {
             long retryAfter = rateLimitService.getRemainingSeconds(userId);
-            return ResponseEntity.status(429).body(Map.of(
-                    "error", "请求过于频繁，请 " + retryAfter + " 秒后再试",
-                    "retry_after", retryAfter
-            ));
+            return ResponseEntity.status(429).body(rateLimitedResponse(retryAfter));
         }
 
         String safetyResult = contentSafetyService.detectSensitive(question);
         if (safetyResult != null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", contentSafetyService.getLabelHint(safetyResult)
-            ));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST,
+                    contentSafetyService.getLabelHint(safetyResult)));
         }
 
         User user = resolveOrCreateMessageUser(userId);
@@ -141,22 +139,18 @@ public class MessageController {
             @RequestParam("req_id") String reqId) {
 
         if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "文件不能为空"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "文件不能为空"));
         }
 
         if (!rateLimitService.isAllowed(userId)) {
             long retryAfter = rateLimitService.getRemainingSeconds(userId);
-            return ResponseEntity.status(429).body(Map.of(
-                    "error", "请求过于频繁，请 " + retryAfter + " 秒后再试",
-                    "retry_after", retryAfter
-            ));
+            return ResponseEntity.status(429).body(rateLimitedResponse(retryAfter));
         }
 
         String safetyResult = contentSafetyService.detectSensitive(question);
         if (safetyResult != null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", contentSafetyService.getLabelHint(safetyResult)
-            ));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST,
+                    contentSafetyService.getLabelHint(safetyResult)));
         }
 
         User user = resolveOrCreateMessageUser(userId);
@@ -270,10 +264,10 @@ public class MessageController {
         Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
 
         if (reqId == null || reqId.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "req_id 不能为空"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "req_id 不能为空"));
         }
         if (userId == null || userId <= 0) {
-            return ResponseEntity.badRequest().body(Map.of("error", "user_id 不能为空"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "user_id 不能为空"));
         }
 
         try {
@@ -281,7 +275,7 @@ public class MessageController {
             return ResponseEntity.accepted().body(Map.of("status", "regenerating", "old_req_id", reqId));
         } catch (Exception ex) {
             log.error("[ERROR] regenerate 失败 reqId={}: {}", reqId, ex.getMessage(), ex);
-            return ResponseEntity.status(500).body(Map.of("error", "重新生成失败: " + ex.getMessage()));
+            return ResponseEntity.status(500).body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, "重新生成失败: " + ex.getMessage()));
         }
     }
 
@@ -290,11 +284,19 @@ public class MessageController {
     public ResponseEntity<?> stop(@RequestBody Map<String, Object> body) {
         String reqId = body.get("req_id") == null ? null : String.valueOf(body.get("req_id"));
         if (reqId == null || reqId.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "req_id 不能为空"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "req_id 不能为空"));
         }
         coreClient.chatStop(reqId);
         log.info("[INFO] 收到停止请求 reqId={}", reqId);
         return ResponseEntity.ok(Map.of("status", "stopped", "req_id", reqId));
+    }
+
+    /** 429 限流响应：统一 ok/code/error + retry_after 附加字段 */
+    private Map<String, Object> rateLimitedResponse(long retryAfter) {
+        Map<String, Object> resp = new HashMap<>(ApiResponse.error(ErrorCode.RATE_LIMITED,
+                "请求过于频繁，请 " + retryAfter + " 秒后再试"));
+        resp.put("retry_after", retryAfter);
+        return resp;
     }
 
     @MessageMapping("/online.register")

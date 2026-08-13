@@ -1,5 +1,7 @@
 package com.example.chat.controller;
 
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.dto.MediaGenerateRequest;
 import com.example.chat.entity.MediaGenRecord;
 import com.example.chat.security.AuthUtils;
@@ -63,17 +65,18 @@ public class MediaGenController {
         String type = req.getType() == null || req.getType().isBlank() ? "image" : req.getType();
 
         if ("3d".equals(type) && !is3DAllowed())
-            return ResponseEntity.status(403).body(Map.of("error", "3D模型生成功能暂未开放，敬请期待"));
+            return ResponseEntity.status(403).body(ApiResponse.error(ErrorCode.FORBIDDEN, "3D模型生成功能暂未开放，敬请期待"));
 
         Long userId = getCurrentUserId();
-        if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+        if (userId == null) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
 
         // 用户级限流：媒体生成消耗费用，防止刷量
         if (!rateLimitService.isAllowed(userId)) {
             long waitSeconds = rateLimitService.getRemainingSeconds(userId);
-            return ResponseEntity.status(429).body(Map.of(
-                    "error", "操作过于频繁，请" + waitSeconds + "秒后再试",
-                    "retry_after", waitSeconds));
+            Map<String, Object> resp = new HashMap<>(ApiResponse.error(ErrorCode.RATE_LIMITED,
+                    "操作过于频繁，请" + waitSeconds + "秒后再试"));
+            resp.put("retry_after", waitSeconds);
+            return ResponseEntity.status(429).body(resp);
         }
         try {
             MediaGenResult result = mediaGenService.generate(prompt, type, userId);
@@ -83,9 +86,9 @@ public class MediaGenController {
             if (result.extra3D() != null) resp.putAll(result.extra3D());
             return ResponseEntity.ok(resp);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+            return ResponseEntity.status(500).body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", "生成失败: " + e.getMessage()));
+            return ResponseEntity.status(500).body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, "生成失败: " + e.getMessage()));
         }
     }
 
@@ -95,11 +98,11 @@ public class MediaGenController {
     @GetMapping("/status/{id}")
     public ResponseEntity<?> getStatus(@PathVariable Long id) {
         Long userId = getCurrentUserId();
-        if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+        if (userId == null) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
 
         MediaGenRecord r = mediaGenRecordRepository.findById(id);
         if (r == null || !r.userId.equals(userId))
-            return ResponseEntity.status(404).body(Map.of("error", "记录不存在"));
+            return ResponseEntity.status(404).body(ApiResponse.error(ErrorCode.NOT_FOUND, "记录不存在"));
 
         Map<String, Object> result = new HashMap<>();
         result.put("id", r.id);
@@ -126,7 +129,7 @@ public class MediaGenController {
     public ResponseEntity<?> getHistory(@RequestParam(required = false) String type,
                                         @RequestParam(defaultValue = "20") int limit) {
         Long userId = getCurrentUserId();
-        if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+        if (userId == null) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         int effectiveLimit = Math.min(limit, 100);
 
         List<MediaGenRecord> records = (type != null && !type.isBlank())

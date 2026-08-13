@@ -1,5 +1,7 @@
 package com.example.chat.controller;
 
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.security.IpRateLimitInterceptor;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,7 +48,7 @@ public class IpAdminController {
     @Operation(summary = "查看 IP 黑名单", description = "列出所有被拉黑的 IP 及其封禁原因和剩余时间")
     @GetMapping("/blacklist")
     public ResponseEntity<?> listBlacklist(@RequestHeader("X-Admin-Password") String password) {
-        if (!checkAuth(password)) return ResponseEntity.status(401).body(Map.of("error", "未授权"));
+        if (!checkAuth(password)) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未授权"));
         Set<String> keys = redis.keys("ip:blacklist:*");
         Map<String, String> result = new HashMap<>();
         if (keys != null) {
@@ -66,7 +68,7 @@ public class IpAdminController {
     public ResponseEntity<?> blacklist(@PathVariable String ip,
                                        @RequestHeader("X-Admin-Password") String password,
                                        @RequestBody(required = false) Map<String, Object> body) {
-        if (!checkAuth(password)) return ResponseEntity.status(401).body(Map.of("error", "未授权"));
+        if (!checkAuth(password)) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未授权"));
         String reason = body != null ? String.valueOf(body.getOrDefault("reason", "手动拉黑")) : "手动拉黑";
         int minutes = body != null ? (int) body.getOrDefault("minutes", 60) : 60;
         interceptor.manualBlacklist(ip, reason, Duration.ofMinutes(minutes));
@@ -78,7 +80,7 @@ public class IpAdminController {
     @DeleteMapping("/blacklist/{ip}")
     public ResponseEntity<?> unblacklist(@PathVariable String ip,
                                          @RequestHeader("X-Admin-Password") String password) {
-        if (!checkAuth(password)) return ResponseEntity.status(401).body(Map.of("error", "未授权"));
+        if (!checkAuth(password)) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未授权"));
         interceptor.unblacklist(ip);
         return ResponseEntity.ok(Map.of("ok", true, "ip", ip));
     }
@@ -88,7 +90,7 @@ public class IpAdminController {
     @GetMapping("/stats/{ip}")
     public ResponseEntity<?> ipStats(@PathVariable String ip,
                                      @RequestHeader("X-Admin-Password") String password) {
-        if (!checkAuth(password)) return ResponseEntity.status(401).body(Map.of("error", "未授权"));
+        if (!checkAuth(password)) return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未授权"));
         Map<String, Object> stats = new HashMap<>();
         stats.put("ip", ip);
         stats.put("blocked", interceptor.isIpBlocked(ip));

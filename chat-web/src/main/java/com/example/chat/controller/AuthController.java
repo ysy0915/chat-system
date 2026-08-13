@@ -1,5 +1,7 @@
 package com.example.chat.controller;
 
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
 import com.example.chat.dto.LoginRequest;
 import com.example.chat.dto.RegisterRequest;
 import com.example.chat.entity.User;
@@ -40,10 +42,10 @@ public class AuthController {
         String password = body.getPassword();
         User u = userRepository.findByName(username);
         if (u == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "用户名或密码错误"));
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "用户名或密码错误"));
         }
         if (!passwordEncoder.matches(password, u.passwordHash)) {
-            return ResponseEntity.status(401).body(Map.of("error", "用户名或密码错误"));
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "用户名或密码错误"));
         }
         String token = jwtUtil.generateToken(u.email, u.id, u.role);
         return ResponseEntity.ok(Map.of("access_token", token, "user", Map.of(
@@ -60,7 +62,7 @@ public class AuthController {
                 ? trimmedUsername : payload.getNickname().trim();
 
         if (userRepository.findByName(trimmedUsername) != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "用户名已被占用"));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "用户名已被占用"));
         }
 
         User user = new User();

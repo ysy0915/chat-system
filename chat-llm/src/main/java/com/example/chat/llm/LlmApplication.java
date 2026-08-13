@@ -3,6 +3,7 @@ package com.example.chat.llm;
 import com.example.chat.config.GlobalExceptionHandler;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.security.JwtUtil;
+import com.example.chat.storage.StorageRegistry;
 import com.example.chat.service.DirectLLMClient;
 import com.example.chat.util.BaseUrlResolver;
 import org.mybatis.spring.annotation.MapperScan;
@@ -31,7 +32,7 @@ import org.springframework.context.annotation.Import;
         "com.example.chat.llm.rag.legacy",
         "com.example.chat.llm.llm.routing.db"})
 @Import({LlmConfigProperties.class, DirectLLMClient.class, BaseUrlResolver.class, JwtUtil.class,
-        GlobalExceptionHandler.class})
+        GlobalExceptionHandler.class, StorageRegistry.class})
 public class LlmApplication {
 
     public static void main(String[] args) {

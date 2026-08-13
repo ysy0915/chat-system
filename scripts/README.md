@@ -74,4 +74,4 @@ bash deploy.sh media   # 8084
 ### 数据初始化
 | 脚本 | 说明 |
 |------|------|
-| `insert_model_configs_from_env.sh` | 从环境变量导入模型配置 |
+| `insert_model_configs_from_env.sh` | 从环境变量导入模型配置（写入 `llm_*` 新表，旧表 `model_configs` 已删除） |

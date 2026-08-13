@@ -37,6 +37,12 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
+        <!-- AOP（业务指标切面 CoreBusinessMetricsAspect，横切埋点零侵入业务类） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <!-- Apache POI for Excel/PPT parsing（FileContentExtractor） -->
         <dependency>
             <groupId>org.apache.poi</groupId>

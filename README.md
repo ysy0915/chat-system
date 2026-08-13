@@ -131,7 +131,7 @@ Neo4j 实体/关系存储 + LLM 三元组抽取，**已迁移至 chat-llm**（`K
 - **错误聚合** — 按模型/错误类型统计聚合
 - **调用链追踪** — Micrometer Tracing + Brave + Zipkin 全链路追踪
 - **自愈服务** — Resilience4j 熔断 + 重试 + 超时保护
-- **监控面板** — 开发: Prometheus + Grafana (docker-compose --profile monitoring)；生产: Prometheus 栈已上线 Milvus 服务器（Prometheus:9094 · Alertmanager:9093 · node-exporter:9100 · 钉钉告警 webhook:9950，6 条告警规则替代手工巡检）
+- **监控面板** — 开发: Prometheus + Grafana (docker-compose --profile monitoring)；生产: Prometheus 栈已上线 Milvus 服务器（Prometheus:9094 · Alertmanager:9093 · node-exporter:9100 · 钉钉告警 webhook:9950，12 条告警规则：系统 8（宕机/内存/磁盘/JVM/CPU/负载/延迟/错误率）+ 业务 4（漏斗命中率/工作流降级率/收敛失败/LLM token 激增）替代手工巡检）；业务指标由 **AOP 切面横切采集**（`CoreBusinessMetricsAspect`：意图漏斗/工作流指标，业务类零侵入）
 - **API 文档** — Swagger UI: http://localhost:8080/swagger-ui.html (开发)
 
 ---
@@ -142,13 +142,13 @@ Neo4j 实体/关系存储 + LLM 三元组抽取，**已迁移至 chat-llm**（`K
 # 全量测试 (Mockito 5.14.2 + ByteBuddy 1.15.11, 兼容 JDK 26)
 mvn clean test
 
-# 单模块
-mvn test -pl chat-common  # ✅ 51 个测试类（35 个空壳/废弃测试已清理）
-mvn test -pl chat-core
-mvn test -pl chat-web   # ✅ 54 个测试（12 个 Controller 全覆盖）
-mvn test -pl chat-media
-mvn test -pl chat-games
-mvn test -pl chat-llm
+# 单模块（全量 715 用例全绿，2026-08-13 实测）
+mvn test -pl chat-common  # ✅ 272 个测试（45 个测试类全绿）
+mvn test -pl chat-core    # ✅ 212 个测试
+mvn test -pl chat-web     # ✅ 87 个测试（W8 反射/弱测试清零后全绿）
+mvn test -pl chat-media   # ✅ 26 个测试（W7 反射清零后全绿）
+mvn test -pl chat-games   # ✅ 44 个测试（W7 反射清零后全绿）
+mvn test -pl chat-llm     # ✅ 74 个测试
 
 # 跳过测试构建
 mvn clean install -DskipTests
@@ -166,7 +166,8 @@ mvn clean install -DskipTests
 |------|------|
 | [架构全盘说明.md](docs/01-架构设计/架构全盘说明.md) | **总纲**：整体架构 → 模块细节 → 核心流程 → 数据流 → 部署（一册通览） |
 | [架构设计说明.md](docs/01-架构设计/架构设计说明.md) | LLM 调用架构、无状态化设计、多实例部署 |
-| [架构评估报告.md](docs/01-架构设计/架构评估报告.md) | 整体系统评分 94/100（纯软件 95/100）+ 架构说明 + 风险路线图 |
+| [架构评估报告.md](docs/01-架构设计/架构评估报告.md) | 整体系统评分 97/100（纯软件 98/100）+ 架构说明 + 风险路线图 |
+| [ADR-架构决策记录.md](docs/01-架构设计/ADR-架构决策记录.md) | **架构决策记录（ADR）**：22 条关键决策的背景·决策·后果 |
 | [系统架构说明.md](docs/01-架构设计/系统架构说明.md) | 前后端架构、数据流、调用链 |
 | [LLM策略与路由说明.md](docs/01-架构设计/LLM策略与路由说明.md) | LLM 策略、路由、容错、已知问题 |
 
@@ -234,12 +235,12 @@ mvn clean install -DskipTests
 | 维度 | 得分 | 说明 |
 |------|:--:|------|
 | 测试覆盖 | 24/25 | 源文件全面覆盖，真实测试持续扩充 |
-| 测试质量 | 16/20 | ✅ 空壳测试全清理 + chat-web 全 Controller 测试（54 个）+ 前端 hooks 测试 + 2026-08-13 测试质量专项（Repository 空壳清零 → Mapper 契约测试 32 例 + 6 个弱测试升级真实业务断言 36 例） |
+| 测试质量 | 17/20 | ✅ 空壳测试全清理 + chat-web 全 Controller 测试（87 个全绿）+ 前端 hooks 测试 + 2026-08-13 测试质量专项（Mapper 契约测试 32 例 + 弱测试升级真实断言）+ W7 games/media 反射清零（70 例）+ W8 chat-web 反射/弱测试清零（66 例） |
 | 代码规范 | 14/15 | ✅ Checkstyle 0违规, PMD 2000+→92, CI阻断就绪, 跨模块重复代码下沉 |
 | 架构设计 | 14.5/15 | ✅ 双 core/双 web 高可用 + stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流（Reconciler ZSet 索引 + Worker DLX 死信重试） |
 | 模型抽象与通用性 | 10/10 | ✅ Provider 策略+SPI 策略工厂+注册中心+动态路由+模型自助管理面+工具平台化+存储 SPI 热插拔+配置分层（2026-08-13 扣分清零） |
-| 可观测性 | 4/5 | ✅ Prometheus 栈 6 条告警上线、指标化替代巡检；⚠️ 告警覆盖尚缺业务指标 |
-| 文档 | 9/10 | ✅ 架构全盘说明 + 评估报告 + springdoc/Swagger + 部署运维手册；⚠️ 缺 ADR |
+| 可观测性 | 5/5 | ✅ Prometheus 栈告警上线、指标化替代巡检 + **2026-08-13 业务级指标落地**（意图漏斗/工作流入 Prometheus，4 条业务告警）+ **同日切面化**（`CoreBusinessMetricsAspect` AOP 横切埋点，业务类零侵入，chat-core 212 例全绿） |
+| 文档 | 10/10 | ✅ 架构全盘说明 + 评估报告 + springdoc/Swagger + 部署运维手册 + **ADR 架构决策记录（22 条）** |
 | CI/CD | 9/10 | ✅ GitHub Actions CI + Deploy + Security + OWASP |
 | 安全性 | 5/5 | ✅ JWT弱密钥校验 + 三层限流 + DTO校验 + 上传限制 + CORS + CSP + OWASP |
-| **综合** | **94/100** | ✅ 90→91（策略工厂 SPI 落地）→ 92（Multi-Agent 可靠性闭环）→ 93（工具平台化 + 存储 SPI）→ 94（测试质量专项）；纯软件口径 **95/100**（排除可扩容的硬件指标） |
+| **综合** | **97/100** | ✅ 90→91（策略工厂 SPI 落地）→ 92（Multi-Agent 可靠性闭环）→ 93（工具平台化 + 存储 SPI）→ 94（测试质量专项）→ 95（@SpringBootTest 集成测试落地 10 例全绿）→ **W7/W8 games/media/chat-web 反射测试清零（全量 700 用例全绿），评分维持 95** → 96（ADR 架构决策记录补齐 21 条）→ **97（业务级指标 + 4 条业务告警落地，可观测性 4 → 5）→ 同日切面化（AOP 横切埋点替代手写埋点，业务类零侵入，chat-core 212 例全绿）**；纯软件口径 **98/100**（排除可扩容的硬件指标） |

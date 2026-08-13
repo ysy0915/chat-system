@@ -440,16 +440,26 @@ WebSocket消息类型：
 
   各服务 /actuator/prometheus（micrometer 1.11.6）
     → Prometheus :9094（host网络容器）
-    → 6条告警规则 → Alertmanager :9093
+    → 12条告警规则 → Alertmanager :9093
     → alert-webhook.py :9950 → 钉钉
 
 告警规则覆盖：
+  系统级（8条）：
   - ServiceDown：服务宕机
   - HostMemoryPressure：可用内存<8%
   - DiskWillFill：磁盘<15%将满
   - JvmHeapHigh：JVM堆>85%
   - HighCpu / HighLoad
   - 延迟/5xx异常
+  业务级（4条，2026-08-13 上线，数据源由 AOP 切面采集）：
+  - IntentFunnelHitRateLow：意图漏斗 L1+L2 命中率<85%
+  - AgentWorkflowDegradeHigh：并行工作流降级率>50%
+  - AgentWorkflowConvergeFail：收敛失败
+  - LLMTokenSurge：LLM token 激增（成本异常）
+
+业务指标采集方式：chat-core 的 `CoreBusinessMetricsAspect`（AOP 切面，
+spring-boot-starter-aop）从返回值/异常横切埋点（@Around 三个切点），
+`IntentFunnelEngine` / `AgentWorkflowOrchestrator` 业务类零侵入。
 
 10.2 指标化巡检替代手工
 ------------------------

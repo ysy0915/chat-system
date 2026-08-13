@@ -87,3 +87,50 @@ groups:
         annotations:
           summary: "{{ $labels.job }} 5xx 错误率过高"
           description: "{{ $labels.job }} 5xx 错误率超过 5%，持续 5 分钟"
+
+  # ── 业务级指标（2026-08-13 上线，补齐告警覆盖的业务维度）──
+  # 数据源：chat-core 双实例（9090/9092）的 core.intent.funnel.* / core.agent.workflow.*
+  #         （CoreBusinessMetrics，经 chat-common 传递依赖 micrometer 1.11.6 无需新依赖）
+  #         chat-llm（9095）的 llm.invoke.tokens（LlmMetrics 既有埋点）
+  # 阈值均为初始值，按实际流量基线调整。
+  - name: chat-system-business
+    rules:
+      - alert: IntentFunnelHitRateLow
+        expr: |
+          sum(rate(core_intent_funnel_hits_total{layer=~"L1|L2"}[15m])) by (instance)
+            / sum(rate(core_intent_funnel_hits_total[15m])) by (instance) < 0.85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "意图漏斗 L1+L2 综合命中率过低"
+          description: "{{ $labels.instance }} L1+L2 综合命中率低于 85%（目标 ≥95%），持续 15 分钟，多为语义理解退化、规则失效或语料漂移"
+
+      - alert: AgentWorkflowDegradeHigh
+        expr: |
+          sum(rate(core_agent_workflow_started_total{status="degraded"}[15m])) by (instance)
+            / sum(rate(core_agent_workflow_started_total[15m])) by (instance) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multi-Agent 工作流降级率过高"
+          description: "{{ $labels.instance }} 并行工作流降级（并发过载/计划失败）占比超过 50%，持续 15 分钟，请检查 max-concurrent 与 TaskPlanner 计划成功率"
+
+      - alert: AgentWorkflowConvergeFail
+        expr: sum(rate(core_agent_workflow_converged_total{status="failed"}[10m])) by (instance) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multi-Agent 收敛失败"
+          description: "{{ $labels.instance }} 出现工作流收敛失败，持续 10 分钟，请查看 core 日志 [MultiAgent] 收敛失败"
+
+      - alert: LLMTokenSurge
+        expr: sum(rate(llm_invoke_tokens_total{type="completion"}[5m])) by (model) > 5000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "模型 {{ $labels.model }} 输出 token 激增"
+          description: "{{ $labels.model }} completion token 速率超过 5000/s，持续 10 分钟，请检查是否存在异常重试/超长输出循环（LLM 成本异常信号）"

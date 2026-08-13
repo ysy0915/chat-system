@@ -1,45 +1,57 @@
 package com.example.chat.controller;
 
+import com.example.chat.service.CastleSiegeBattlefieldService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.lang.reflect.Method;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
 
 /**
- * CastleSiegeBattlefieldController 类存在性和结构验证测试。
+ * CastleSiegeBattlefieldController 真实行为断言：
+ * MessageMapping 三个入口正确转发到 service。
  */
+@ExtendWith(MockitoExtension.class)
 class CastleSiegeBattlefieldControllerTest {
 
-    @Test
-    void shouldHaveClass() {
-        Class<?> clazz = CastleSiegeBattlefieldController.class;
-        assertNotNull(clazz, "CastleSiegeBattlefieldController should exist");
+    @Mock
+    private CastleSiegeBattlefieldService battlefieldService;
+
+    private CastleSiegeBattlefieldController controller;
+
+    @BeforeEach
+    void setUp() {
+        controller = new CastleSiegeBattlefieldController(battlefieldService);
     }
 
     @Test
-    void shouldHaveJoinMethod() throws Exception {
-        Method method = CastleSiegeBattlefieldController.class.getDeclaredMethod("join", String.class, java.util.Map.class);
-        assertNotNull(method, "join method should exist");
+    void join_forwardsToService() {
+        Map<String, Object> payload = Map.of("playerKey", "user:1");
+
+        controller.join("s1", payload);
+
+        verify(battlefieldService).join("s1", payload);
     }
 
     @Test
-    void shouldHaveUpdateMethod() throws Exception {
-        Method method = CastleSiegeBattlefieldController.class.getDeclaredMethod("update", String.class, java.util.Map.class);
-        assertNotNull(method, "update method should exist");
+    void update_forwardsToService() {
+        Map<String, Object> payload = Map.of("playerKey", "user:1", "x", 5);
+
+        controller.update("s1", payload);
+
+        verify(battlefieldService).update("s1", payload);
     }
 
     @Test
-    void shouldHaveLeaveMethod() throws Exception {
-        Method method = CastleSiegeBattlefieldController.class.getDeclaredMethod("leave", String.class, java.util.Map.class);
-        assertNotNull(method, "leave method should exist");
-    }
+    void leave_forwardsToService() {
+        Map<String, Object> payload = Map.of("playerKey", "user:1");
 
-    @Test
-    void shouldHaveRestControllerAnnotation() {
-        assertTrue(CastleSiegeBattlefieldController.class.isAnnotationPresent(
-                        org.springframework.web.bind.annotation.RestController.class),
-                "Should have @RestController annotation");
+        controller.leave("s1", payload);
+
+        verify(battlefieldService).leave("s1", payload);
     }
 }

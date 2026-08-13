@@ -357,6 +357,8 @@ public class AgentWorkflowOrchestrator {
                 }
             } catch (Exception ignored) {
             }
+            // 包装重抛给 CoreBusinessMetricsAspect 统一记录 failed 指标（切面捕获后不重抛，对外语义不变）
+            throw new RuntimeException(e);
         } finally {
             // 释放全局限流许可（成功/失败/meta缺失均释放），Redis 原子计数保证不泄漏
             releasePermit(planId);

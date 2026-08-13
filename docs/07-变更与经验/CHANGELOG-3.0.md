@@ -708,3 +708,112 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 - 单测通过：`RateLimitServiceTest` / `IpRateLimitInterceptorTest` / `ApiResponseTest` / `ChatProcessorTest` / `ToolDispatcherTest`
 - 生产验证：login 接口返回新版错误体 `{"error":"参数错误...","code":400,"ok":false}`；4 个 jar 内嵌 chat-common 均确认新版
 - **部署教训**：`mvn ... | tail` 管道会掩盖 Maven 真实退出码，全量构建后需按 jar mtime 校验每个模块是否真正重新打包（本次 chat-web 曾漏打包，上传旧 jar 导致异常格式未生效）
+
+---
+
+## 二十、测试质量专项：chat-web 反射/弱测试清零（W8，2026-08-13）
+
+> 测试质量专项 W5/W6/W7/W8 收官：chat-web 残留的"类存在验证 / 反射（getMethod / Class.forName / assertNotNull(X.class)）/ 仅构造"弱测试全部升级为真实行为断言（AAA 模式 + Mockito 5.14.2）。
+
+### 变更内容
+
+| 项 | 内容 |
+|----|------|
+| 重写测试类 | **11 个** → **66 例**真实行为断言：RestTemplateConfig（超时字段 + MDC TraceId 透传）5 / CoreClient（init 去重·故障转移·base64 payload·stop 广播 9090+9092）6 / AttachmentController（落库字段）2 / AuthController（登录注册全流程）6 / DebateController（敏感词 400·rounds 钳制 1-10·mode 透传）4 / IpAdminController（鉴权·黑名单解析·拉黑解封）6 / MessageController（429+retry_after·敏感词·新用户自动创建·ai_answer 透传·regenerate/stop 守卫·在线人数聚合）9 / ProfileController（mockStatic AuthUtils）5 / MonitorController（密码登录·online-history 聚合·llm-stats 解析·traces 降级·快照落库）9 / KnowledgeBaseController（Authorization 透传·空文件 400·多文件上传·deleteDocument 3 参签名）7 / TreeHoleController（mockStatic 守卫）7 |
+| 删除 | 废弃空类 `ModelConfigController`（0 字节全注释）+ 仅 InjectMocks 的 `ModelConfigControllerTest`（本次收尾补删残留空文件） |
+| 结果 | chat-web 全量 **87 例全绿**；全仓 **700 例全绿**（chat-common 272 / chat-core 197 / chat-web 87 / chat-llm 74 / chat-games 44 / chat-media 26） |
+
+### 关键坑记录（W8 新增）
+
+1. **Spring 6.0.x 无超时 getter**：`SimpleClientHttpRequestFactory` 无 `getConnectTimeout()/getReadTimeout()` → 用 `ReflectionTestUtils.getField(factory, "connectTimeout")` 读私有 int 字段；且设置拦截器后 requestFactory 被包装为 `InterceptingClientHttpRequestFactory`，需再解包一层 `getField(requestFactory, "requestFactory")`
+2. **`Map.of` 不允许 null 值**：mock `insert` 未回填主键 → 响应体 `Map.of` 抛 NPE → 用 `thenAnswer` 回填 id/token（`generateToken` 必须 stub）
+3. **Mockito strict stubbing**：`lenient()` 用于 setUp 共享 stub；verify/when 混用原始值与匹配器触发 `InvalidUseOfMatchers` → 全参 `eq()`/`any()`
+4. **mockStatic 对 null 实参匹配边界**：`AuthUtils.extractUserId(null)` 期望 401 实际 404 → 401 用例改用非空无效 token；拉黑用例验证方向用 `never()`（此前误验证"被调用"）
+5. **`KnowledgeBaseController.deleteDocument` 实为 3 参签名** `(kbId, docId, request)`；`ModelConfigControllerTest` 残留 0 字节空文件需物理删除
+6. **lint 提示清理**：`ClientHttpResponse` 未用 try-with-resources（改为 try-with-resources + mock 实例）、响应体 `Map.get` 可能 NPE（补 `assertNotNull` + 局部变量提取）
+
+### 验证
+
+- `mvn test` 全模块 **BUILD SUCCESS**（700 例全绿）；`mvn -pl chat-media -am test-compile` 编译通过（IDE 索引误报 `Cannot resolve method 'any'` 经编译证伪）
+- 全库正则扫描确认无 `Class.forName` / `getMethod` 反射残留
+- 文档同步：`测试规范.md` / `架构评估报告.md` / 本 CHANGELOG / 根 `README.md`（87 例 + 700 例全绿）
+
+## 二十一、可观测性补强：业务级指标 + 4 条业务告警（2026-08-13）
+
+> 补齐告警覆盖的业务维度：此前 Prometheus 告警以系统层为主（服务宕机/JVM/CPU/负载/磁盘/内存/延迟/错误率），业务运行质量无指标可查、无告警可依。本次为 chat-core 新增业务级指标收集器，上线 4 条业务告警。
+
+### 变更内容
+
+| 项 | 内容 |
+|----|------|
+| 新增类 | `chat-core/.../observability/CoreBusinessMetrics.java`（`MeterBinder` 注入 `MeterRegistry`；经 chat-common 传递依赖 micrometer-registry-prometheus 1.11.6，**无需新增 Maven 依赖**，模式与 chat-llm `LlmMetrics` 一致） |
+| 意图漏斗指标 | `core.intent.funnel.hits`（tag: layer=L1/L2/L3/FALLBACK）+ `core.intent.funnel.latency`（Timer）→ `IntentFunnelEngine.recognize` 四个返回分支埋点，L1+L2 综合命中率可计算 |
+| Multi-Agent 工作流指标 | `core.agent.workflow.started`（tag: status=parallel/degraded）+ `core.agent.workflow.converged`（tag: status=success/failed）→ `AgentWorkflowOrchestrator.tryParallelWorkflow`（finally 统一记录 parallel/degraded，覆盖并发过载降级路径）与 `converge`（success/failed）埋点 |
+| 业务告警 | `docs/prometheus-alert-rules.yml` 新增 `chat-system-business` 组 4 条：IntentFunnelHitRateLow（漏斗 L1+L2 命中率 <85%）/ AgentWorkflowDegradeHigh（降级率 >50%）/ AgentWorkflowConvergeFail（收敛失败） / LLMTokenSurge（LLM 侧数据源为 chat-llm 既有 `llm.invoke.tokens`） |
+| 测试 | `CoreBusinessMetricsTest` 6 例（SimpleMeterRegistry 真实断言：分层计数/耗时/降级/收敛/null 回退 unknown/未 bindTo 安全空操作）→ chat-core 197 → **203 例全绿** |
+| 评分影响 | 架构评估报告可观测性 **4/5 → 5/5**，综合 **96 → 97**、纯软件 **97 → 98**（README / docs README / 部署运维手册同步） |
+
+### 指标清单（Prometheus 名称）
+
+```
+core_intent_funnel_hits_total{layer=...}          意图漏斗各层命中/回退计数
+core_intent_funnel_latency_seconds{layer=...}     漏斗识别耗时
+core_agent_workflow_started_total{status=...}     工作流启动（parallel=成功接管 / degraded=并发过载/计划失败降级）
+core_agent_workflow_converged_total{status=...}   工作流收敛（success / failed）
+llm_invoke_tokens_total{type=...}                 LLM token 消耗（chat-llm 既有，LLMTokenSurge 数据源）
+```
+
+### 关键设计
+
+1. **无新依赖**：chat-core 经 chat-common 传递获得 micrometer（1.11.6 与 Boot 3.1.6 匹配，勿升级 1.13.0 否则 `/actuator/prometheus` 404）
+2. **安全降级**：`@Autowired(required = false)` + registry 判空，单测/无 Prometheus 环境空操作不抛异常
+3. **双实例一致**：core 双实例（9090/9092）各自上报，Prometheus 抓取后按 instance 聚合，漏斗命中率/降级率按实例计算
+4. **指标名即文档**：`CoreBusinessMetrics` 类注释内嵌全部度量维度与对应告警，避免指标漂移
+
+### 部署
+
+1. `mvn clean install -DskipTests`（chat-core 含新指标类）
+2. 上传 jar 并重启 core 双实例（`restart-core.sh all`）
+3. 上传 `docs/prometheus-alert-rules.yml` → `/opt/app/prometheus/alerts.yml`，`curl -X POST http://127.0.0.1:9094/-/reload`
+4. 验证：`curl -s http://127.0.0.1:9090/actuator/prometheus | grep -E 'core_(intent|agent)'`
+
+### 验证
+
+- `mvn -pl chat-core test`：**203 例全绿**（含新增 `CoreBusinessMetricsTest` 6 例，197 + 6）
+- `mvn -pl chat-core -am test-compile` 编译通过（IDE 对 `recordMetrics` 的 "Cannot resolve" 报错为索引陈旧误报，与 W8 的 `Cannot resolve method 'any'` 同类，经 Maven 编译证伪）
+- 文档同步：`架构评估报告.md`（可观测性 4→5、综合 96→97、纯软件 97→98）/ 根 `README.md` / `docs/README.md` / `部署运维手册.md`（告警 8 → 12 条：系统 8 + 业务 4）
+
+## 二十二、业务指标采集切面化：手写埋点 → AOP 横切（2026-08-13）
+
+> 二十一节的业务指标采集为手写埋点（业务类内直接调用 `CoreBusinessMetrics`）。指标采集本质是横切关注点，手写埋点让 `IntentFunnelEngine` / `AgentWorkflowOrchestrator` 掺杂埋点逻辑，业务与监控耦合。本次用 Spring AOP 抽离为切面，业务类零侵入。
+
+### 变更内容
+
+| 项 | 内容 |
+|----|------|
+| 新增依赖 | `chat-core/pom.xml` 新增 `spring-boot-starter-aop`（Spring AOP，无需版本号） |
+| 新增类 | `chat-core/.../observability/CoreBusinessMetricsAspect.java`（`@Aspect @Component`，3 个 `@Around` 切点，复用 `CoreBusinessMetrics` 指标 API） |
+| 切点 1 | `IntentFunnelEngine.recognize` → `core.intent.funnel.hits/latency`：从返回值 `FunnelRecognizeResult.source()` 映射 L1/L2/L3/FALLBACK |
+| 切点 2 | `AgentWorkflowOrchestrator.tryParallelWorkflow` → `core.agent.workflow.started`：boolean 返回值映射 parallel/degraded |
+| 切点 3 | `AgentWorkflowOrchestrator.converge` → `core.agent.workflow.converged`：正常返回记 success / 异常记 failed |
+| 回退手写埋点 | `IntentFunnelEngine` 移除 `CoreBusinessMetrics` 字段/import/`recordMetrics()` 及 4 处调用；`AgentWorkflowOrchestrator` 移除 4 处手写埋点 → 业务类零侵入 |
+| 异常语义重构 | `converge` 原 catch 吞异常（`@Around` 捕获不到）→ catch 内 `throw new RuntimeException(e)` 抛给切面，切面捕获后记 `failed` 不重抛（对外语义不变，异常类型变为 RuntimeException） |
+| 测试 | `CoreBusinessMetricsAspectTest` 9 例（Mockito + ProceedingJoinPoint）→ chat-core **212 例全绿**（197 存量 + 6 metrics + 9 aspect） |
+
+### 关键设计
+
+1. **代理生效前提**：3 个切点均为跨类调用（ChatProcessor / SubTaskResultCollector / WorkflowReconciler 触发），Spring AOP 代理全部生效，无同类自调用绕代理问题
+2. **指标名与告警不变**：`CoreBusinessMetrics` API 未改动，Prometheus 指标名与 4 条业务告警规则零影响
+3. **采集逻辑收敛**：埋点增减/监控目标变更只改切面一处，业务类不再感知可观测性
+
+### 部署与验证
+
+1. `mvn -pl chat-core -am package -DskipTests` → `scp` jar → `bash /opt/app/restart-core.sh all`
+2. 造业务请求后 `curl -s http://127.0.0.1:9090/actuator/prometheus | grep core_intent`
+3. 实测：`core_intent_funnel_hits_total{layer="L1"} 1.0`（"帮我查一下今天的天气" 命中 RULES → L1，切面映射正确）
+
+### 验证
+
+- `mvn -pl chat-core test`：**212 例全绿**（197 + 6 + 9）
+- 生产实测：切面版 jar 部署 core 双实例（9090/9092）后，首次业务流量触发 `core_intent_funnel_hits_total`（指标懒注册），layer 映射正确；双实例 health 200
+- 文档同步：`架构评估报告.md` / 根 `README.md` / `部署运维手册.md` / `ADR-架构决策记录.md`（ADR-022）/ 本 CHANGELOG

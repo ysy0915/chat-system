@@ -182,8 +182,9 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 
 ## 12 可观测性与监控
 - 关键指标：MQ backlog、消费者延时、Redis 命中率、模型调用失败率、每用户 QPS
+- 落地（2026-08-13）：业务级指标（意图漏斗命中/耗时、Multi-Agent 工作流启动/收敛）由 `CoreBusinessMetricsAspect` AOP 切面横切采集入 Prometheus（`core.intent.funnel.*` / `core.agent.workflow.*`），业务类零侵入
 - 日志：结构化（JSON），trace_id 贯穿 REST->MQ->consumer->provider
-- 报警：MQ backlog 长、Redis 内存高、错误率上升
+- 报警：MQ backlog 长、Redis 内存高、错误率上升 + 4 条业务告警（漏斗命中率/工作流降级率/收敛失败/LLM token 激增）
 
 ## 13 容错与运维策略
 - 消费者实现重试与死信队列(DLQ)

@@ -28,7 +28,7 @@ nohup java \
     --server.port=${PORT} \
     --spring.application.name=chat-web \
     --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
-    --spring.cloud.nacos.discovery.ip=172.23.172.13 \
+    --spring.cloud.nacos.discovery.ip=your-intra-ip \
     --spring.cloud.nacos.discovery.enabled=true \
     --app.core.base-url=http://127.0.0.1:9090 \
     > "$LOG_FILE" 2>&1 &

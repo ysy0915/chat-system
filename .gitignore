@@ -4,6 +4,19 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+### Sensitive / local ###
+# 历史备份（含旧生产配置明文密码），开源时不得提交
+backup/
+# 本地敏感配置副本（真实 AK/SK/密码），仅存于工作区，禁止入库
+docs/nacos-configs/.env
+
+### Node ###
+node_modules/
+frontend/node_modules/
+
+### Runtime logs ###
+app.log
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml

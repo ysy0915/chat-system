@@ -69,11 +69,11 @@ Checkout → Build (frontend + maven) → Upload artifacts
     │
     ▼
 Deploy Job:
-    ├─ frontend: scp dist/ → 112.124.106.108:/opt/app/static/chat/
-    ├─ core:     scp jar  → 121.40.188.98:/opt/app/core/ → restart-core.sh → health :9090
-    ├─ web:      scp jar  → 121.40.188.98:/opt/app/web/  → restart-web.sh  → health :8081
-    ├─ games:    scp jar  → 121.40.188.98:/opt/app/games/ → restart-games.sh
-    ├─ media:    scp jar  → 121.40.188.98:/opt/app/media/ → restart-media.sh
+    ├─ frontend: scp dist/ → your-nginx-ip:/opt/app/static/chat/
+    ├─ core:     scp jar  → your-milvus-ip:/opt/app/core/ → restart-core.sh → health :9090
+    ├─ web:      scp jar  → your-milvus-ip:/opt/app/web/  → restart-web.sh  → health :8081
+    ├─ games:    scp jar  → your-milvus-ip:/opt/app/games/ → restart-games.sh
+    ├─ media:    scp jar  → your-milvus-ip:/opt/app/media/ → restart-media.sh
     └─ 汇总报告
 ```
 
@@ -102,18 +102,18 @@ Deploy Job:
 
 | Secret 名 | 值 | 用途 |
 |-----------|-----|------|
-| `MAIN_HOST` | `112.124.106.108` | 主服务器 (Nginx) IP |
+| `MAIN_HOST` | `your-nginx-ip` | 主服务器 (Nginx) IP |
 | `MAIN_SSH_KEY` | `~/.ssh/主服务器私钥内容` | 前端部署 SSH 认证 |
 | `MAIN_KNOWN_HOSTS` | `ssh-keyscan 输出` | 主服务器 host key |
-| `MILVUS_HOST` | `121.40.188.98` | Milvus 服务器 IP |
+| `MILVUS_HOST` | `your-milvus-ip` | Milvus 服务器 IP |
 | `MILVUS_SSH_KEY` | `~/.ssh/Milvus服务器私钥内容` | 后端部署 SSH 认证 |
 | `MILVUS_KNOWN_HOSTS` | `ssh-keyscan 输出` | Milvus 服务器 host key |
 
 **配置方法**:
 ```bash
 # 获取 known_hosts
-ssh-keyscan -H 112.124.106.108 >> known_hosts_main
-ssh-keyscan -H 121.40.188.98 >> known_hosts_milvus
+ssh-keyscan -H your-nginx-ip >> known_hosts_main
+ssh-keyscan -H your-milvus-ip >> known_hosts_milvus
 
 # 在 GitHub → Settings → Secrets and variables → Actions → New repository secret
 ```
@@ -140,13 +140,13 @@ ssh-keyscan -H 121.40.188.98 >> known_hosts_milvus
 
 ```bash
 # 1. 找到上一个版本的 jar（服务器上有备份）
-ssh -i "Milvus.pem" root@121.40.188.98 "ls -lt /opt/app/core/*.jar.bak /opt/app/web/*.jar.bak /opt/app/llm/*.jar.bak"
+ssh -i "Milvus.pem" root@your-milvus-ip "ls -lt /opt/app/core/*.jar.bak /opt/app/web/*.jar.bak /opt/app/llm/*.jar.bak"
 
 # 2. 恢复 backup（以 chat-llm 为例）
-ssh -i "Milvus.pem" root@121.40.188.98 "cp /opt/app/llm/chat-llm-{prev}.jar.bak /opt/app/llm/chat-llm-0.0.1-SNAPSHOT.jar"
+ssh -i "Milvus.pem" root@your-milvus-ip "cp /opt/app/llm/chat-llm-{prev}.jar.bak /opt/app/llm/chat-llm-0.0.1-SNAPSHOT.jar"
 
 # 3. 重启
-ssh -i "Milvus.pem" root@121.40.188.98 "bash /opt/app/restart-llm.sh"
+ssh -i "Milvus.pem" root@your-milvus-ip "bash /opt/app/restart-llm.sh"
 ```
 
 ### 5.3 建议改进

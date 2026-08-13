@@ -3,7 +3,7 @@
 sed -i '/location \/api\/v1\/games\//i\
         # 游戏 WebSocket → Milvus 服务器\
         location /ws/games {\
-            proxy_pass http://172.23.172.13:8083/ws/chat;\
+            proxy_pass http://your-intra-ip:8083/ws/chat;\
             proxy_set_header Host $host;\
             proxy_set_header X-Real-IP $remote_addr;\
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\

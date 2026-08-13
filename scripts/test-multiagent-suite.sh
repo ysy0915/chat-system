@@ -44,7 +44,7 @@ assert_core_log() {
 db_check() {
   local req_id="$1" expect_status="$2" max_len="${3:-}"
   local row
-  row=$(mysql -h rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com -uyangsy -p'YangSy@0915!' test_data \
+  row=$(mysql -h your-rds-host -uYOUR_DB_USER -p'YOUR_DB_PASSWORD' test_data \
         -N -e "SELECT status,CHAR_LENGTH(answer_json) FROM messages WHERE req_id='${req_id}'" 2>/dev/null)
   if [ -z "$row" ]; then echo "NOT_FOUND"; return 1; fi
   local st len
@@ -87,7 +87,7 @@ wait_for_db() {
   local req_id="$1" timeout="${2:-120}" slept=0
   while [ $slept -lt $timeout ]; do
     local st
-    st=$(mysql -h rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com -uyangsy -p'YangSy@0915!' test_data \
+    st=$(mysql -h your-rds-host -uYOUR_DB_USER -p'YOUR_DB_PASSWORD' test_data \
          -N -e "SELECT status FROM messages WHERE req_id='${req_id}'" 2>/dev/null)
     if [ "$st" = "done" ]; then return 0; fi
     sleep 5; slept=$((slept+5))

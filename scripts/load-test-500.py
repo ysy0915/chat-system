@@ -9,7 +9,7 @@
   python scripts/load-test-500.py [--host=<host>] [--users=<N>] [--ai] [--rampup=<seconds>]
 
 选项:
-  --host     目标地址 (默认: http://112.124.106.108)
+  --host     目标地址 (默认: http://your-nginx-ip)
   --users    并发用户数 (默认: 500)
   --ai       是否触发 AI 回答 (默认: 仅插入消息, ai_answer=false)
   --rampup   爬坡时间秒数 (默认: 30, 用户逐步上线)
@@ -43,7 +43,7 @@ except ImportError:
 
 @dataclass
 class Config:
-    host: str = "http://112.124.106.108"
+    host: str = "http://your-nginx-ip"
     user_count: int = 500
     ai_answer: bool = False       # 是否触发 AI 回答
     rampup_seconds: float = 30.0   # 爬坡时间
@@ -318,7 +318,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--host", default="http://112.124.106.108", help="目标地址")
+    parser.add_argument("--host", default="http://your-nginx-ip", help="目标地址")
     parser.add_argument("--users", type=int, default=500, help="并发用户数")
     parser.add_argument("--ai", action="store_true", help="触发 AI 回答")
     parser.add_argument("--light", action="store_true", help="纯 HTTP 模式")

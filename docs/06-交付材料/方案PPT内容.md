@@ -285,6 +285,6 @@ Agent 决策 → 调用 ToolDispatcher → 执行工具 → 观察结果 → LLM
 **博思AI智能体**
 让 AI 不止于回答，更懂得辩论、推理与共情。
 
-- 在线体验：https://ai.yangsy.online
+- 在线体验：https://ai.your-domain.com
 - GitHub：https://github.com/ysy0915/chat-system
 - 联系：杨思义 · 博思AI团队

@@ -7,8 +7,8 @@
 
 MILVUS_PEM="/Users/apple/Downloads/Milvus.pem"
 MAIN_PEM="/Users/apple/Downloads/我的密钥.pem"
-MILVUS_SERVER="root@121.40.188.98"
-MAIN_SERVER="root@112.124.106.108"
+MILVUS_SERVER="root@your-milvus-ip"
+MAIN_SERVER="root@your-nginx-ip"
 LOG_FILE="/opt/app/logs/sre-monitor.log"
 ALERT_FILE="/opt/app/logs/sre-alerts.log"
 
@@ -77,7 +77,7 @@ check_memory() {
     if [ $PCT -gt 90 ]; then
         alert "Milvus服务器内存使用率 ${PCT}% (${USED}M/${TOTAL}M)，可能OOM"
         # 半自动降级建议：games 是低优先级服务，停掉可释放 ~536MB
-        alert "💡【降级建议】高峰/内存告警可执行: ssh -i Milvus.pem root@121.40.188.98 \"bash /opt/app/stop-games.sh\"（释放约 536MB，恢复: restart-games.sh）"
+        alert "💡【降级建议】高峰/内存告警可执行: ssh -i Milvus.pem root@your-milvus-ip \"bash /opt/app/stop-games.sh\"（释放约 536MB，恢复: restart-games.sh）"
     elif [ $PCT -gt 80 ]; then
         log "内存使用率 ${PCT}%，偏高"
     fi

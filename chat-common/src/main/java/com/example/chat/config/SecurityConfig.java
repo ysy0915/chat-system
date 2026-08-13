@@ -83,9 +83,9 @@ public class SecurityConfig {
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:*",
                 "http://127.0.0.1:*",
-                "http://112.124.106.108:*",           // 生产环境主服务器
-                "http://*.yangsy.online",
-                "https://*.yangsy.online"
+                "http://your-nginx-ip:*",           // 生产环境主服务器
+                "http://*.your-domain.com",
+                "https://*.your-domain.com"
         ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));

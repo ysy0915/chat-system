@@ -1,6 +1,6 @@
-# 生产环境 Prometheus 配置（部署在 Milvus 服务器 121.40.188.98）
+# 生产环境 Prometheus 配置（部署在 Milvus 服务器 your-milvus-ip）
 # 监控栈以 --network host 容器运行：Prometheus UI :9094（9090 被主 core 占用）
-# 所有 Java 服务直接跑在宿主机，使用内网 IP 172.23.172.13 抓取
+# 所有 Java 服务直接跑在宿主机，使用内网 IP your-intra-ip 抓取
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -21,31 +21,31 @@ scrape_configs:
     metrics_path: "/actuator/prometheus"
     static_configs:
       - targets:
-          - "172.23.172.13:9090"
-          - "172.23.172.13:9092"
+          - "your-intra-ip:9090"
+          - "your-intra-ip:9092"
 
   # 双 web：8081 + 8082
   - job_name: "chat-web"
     metrics_path: "/actuator/prometheus"
     static_configs:
       - targets:
-          - "172.23.172.13:8081"
-          - "172.23.172.13:8082"
+          - "your-intra-ip:8081"
+          - "your-intra-ip:8082"
 
   - job_name: "chat-games"
     metrics_path: "/actuator/prometheus"
     static_configs:
-      - targets: ["172.23.172.13:8083"]
+      - targets: ["your-intra-ip:8083"]
 
   - job_name: "chat-media"
     metrics_path: "/actuator/prometheus"
     static_configs:
-      - targets: ["172.23.172.13:8084"]
+      - targets: ["your-intra-ip:8084"]
 
   - job_name: "chat-llm"
     metrics_path: "/actuator/prometheus"
     static_configs:
-      - targets: ["172.23.172.13:9095"]
+      - targets: ["your-intra-ip:9095"]
 
   # 宿主机节点指标（CPU/内存/磁盘/负载 → 内存/磁盘告警数据源）
   - job_name: "node-exporter"
@@ -67,8 +67,8 @@ scrape_configs:
   #     - target_label: __address__
   #       replacement: 127.0.0.1:9115
 
-  # Nginx 指标（主服务器 112.124.106.108 上的 nginx-prometheus-exporter:9113）
+  # Nginx 指标（主服务器 your-nginx-ip 上的 nginx-prometheus-exporter:9113）
   # 暴露公网端口 9113 或用专线，此处示例为主服务器公网 IP
   # - job_name: "nginx"
   #   static_configs:
-  #     - targets: ["112.124.106.108:9113"]
+  #     - targets: ["your-nginx-ip:9113"]

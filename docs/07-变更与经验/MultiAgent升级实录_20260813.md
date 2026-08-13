@@ -121,7 +121,7 @@ RabbitMQ 消息有持久化，重启后能重新投递；但**收敛这一步**�
 ## 七、踩坑记录（当晚真实教训）
 
 1. **Semaphore 跨实例错配**：9092 释放 9090 的许可，计数异常 → 换 Redis Lua 原子计数，从根上消除。
-2. **服务器上没有 redis-cli**：Redis 实际跑在主服务器（112.124.106.108，`/usr/local/redis/bin/redis-cli`，6379 无密码），不是 Milvus 服务器；`-a` 反而报 AUTH 错。
+2. **服务器上没有 redis-cli**：Redis 实际跑在主服务器（your-nginx-ip，`/usr/local/redis/bin/redis-cli`，6379 无密码），不是 Milvus 服务器；`-a` 反而报 AUTH 错。
 3. **Nacos 公网 8848 被防火墙挡**：需在 Milvus 服务器本机 `curl http://127.0.0.1:8848`；且 **group 是 `CHAT` 不是 `DEFAULT_GROUP`**。
 4. **UA 黑名单拦 curl**：测试需伪造浏览器 UA + 随机 X-Forwarded-For（否则 403 / 单 IP 限流）。
 5. **收敛日志没有 req_id**：`收敛完成`只含 planId，测试要先经 req_id 反查 planId 再匹配。

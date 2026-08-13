@@ -1,4 +1,4 @@
-# 生产环境 Alertmanager 配置（Milvus 服务器 121.40.188.98）
+# 生产环境 Alertmanager 配置（Milvus 服务器 your-milvus-ip）
 # 容器启动参数必须带 --cluster.listen-address= 禁用集群端口，否则会抢占 9094
 route:
   group_by: ["alertname", "job", "instance"]

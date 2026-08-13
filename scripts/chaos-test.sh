@@ -7,8 +7,8 @@
 
 MILVUS_PEM="/Users/apple/Downloads/Milvus.pem"
 MAIN_PEM="/Users/apple/Downloads/我的密钥.pem"
-MILVUS_SERVER="root@121.40.188.98"
-MAIN_SERVER="root@112.124.106.108"
+MILVUS_SERVER="root@your-milvus-ip"
+MAIN_SERVER="root@your-nginx-ip"
 
 red()    { echo -e "\033[31m[CHAOS] $1\033[0m"; }
 green()  { echo -e "\033[32m[ OK ]  $1\033[0m"; }

@@ -28,9 +28,9 @@ scrape_configs:
     static_configs:
       - targets: ["chat-llm:9095"]
 
-  # 生产环境 Nginx 反向代理指标（主服务器 112.124.106.108）
+  # 生产环境 Nginx 反向代理指标（主服务器 your-nginx-ip）
   # 需在主服务器安装 nginx-prometheus-exporter：docker run -d -p 9113:9113 \
   #   nginx/nginx-prometheus-exporter:1.1.0 -nginx.scrape-uri=http://127.0.0.1:8080/stub_status
   - job_name: "nginx"
     static_configs:
-      - targets: ["172.23.172.13:9113"]
+      - targets: ["your-intra-ip:9113"]

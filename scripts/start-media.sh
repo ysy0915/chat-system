@@ -18,9 +18,9 @@ nohup java -jar "$APP_JAR" \
     --server.port=8084 \
     --spring.application.name=chat-media \
     --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
-    --spring.cloud.nacos.discovery.ip=172.23.172.13 \
+    --spring.cloud.nacos.discovery.ip=your-intra-ip \
     --spring.cloud.nacos.discovery.enabled=true \
-    --spring.data.redis.host=172.18.160.222 \
+    --spring.data.redis.host=your-intra-ip-3 \
     --spring.data.redis.port=6379 \
     --app.module.core=false \
     --app.observability.enabled=false \

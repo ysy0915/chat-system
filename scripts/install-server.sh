@@ -18,7 +18,7 @@ set -euo pipefail
 MODE="${1:-milvus}"
 ENV_FILE="/opt/app/.env"
 APP="/opt/app"
-INTERNAL_IP="172.23.172.13"   # Milvus 服务器内网 IP（Nginx upstream 用）
+INTERNAL_IP="your-intra-ip"   # Milvus 服务器内网 IP（Nginx upstream 用）
 
 # ---------------- 输出函数 ----------------
 log()  { echo -e "\033[32m[INSTALL] $1\033[0m"; }
@@ -104,7 +104,7 @@ ensure_env() {
 # MySQL（阿里云 RDS）
 DB_USERNAME=changeme
 DB_PASSWORD=changeme
-DB_URL=jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+DB_URL=jdbc:mysql://your-rds-host:3306/test_data?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
 
 # Redis
 REDIS_HOST=127.0.0.1
@@ -419,10 +419,10 @@ main() {
 
     log "===== 安装完成 ====="
     if [ "$MODE" = "--main" ]; then
-        info "下一步：开发机执行  scp -r -i 密钥 frontend/dist/* root@112.124.106.108:/opt/app/static/chat/"
+        info "下一步：开发机执行  scp -r -i 密钥 frontend/dist/* root@your-nginx-ip:/opt/app/static/chat/"
     else
         info "下一步：编辑 /opt/app/.env 填写真实凭据，然后开发机执行 bash scripts/deploy.sh all"
-        info "监控台：http://121.40.188.98:9094  |  Nacos: http://121.40.188.98:8848/nacos/ (nacos/nacos)"
+        info "监控台：http://your-milvus-ip:9094  |  Nacos: http://your-milvus-ip:8848/nacos/ (nacos/nacos)"
     fi
 }
 

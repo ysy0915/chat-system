@@ -20,7 +20,7 @@ sudo apt-get install k6
 k6 run stress-test/k6-http-test.js
 
 # 指定目标服务器
-k6 run -e BASE_URL=http://112.124.106.108:8081 stress-test/k6-http-test.js
+k6 run -e BASE_URL=http://your-nginx-ip:8081 stress-test/k6-http-test.js
 ```
 
 ### 2. WebSocket 压测

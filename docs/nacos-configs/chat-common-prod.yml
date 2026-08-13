@@ -3,9 +3,9 @@
 
 spring:
   datasource:
-    url: jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-    username: yangsy
-    password: ${DB_PASSWORD:YangSy@0915!}
+    url: jdbc:mysql://your-rds-host:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:your_db_user}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10
@@ -16,16 +16,16 @@ spring:
 
   data:
     redis:
-      host: 172.18.160.222
+      host: your-intra-ip-3
       port: 6379
       database: 0
       timeout: 5000ms
 
   rabbitmq:
-    host: 112.124.106.108
+    host: your-nginx-ip
     port: 5672
     username: chatapp
-    password: ${MQ_PASSWORD:chatapp2024}
+    password: ${MQ_PASSWORD:}
     virtual-host: /
     connection-timeout: 5000ms
     requested-heartbeat: 10s
@@ -58,7 +58,7 @@ mybatis:
     map-underscore-to-camel-case: true
 
 jwt:
-  secret: ${JWT_SECRET:k8Xp2mQ7vR3nF9wL5tY1bJ6cH4dA0eG8iS2uW7xZ}
+  secret: ${JWT_SECRET:change-me-to-a-random-256-bit-string}
   expiration: 3600000
 
 # Actuator + Prometheus
@@ -85,7 +85,7 @@ app:
     enabled: ${RAG_ENABLED:false}
     milvus:
       enabled: ${MILVUS_ENABLED:true}
-      host: ${MILVUS_HOST:172.23.172.14}
+      host: ${MILVUS_HOST:your-intra-ip-2}
       port: 19530
       collection-prefix: kb_
     embedding:
@@ -144,8 +144,8 @@ oss:
   internal-endpoint: https://oss-cn-shanghai-internal.aliyuncs.com
   access-key-id: ${OSS_ACCESS_KEY_ID:}
   access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
-  bucket-name: aichat-0915
-  public-domain: https://aichat-0915.oss-cn-shanghai.aliyuncs.com
+  bucket-name: your-bucket-name
+  public-domain: https://your-bucket-name.oss-cn-shanghai.aliyuncs.com
 
 # SQL执行器
 sql-executor:

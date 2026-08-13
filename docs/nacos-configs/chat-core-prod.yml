@@ -22,7 +22,7 @@ spring:
     uri: bolt://127.0.0.1:7687
     authentication:
       username: neo4j
-      password: ${NEO4J_PASSWORD:neo4j123456}
+      password: ${NEO4J_PASSWORD:}
 
 app:
   module:

@@ -3,5 +3,5 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:172.23.172.13:8848}
+        server-addr: ${NACOS_ADDR:your-intra-ip:8848}
         ip: ${NACOS_IP:}

@@ -5,21 +5,21 @@
 set -u
 M_KEY="/Users/apple/Downloads/我的密钥.pem"
 L_KEY="/Users/apple/Downloads/Milvus.pem"
-MAIN="root@112.124.106.108"
-MILVUS="root@121.40.188.98"
+MAIN="root@your-nginx-ip"
+MILVUS="root@your-milvus-ip"
 CONF="/etc/nginx/nginx.conf"
 TARGET=${1:-all}
 
 drain() {
     local P=$1
     echo "=== [web-$P] 摘除 Nginx 节点(down) ==="
-    ssh -i "$M_KEY" "$MAIN" "sed -i 's|server 172.23.172.13:$P max_fails=2 fail_timeout=5s;|server 172.23.172.13:$P max_fails=2 fail_timeout=5s down;|' $CONF && nginx -t && nginx -s reload"
+    ssh -i "$M_KEY" "$MAIN" "sed -i 's|server your-intra-ip:$P max_fails=2 fail_timeout=5s;|server your-intra-ip:$P max_fails=2 fail_timeout=5s down;|' $CONF && nginx -t && nginx -s reload"
     sleep 5
 }
 restore() {
     local P=$1
     echo "=== [web-$P] 加回 Nginx 节点 ==="
-    ssh -i "$M_KEY" "$MAIN" "sed -i 's|server 172.23.172.13:$P max_fails=2 fail_timeout=5s down;|server 172.23.172.13:$P max_fails=2 fail_timeout=5s;|' $CONF && nginx -t && nginx -s reload"
+    ssh -i "$M_KEY" "$MAIN" "sed -i 's|server your-intra-ip:$P max_fails=2 fail_timeout=5s down;|server your-intra-ip:$P max_fails=2 fail_timeout=5s;|' $CONF && nginx -t && nginx -s reload"
 }
 graceful_stop() {
     local P=$1

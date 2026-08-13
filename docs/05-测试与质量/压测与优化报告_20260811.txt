@@ -43,7 +43,7 @@ chat-system-project 是一套多模块微服务实时聊天 AI 系统，核心�
   │ Nginx    │ ────────────── │ chat-web │ ─────────── │ chat-core│
   │ 主入口   │                │ 接入层   │             │ AI核心   │
   └──────────┘                └──────────┘             └──────────┘
-  112.124.106.108             121.40.188.98:8081       121.40.188.98:9090
+  your-nginx-ip             your-milvus-ip:8081       your-milvus-ip:9090
                                     │                       │
                                     │ RabbitMQ              │ LLM API
                                     ▼                       ▼
@@ -324,7 +324,7 @@ isComplexIntent() 判定方法：
 ================================================================================
 
 压测工具：scripts/load-test-500.py（Python + httpx 异步并发）
-目标地址：http://112.124.106.108（生产 Nginx → chat-web:8081）
+目标地址：http://your-nginx-ip（生产 Nginx → chat-web:8081）
 手法：写入/非写入 2 维度 × 不同并发量，随机 IP 绕过限流
 
 
@@ -498,9 +498,9 @@ isComplexIntent() 判定方法：
 --------------------------------------------------------------------------------
 
   # 1. Nginx 热加载（不中断服务）
-  ssh -i "我的密钥.pem" root@112.124.106.108 \
+  ssh -i "我的密钥.pem" root@your-nginx-ip \
     "sed -i 's/worker_connections 1024/worker_connections 4096/' /etc/nginx/nginx.conf"
-  ssh -i "我的密钥.pem" root@112.124.106.108 "nginx -t && nginx -s reload"
+  ssh -i "我的密钥.pem" root@your-nginx-ip "nginx -t && nginx -s reload"
 
   # 2. Java 打包 + 上传
   mvn clean install -DskipTests -pl chat-common,chat-core,chat-web -am
@@ -508,7 +508,7 @@ isComplexIntent() 判定方法：
   scp chat-web/target/chat-web-0.0.1-SNAPSHOT.jar → /opt/app/web/
 
   # 3. 重启服务
-  ssh root@121.40.188.98 "bash /opt/app/restart-core.sh && bash /opt/app/restart-web.sh"
+  ssh root@your-milvus-ip "bash /opt/app/restart-core.sh && bash /opt/app/restart-web.sh"
 
 ================================================================================
 

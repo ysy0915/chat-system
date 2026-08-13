@@ -33,7 +33,7 @@ nohup java \
     --server.port=9090 \
     --spring.application.name=chat-core \
     --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
-    --spring.cloud.nacos.discovery.ip=172.23.172.13 \
+    --spring.cloud.nacos.discovery.ip=your-intra-ip \
     --spring.cloud.nacos.discovery.enabled=true \
     > "$LOG_FILE" 2>&1 &
 

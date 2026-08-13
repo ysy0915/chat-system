@@ -1,6 +1,6 @@
 # 数据库 ER 图
 
-> 版本：2026-08-13 ｜ 数据库：MySQL（阿里云 RDS `rm-bp19c29bo9s7kfyb2...`，库名 `test_data`）
+> 版本：2026-08-13 ｜ 数据库：MySQL（阿里云 RDS `your-rds-host`，库名 `test_data`）
 > 表数量：**18 张**（废弃表 `model_configs` / `llm_data_source*` / `llm_vector_store*` 已于 2026-08-13 删除）
 > 渲染方式：Mermaid（VS Code / GitHub 原生支持），或用 [mermaid.live](https://mermaid.live) 在线渲染
 

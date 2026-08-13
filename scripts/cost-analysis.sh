@@ -6,8 +6,8 @@
 
 MAIN_PEM="/Users/apple/Downloads/我的密钥.pem"
 MILVUS_PEM="/Users/apple/Downloads/Milvus.pem"
-MAIN_SERVER="root@112.124.106.108"
-MILVUS_SERVER="root@121.40.188.98"
+MAIN_SERVER="root@your-nginx-ip"
+MILVUS_SERVER="root@your-milvus-ip"
 
 red()    { echo -e "\033[31m$1\033[0m"; }
 green()  { echo -e "\033[32m$1\033[0m"; }
@@ -20,7 +20,7 @@ echo "  云成本分析报告  $(date '+%Y-%m-%d %H:%M')
 
 # ---------- 主服务器 ----------
 echo ""
-blue "========== 主服务器 (112.124.106.108) =========="
+blue "========== 主服务器 (your-nginx-ip) =========="
 
 MAIN_INFO=$(ssh -i "$MAIN_PEM" $MAIN_SERVER "echo \"\$(free -m | awk '/Mem/{print \$2}')|\$(free -m | awk '/Mem/{print \$3}')|\$(free -m | awk '/Mem/{print \$4}')|\$(df / | awk 'NR==2{print \$2\"|\"\$3\"|\"\$5}')|\$(nproc)\"")
 MAIN_MEM_TOTAL=$(echo $MAIN_INFO | cut -d'|' -f1)
@@ -48,7 +48,7 @@ echo "  Nginx:     ${NGINX_MEM}"
 
 # ---------- Milvus服务器 ----------
 echo ""
-blue "========== Milvus服务器 (121.40.188.98) =========="
+blue "========== Milvus服务器 (your-milvus-ip) =========="
 
 MILVUS_INFO=$(ssh -i "$MILVUS_PEM" $MILVUS_SERVER "echo \"\$(free -m | awk '/Mem/{print \$2}')|\$(free -m | awk '/Mem/{print \$3}')|\$(free -m | awk '/Mem/{print \$4}')|\$(df / | awk 'NR==2{print \$2\"|\"\$3\"|\"\$5}')|\$(nproc)\"")
 MILVUS_MEM_TOTAL=$(echo $MILVUS_INFO | cut -d'|' -f1)

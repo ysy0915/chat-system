@@ -34,7 +34,7 @@ done < <(find "$PROJECT_ROOT" -name "*.yml" -not -path "*/target/*" -not -path "
 
 # 检查硬编码IP
 echo "扫描硬编码IP..."
-HARDCODED_IPS=$(grep -rn '121.40.188.98\|112.124.106.108\|172.23.172.13' "$PROJECT_ROOT" --include="*.yml" --include="*.java" --include="*.sh" 2>/dev/null | grep -v target | grep -v node_modules | grep -v '.bak')
+HARDCODED_IPS=$(grep -rn 'your-milvus-ip\|your-nginx-ip\|your-intra-ip' "$PROJECT_ROOT" --include="*.yml" --include="*.java" --include="*.sh" 2>/dev/null | grep -v target | grep -v node_modules | grep -v '.bak')
 if [ -n "$HARDCODED_IPS" ]; then
     yellow "  发现硬编码IP（建议用环境变量替代）:"
     echo "$HARDCODED_IPS" | head -10

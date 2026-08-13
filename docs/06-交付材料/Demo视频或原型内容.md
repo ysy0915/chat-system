@@ -264,7 +264,7 @@ public class JwtUtil {
 
 ## 六、Demo 原型链接
 
-- 在线体验：https://ai.yangsy.online
+- 在线体验：https://ai.your-domain.com
 - 代码仓库：https://github.com/ysy0915/chat-system
 - 部署文档：`docs/03-运维部署/部署运维手册.md`
 - 架构文档：`docs/01-架构设计/架构设计说明.md`

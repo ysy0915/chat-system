@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-生产环境 Prometheus 告警 Webhook 接收端（Milvus 服务器 121.40.188.98）
+生产环境 Prometheus 告警 Webhook 接收端（Milvus 服务器 your-milvus-ip）
 - 监听 0.0.0.0:9950，接收 Alertmanager webhook POST
 - 可选推送到钉钉（设置环境变量 DINGTALK_WEBHOOK）
 - 日志输出到 stdout（由 health-check.sh 守护，重定向到 /opt/app/logs/prometheus-alerts.log）

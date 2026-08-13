@@ -14,7 +14,8 @@ set -euo pipefail
 
 MYSQL_HOST=${MYSQL_HOST:-127.0.0.1}
 MYSQL_USER=${MYSQL_USER:-root}
-MYSQL_PWD=${MYSQL_PWD:-19641025}
+# 生产环境必须 export MYSQL_PWD（勿留默认密码）
+MYSQL_PWD=${MYSQL_PWD:-}
 MYSQL_DB=${MYSQL_DB:-test_data}
 
 required=(DEEPSEEK_API_KEY QWEN_API_KEY DOUBAO_API_KEY)

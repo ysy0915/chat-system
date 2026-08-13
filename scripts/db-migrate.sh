@@ -4,16 +4,16 @@
 # 用法：bash db-migrate.sh [status|apply]
 # ============================================================
 
-PROJECT_ROOT="/Users/apple/IdeaProjects/chat-system-project"
+PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 MIGRATION_DIR="$PROJECT_ROOT/docs/db-migrations"
-MILVUS_PEM="/Users/apple/Downloads/Milvus.pem"
-MILVUS_SERVER="root@121.40.188.98"
+MILVUS_PEM="${MILVUS_PEM:-/path/to/Milvus.pem}"
+MILVUS_SERVER="root@${MILVUS_SERVER:-your-milvus-ip}"
 
-# RDS连接信息（从配置文件读取）
-DB_HOST="rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com"
-DB_USER="yangsy"
-DB_PASS="YangSy@0915!"
-DB_NAME="test_data"
+# RDS连接信息（从环境变量读取，勿硬编码）
+DB_HOST="${DB_HOST:-your-rds-host}"
+DB_USER="${DB_USER:-YOUR_DB_USER}"
+DB_PASS="${DB_PASS:-YOUR_DB_PASSWORD}"
+DB_NAME="${DB_NAME:-test_data}"
 
 CMD=${1:-status}
 

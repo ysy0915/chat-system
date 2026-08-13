@@ -1,7 +1,7 @@
 -- ============================================================
 -- 长期记忆 (L2) + 用户画像 (L3) + 技能自进化 (Step3) 表结构
 -- 数据库：test_data（RDS）
--- 执行方式：mysql -h<rds> -uyangsy -p test_data < user_memory_schema.sql
+-- 执行方式：mysql -h<rds> -uYOUR_DB_USER -p test_data < user_memory_schema.sql
 -- 幂等：user_profiles / skill_registry 均含唯一键，可重复执行
 -- ============================================================
 

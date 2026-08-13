@@ -132,7 +132,7 @@ LLM 的推理过程不再隐藏在 "思考中…" 之后。
 ### 其他防护
 
 - **UA 过滤**：拦截 curl / wget / scrapy 等爬虫，放行搜索引擎
-- **CORS 白名单**：`localhost:*` / 生产域名 / `yangsy.online`，加 CSP 头防 XSS
+- **CORS 白名单**：`localhost:*` / 生产域名 / `your-domain.com`，加 CSP 头防 XSS
 - **IP 管理 API**：查看黑名单、手动拉黑 / 解封、查看请求统计（`X-Admin-Password` 鉴权）
 - **Fail-open 容错**：Redis 异常时放行，不阻塞正常服务
 

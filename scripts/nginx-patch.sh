@@ -3,7 +3,7 @@
 sed -i '/location \/ {/i\
         # 游戏服务 → Milvus 服务器\
         location /api/v1/games/ {\
-            proxy_pass http://172.23.172.13:8083;\
+            proxy_pass http://your-intra-ip:8083;\
             proxy_set_header Host $host;\
             proxy_set_header X-Real-IP $remote_addr;\
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
@@ -15,7 +15,7 @@ sed -i '/location \/ {/i\
 \
         # SQL 执行器 → Milvus 服务器\
         location /api/v1/sql/ {\
-            proxy_pass http://172.23.172.13:8083;\
+            proxy_pass http://your-intra-ip:8083;\
             proxy_set_header Host $host;\
             proxy_set_header X-Real-IP $remote_addr;\
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
@@ -23,7 +23,7 @@ sed -i '/location \/ {/i\
 \
         # 多模态服务 → Milvus 服务器\
         location /api/v1/media/ {\
-            proxy_pass http://172.23.172.13:8084;\
+            proxy_pass http://your-intra-ip:8084;\
             proxy_set_header Host $host;\
             proxy_set_header X-Real-IP $remote_addr;\
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\

@@ -23,7 +23,7 @@ spring:
         file-extension: yml
         group: CHAT
   datasource:
-    url: ${DB_URL:jdbc:mysql://rm-bp19c29bo9s7kfyb2.mysql.rds.aliyuncs.com:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    url: ${DB_URL:jdbc:mysql://your-rds-host:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
   data:
@@ -103,7 +103,7 @@ app:
       dimension: ${EMBEDDING_DIMENSION:1024}
     milvus:
       enabled: ${MILVUS_ENABLED:false}
-      host: ${MILVUS_HOST:121.40.188.98}
+      host: ${MILVUS_HOST:your-milvus-ip}
       port: 19530
     # 对话自动 RAG 增强：知识问答/任务类问题（如天气、资料性查询）自动检索知识库增强生成
     chat:

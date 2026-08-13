@@ -40,4 +40,30 @@ class ApiResponseTest {
         assertEquals(500, r.get("code"));
         assertEquals("internal", r.get("error"));
     }
+
+    @Test
+    @DisplayName("error 带 ErrorCode 自定义文案")
+    void testErrorWithErrorCode() {
+        Map<String, Object> r = ApiResponse.error(ErrorCode.RATE_LIMITED, "太频繁");
+        assertEquals(false, r.get("ok"));
+        assertEquals(429, r.get("code"));
+        assertEquals("太频繁", r.get("error"));
+    }
+
+    @Test
+    @DisplayName("error 带 ErrorCode 默认文案")
+    void testErrorWithErrorCodeDefault() {
+        Map<String, Object> r = ApiResponse.error(ErrorCode.FORBIDDEN);
+        assertEquals(false, r.get("ok"));
+        assertEquals(403, r.get("code"));
+        assertEquals("权限不足", r.get("error"));
+    }
+
+    @Test
+    @DisplayName("success / fail 语义别名")
+    void testAliases() {
+        assertEquals(true, ApiResponse.success().get("ok"));
+        assertEquals("x", ApiResponse.success("x").get("data"));
+        assertEquals(false, ApiResponse.fail("boom").get("ok"));
+    }
 }

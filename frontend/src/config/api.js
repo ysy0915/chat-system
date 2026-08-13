@@ -61,6 +61,9 @@ export const API = {
   SQL_LOGIN: `${API_BASE}/api/v1/sql/login`,
   SQL_EXECUTE: `${API_BASE}/api/v1/sql/execute`,
 
+  // 服务健康（games 高峰降级时前端维护提示）
+  GAMES_HEALTH: `${API_BASE}/api/v1/health/games`,
+
   // 监控
   MONITOR_ONLINE: (page) => `${API_BASE}/api/v1/messages/online-count?page=${page}`,
 

@@ -1,6 +1,6 @@
 package com.example.chat.controller;
 
-import com.example.chat.security.JwtUtil;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.service.CastleSiegeLordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -23,11 +23,9 @@ import java.util.Map;
 public class CastleSiegeLordController {
 
     private final CastleSiegeLordService lordService;
-    private final JwtUtil jwtUtil;
 
-    public CastleSiegeLordController(CastleSiegeLordService lordService, JwtUtil jwtUtil) {
+    public CastleSiegeLordController(CastleSiegeLordService lordService) {
         this.lordService = lordService;
-        this.jwtUtil = jwtUtil;
     }
 
     @Operation(summary = "获取领主排行榜", description = "返回招募兵力最多的领主排名")
@@ -41,14 +39,13 @@ public class CastleSiegeLordController {
     @Operation(summary = "同步领主分数到排行榜", description = "根据招募的兵力更新领主在排行榜中的分数")
     @PostMapping("/sync")
     public ResponseEntity<?> syncLeaderboard(
-            @Parameter(description = "JWT认证令牌（可选）") @RequestHeader(value = "Authorization", required = false) String authHeader,
             @Parameter(description = "请求体，包含 recruitedTroops、displayName、playerKey、recruitedByType 等字段") @RequestBody(required = false) Map<String, Object> body) {
         long recruitedTroops = toLong(body == null ? null : body.get("recruitedTroops"));
         if (recruitedTroops <= 0) {
             return ResponseEntity.ok(Map.of("ok", true, "ranking", lordService.getTopLords(10)));
         }
 
-        Long userId = extractUserId(authHeader);
+        Long userId = AuthUtils.extractUserIdFromContext();
         String displayName = extractDisplayName(body);
         String playerKey = userId != null
                 ? "user:" + userId
@@ -56,17 +53,6 @@ public class CastleSiegeLordController {
 
         lordService.addLordScore(playerKey, displayName, recruitedTroops, extractRecruitedByType(body));
         return ResponseEntity.ok(Map.of("ok", true, "ranking", lordService.getTopLords(10)));
-    }
-
-    private Long extractUserId(String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return null;
-        }
-        String token = authHeader.substring(7);
-        if (!jwtUtil.validateToken(token)) {
-            return null;
-        }
-        return jwtUtil.getUserId(token);
     }
 
     private String extractDisplayName(Map<String, Object> body) {

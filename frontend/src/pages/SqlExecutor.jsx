@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 
 const WRITE_KEYWORDS = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'GRANT', 'REVOKE', 'SHUTDOWN']
 const READ_KEYWORDS = ['SELECT', 'SHOW', 'DESC', 'EXPLAIN']
@@ -34,7 +34,7 @@ export default function SqlExecutor() {
     e.preventDefault()
     setLoginError('')
     try {
-      const res = await axios.post('/api/v1/sql/login', { password })
+      const res = await apiClient.post('/api/v1/sql/login', { password })
       const t = res.data.token
       setToken(t)
       localStorage.setItem('sql_token', t)
@@ -68,7 +68,7 @@ export default function SqlExecutor() {
     setExecTime(null)
     const start = Date.now()
     try {
-      const res = await axios.post('/api/v1/sql/execute', { sql: sql.trim() }, {
+      const res = await apiClient.post('/api/v1/sql/execute', { sql: sql.trim() }, {
         headers: { 'X-Admin-Token': token },
         timeout: 60000
       })
@@ -91,7 +91,7 @@ export default function SqlExecutor() {
       setVerifyError('')
       try {
         // 复用 login 接口校验密码
-        await axios.post('/api/v1/sql/login', { password: verifyPwd })
+        await apiClient.post('/api/v1/sql/login', { password: verifyPwd })
         setVerifying(false)
         setConfirmModal(null)
         setVerifyPwd('')

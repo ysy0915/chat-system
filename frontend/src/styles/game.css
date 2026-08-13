@@ -1553,3 +1553,39 @@
         font-size: 20px;
     }
 }
+
+/* ===== 游戏服务维护提示（高峰降级时展示） ===== */
+.games-maintenance {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0 auto 24px;
+    max-width: 720px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #fff7e6, #fff3d6);
+    border: 1px solid #ffd591;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(250, 173, 20, 0.12);
+}
+
+.games-maintenance-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.games-maintenance-info h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    color: #ad6800;
+}
+
+.games-maintenance-info p {
+    margin: 0;
+    font-size: 13px;
+    color: #874d00;
+    line-height: 1.6;
+}
+
+.games-maintenance .games-maintenance-info h3 {
+    color: #b26a00;
+}

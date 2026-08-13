@@ -57,6 +57,7 @@ public class SecurityConfig {
                 .requestMatchers("/ws/**").permitAll()                  // WebSocket
                 .requestMatchers("/internal/**").permitAll()            // 内部API（chat-web调用）
                 .requestMatchers("/actuator/**").permitAll()            // 健康检查+metrics+prometheus
+                .requestMatchers("/api/v1/health/**").permitAll()        // 服务健康探测（games 降级时前端维护提示）
                 .requestMatchers("/error").permitAll()                    // 错误页面（async dispatch）
                 // 管理接口（自有 X-Admin-Password 密码鉴权）
                 .requestMatchers("/api/v1/admin/**").permitAll()

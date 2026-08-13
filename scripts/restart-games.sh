@@ -32,15 +32,24 @@ done
 
 # 启动
 nohup java \
-    -Xms128m -Xmx256m \
-    -Xss512k \
+    -Xms128m -Xmx128m \
+    -Xss256k \
+    -XX:MaxMetaspaceSize=128m \
+    -XX:ReservedCodeCacheSize=48m \
     -XX:+UseG1GC \
+    -XX:MaxGCPauseMillis=200 \
+    -XX:G1HeapRegionSize=1m \
+    -XX:InitiatingHeapOccupancyPercent=45 \
+    -XX:ParallelGCThreads=2 \
+    -XX:ConcGCThreads=1 \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/opt/app/logs/games-heap-dump \
     -XX:+ExitOnOutOfMemoryError \
     -jar "$APP_JAR" \
     --spring.profiles.active=prod \
     --server.port=8083 \
+    --server.tomcat.threads.max=50 \
+    --server.tomcat.threads.min-spare=4 \
     --spring.application.name=chat-games \
     --spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848 \
     --spring.cloud.nacos.discovery.ip=172.23.172.13 \

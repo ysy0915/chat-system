@@ -38,7 +38,7 @@ class IpRateLimitInterceptorTest {
 
     @BeforeEach
     void setUp() {
-        interceptor = new IpRateLimitInterceptor(redisTemplate);
+        interceptor = new IpRateLimitInterceptor(redisTemplate, new RateLimitChecker(redisTemplate));
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);

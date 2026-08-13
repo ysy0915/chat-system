@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 
 export default function History(){
@@ -18,7 +18,7 @@ export default function History(){
   async function fetchList(){
     setLoading(true)
     try{
-      const res = await axios.get('/api/v1/messages', { params: { user_id: userId } })
+      const res = await apiClient.get('/api/v1/messages', { params: { user_id: userId } })
       setItems(res.data || [])
     }catch(e){
       console.error(e)

@@ -73,7 +73,7 @@ class ChatProcessorTest {
         Method method = ChatProcessor.class.getDeclaredMethod("isComplexIntent", IntentResult.class);
         method.setAccessible(true);
         ChatProcessor dummy = new ChatProcessor(
-                null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null);
         return (boolean) method.invoke(dummy, result);
     }
 }

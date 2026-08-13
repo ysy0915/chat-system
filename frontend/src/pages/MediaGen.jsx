@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 
 export default function MediaGen() {
@@ -13,11 +13,9 @@ export default function MediaGen() {
 
   // 按类型加载历史
   const loadHistory = (type) => {
-    const token = localStorage.getItem('auth_token')
-    if (!token) return
-    axios.get('/api/v1/media/history', {
-      params: { type: type, limit: 50 },
-      headers: { Authorization: `Bearer ${token}` }
+    if (!localStorage.getItem('auth_token')) return
+    apiClient.get('/api/v1/media/history', {
+      params: { type: type, limit: 50 }
     }).then(res => {
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         // 按时间正序排列（最旧的在前），每条记录展开为 user提问 + ai回复
@@ -60,7 +58,7 @@ export default function MediaGen() {
         setMessages(history)
         // 轮询所有 running 状态的记录
         runningRecords.forEach(({ recordId, msgIndex }) => {
-          pollRecordStatus(recordId, msgIndex, token)
+          pollRecordStatus(recordId, msgIndex)
         })
       } else {
         setMessages([])
@@ -69,11 +67,9 @@ export default function MediaGen() {
   }
 
   // 轮询单条记录状态
-  const pollRecordStatus = (recordId, msgIndex, token) => {
+  const pollRecordStatus = (recordId, msgIndex) => {
     const poll = () => {
-      axios.get(`/api/v1/media/status/${recordId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).then(res => {
+      apiClient.get(`/api/v1/media/status/${recordId}`).then(res => {
         const data = res.data
         if (data.status === 'done') {
           setMessages(prev => {
@@ -119,6 +115,23 @@ export default function MediaGen() {
     loadHistory(type)
   }
 
+  // 媒体加载失败兜底（历史 URL 过期/失效时友好提示，而不是白屏）
+  const handleMediaError = (idx) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const msg = updated[idx]
+      if (msg && !msg.error) {
+        updated[idx] = {
+          ...msg,
+          error: true,
+          url: null,
+          content: '媒体来源已失效或已过期，请重新生成'
+        }
+      }
+      return updated
+    })
+  }
+
   useEffect(() => {
     const token = localStorage.getItem('auth_token')
     const userStr = localStorage.getItem('auth_user')
@@ -159,13 +172,11 @@ export default function MediaGen() {
 
     try {
       const timeout = genType === 'video' ? 300000 : 120000
-      const token = localStorage.getItem('auth_token')
-      const res = await axios.post('/api/v1/media/generate', {
+      const res = await apiClient.post('/api/v1/media/generate', {
         prompt: text,
         type: genType
       }, {
-        timeout,
-        headers: { Authorization: `Bearer ${token}` }
+        timeout
       })
       setGenerating(false)
       const typeLabel = genType === 'video' ? '视频' : '图片'
@@ -261,11 +272,11 @@ export default function MediaGen() {
                 {m.url ? (
                   m.type === 'video' ? (
                     <div className="media-image-wrap">
-                      <video src={m.url} controls autoPlay loop className="media-image" />
+                      <video src={m.url} controls autoPlay loop className="media-image" onError={() => handleMediaError(idx)} />
                     </div>
                   ) : (
                     <div className="media-image-wrap">
-                      <img src={m.url} alt="generated" className="media-image" />
+                      <img src={m.url} alt="generated" className="media-image" onError={() => handleMediaError(idx)} />
                     </div>
                   )
                 ) : (

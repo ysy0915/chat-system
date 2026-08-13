@@ -2,6 +2,7 @@ package com.example.chat.controller;
 
 import com.example.chat.dto.MediaGenerateRequest;
 import com.example.chat.entity.MediaGenRecord;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.repository.MediaGenRecordRepository;
 import com.example.chat.service.MediaGenService;
 import com.example.chat.service.MediaGenService.MediaGenResult;
@@ -13,8 +14,6 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -170,25 +169,15 @@ public class MediaGenController {
     // ---- 辅助 ----
 
     private boolean is3DAllowed() {
-        String username = getCurrentUsername();
+        String username = AuthUtils.extractUsernameFromContext();
         return username != null && MODEL3D_WHITELIST.contains(username);
     }
 
     private String getCurrentUsername() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User) {
-            String subject = ((org.springframework.security.core.userdetails.User) auth.getPrincipal()).getUsername();
-            if (subject != null && subject.contains("@")) return subject.substring(0, subject.indexOf('@'));
-            return subject;
-        }
-        return null;
+        return AuthUtils.extractUsernameFromContext();
     }
 
     private Long getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getCredentials() instanceof Long) return (Long) auth.getCredentials();
-        if (auth != null && auth.getCredentials() instanceof Number)
-            return ((Number) auth.getCredentials()).longValue();
-        return null;
+        return AuthUtils.extractUserIdFromContext();
     }
 }

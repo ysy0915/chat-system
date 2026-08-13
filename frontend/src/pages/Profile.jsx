@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { useNavigate, Link } from 'react-router-dom'
 
 export default function Profile() {
@@ -21,7 +21,7 @@ export default function Profile() {
       }
       setLoading(true)
       setNeedLogin(false)
-      axios.get('/api/v1/profile', { headers: { Authorization: 'Bearer ' + token } })
+      apiClient.get('/api/v1/profile')
         .then(res => {
           setForm({
             name: res.data.name || '',
@@ -52,11 +52,8 @@ export default function Profile() {
     setMessage('')
     setError('')
     setSaving(true)
-    const token = localStorage.getItem('auth_token')
     try {
-      const res = await axios.put('/api/v1/profile', { nickname: form.nickname }, {
-        headers: { Authorization: 'Bearer ' + token }
-      })
+      const res = await apiClient.put('/api/v1/profile', { nickname: form.nickname })
       const userStr = localStorage.getItem('auth_user')
       if (userStr) {
         try {

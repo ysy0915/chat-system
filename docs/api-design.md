@@ -128,6 +128,10 @@ Schemas（简要）:
 
 行为说明：POST /messages 校验后入库(status=queued)并 publish 到 MQ，返回 202 Accepted 与消息 id，前端通过 WS 接收流式更新或后续 GET 获取最终结果。
 
+**统一错误响应（2026-08-13 起全站生效）**：`{"ok":false,"code":<HTTP状态码>,"error":"<错误信息>"}`
+- `code` 枚举：400 参数错误 / 401 未认证 / 403 无权限 / 404 不存在 / 429 限流 / 500 服务异常
+- 由 `GlobalExceptionHandler` 统一输出，业务异常、参数校验异常、限流异常同构；前端 `apiClient` 拦截 401 统一登出
+
 ## 7 WebSocket 设计（流式）
 Endpoint: /ws/chat
 Auth: JWT（query param 或 subprotocol）

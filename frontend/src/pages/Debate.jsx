@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
@@ -215,7 +215,7 @@ export default function Debate() {
 
     const reqId = generateId()
     try {
-      await axios.post('/api/v1/debate', {
+      await apiClient.post('/api/v1/debate', {
         req_id: reqId, question: text, user_id: userId,
         rounds: roundCount,
         ...(treeMode ? { mode: 'tree' } : {}),

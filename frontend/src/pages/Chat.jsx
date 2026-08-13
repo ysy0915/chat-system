@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
@@ -47,7 +47,7 @@ export default function ChatPage(){
   }, [])
 
   useEffect(() => {
-    axios.get('/api/v1/messages/online-count', { params: { page: 'chat' } })
+    apiClient.get('/api/v1/messages/online-count', { params: { page: 'chat' } })
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
     const sock = new SockJS('/ws/chat?userId=' + userId);
@@ -166,7 +166,7 @@ export default function ChatPage(){
     if (aiAnswer) setTyping(true)
     const payload = { req_id: reqId, question: text, user_id: userId, preferred_model_config_id: 2, ai_answer: aiAnswer }
     try {
-      const res = await axios.post('/api/v1/messages', payload)
+      const res = await apiClient.post('/api/v1/messages', payload)
       const resolvedId = res.data?.user_id
       if (resolvedId && resolvedId !== userId && !userIdResolved.current) {
         userIdResolved.current = true

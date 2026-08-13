@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 
 /**
@@ -50,11 +50,11 @@ export default function KnowledgeGraph() {
         try {
             let resp
             if (searchKw && searchKw.trim()) {
-                resp = await axios.get(
+                resp = await apiClient.get(
                     `/api/v1/graph/search?keyword=${encodeURIComponent(searchKw.trim())}` +
                     `&limit=50&minEntityWeight=${entityWeight}&minRelationWeight=${relationWeight}`)
             } else {
-                resp = await axios.get(
+                resp = await apiClient.get(
                     `/api/v1/graph?limit=100&minEntityWeight=${entityWeight}&minRelationWeight=${relationWeight}`)
             }
             const data = resp.data
@@ -96,7 +96,7 @@ export default function KnowledgeGraph() {
     // 加载统计
     const loadStats = useCallback(async () => {
         try {
-            const resp = await axios.get('/api/v1/graph/stats')
+            const resp = await apiClient.get('/api/v1/graph/stats')
             setStats(resp.data)
         } catch (err) {
             console.error('加载统计失败:', err)

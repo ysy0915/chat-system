@@ -1,6 +1,5 @@
 package com.example.chat.service;
 
-import com.example.chat.client.RagClient;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.config.ThreadPoolFactory;
 import com.example.chat.dto.LLMMessage;
@@ -8,26 +7,22 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.Message;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
+import com.example.chat.intent.IntentCategory;
 import com.example.chat.intent.IntentResult;
 import com.example.chat.intent.IntentRoutingHelper;
-import com.example.chat.intent.IntentCategory;
 import com.example.chat.intent.funnel.IntentFunnelEngine;
 import com.example.chat.intent.funnel.ThinkingStreamParser;
 import com.example.chat.repository.MessageRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -41,7 +36,6 @@ import org.springframework.dao.DataAccessException;
 public class ChatProcessor {
     private static final Logger log = LoggerFactory.getLogger(ChatProcessor.class);
     private final MessageRepository messageRepository;
-    private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
     private final ExecutorService modelExecutor;
     private final BroadcastService broadcastService;
@@ -52,6 +46,8 @@ public class ChatProcessor {
     private final FileContentExtractor fileContentExtractor;
     private final StreamStopManager streamStopManager;
     private final LlmConfigProperties llmConfig;
+    private final ChatRagEnhancer chatRagEnhancer;
+    private final ChatCacheManager chatCacheManager;
 
     /** RAG 客户端（通过 /internal/rag/* 调用 chat-llm 的知识库检索与对话记忆） */
     @org.springframework.beans.factory.annotation.Autowired
@@ -64,26 +60,6 @@ public class ChatProcessor {
     /** 是否启用 LangChain4j 个人对话模式 */
     @org.springframework.beans.factory.annotation.Value("${app.langchain4j.personal.enabled:false}")
     private boolean langChain4jPersonalEnabled;
-
-    /** 对话自动 RAG 增强：知识问答/任务类问题自动检索知识库（RAG 索引增强生成） */
-    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.enabled:true}")
-    private boolean chatRagEnabled;
-
-    /** 对话自动 RAG 默认检索的知识库 ID（<=0 表示未配置，不增强） */
-    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.kb-id:0}")
-    private long chatRagKbId;
-
-    /** 对话自动 RAG 检索 topK */
-    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.top-k:3}")
-    private int chatRagTopK;
-
-    /** 对话自动 RAG 相似度阈值 */
-    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.score-threshold:0.3}")
-    private float chatRagScoreThreshold;
-
-    /** 对话自动 RAG 参考资料的字符上限 */
-    @org.springframework.beans.factory.annotation.Value("${app.rag.chat.max-chars:2000}")
-    private int chatRagMaxChars;
 
     /** 对话摘要服务（可选注入，失败不阻塞主流程） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -117,23 +93,6 @@ public class ChatProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private IntentRoutingHelper intentRouting;
 
-    private static final Duration CACHE_TTL = Duration.ofHours(24);
-
-    /** 实时数据类问题：知识库无此类内容，跳过检索（由工具/模型实时回答） */
-    private static final java.util.regex.Pattern[] REALTIME_PATTERNS = {
-            java.util.regex.Pattern.compile("(今天|明天|后天|现在|当前|这几天|最近).*(天气|气温|温度|多少度|几度|下雨|下雪|有雨|晴天|阴天|降温|刮风)"),
-            java.util.regex.Pattern.compile("(天气|气温|温度|天气预报).*(怎么样|如何|怎样|多少|几度|适合|穿|出门)"),
-            java.util.regex.Pattern.compile("(几点|几点了|现在几点|现在时间|今天星期几|星期几|几月几号|今天是)"),
-            java.util.regex.Pattern.compile("(今天|今日|最新|热点).*(新闻|时事|头条|快讯)"),
-            java.util.regex.Pattern.compile("(股票|股价|行情|汇率|金价|油价|大盘|基金|涨跌|A股|港股)"),
-            java.util.regex.Pattern.compile("(比分|比赛结果|赛果|赛况)"),
-    };
-
-    /** 个人数据类问题：知识库无个人数据，跳过检索 */
-    private static final java.util.regex.Pattern[] PERSONAL_PATTERNS = {
-            java.util.regex.Pattern.compile("我的(订单|账户|余额|消息|设置|资料|记录|聊天|历史|收藏|足迹|状态|积分|会员)"),
-    };
-
     /** 流式生成停止管理 */
     public void requestStop(String reqId) {
         streamStopManager.requestStop(reqId);
@@ -144,7 +103,6 @@ public class ChatProcessor {
     }
 
     public ChatProcessor(MessageRepository messageRepository,
-                         RedisTemplate<String, String> redisTemplate,
                          ObjectMapper objectMapper,
                          BroadcastService broadcastService,
                          LLMCallRecorder llmCallRecorder,
@@ -153,9 +111,10 @@ public class ChatProcessor {
                          ModelRouter modelRouter,
                          FileContentExtractor fileContentExtractor,
                          StreamStopManager streamStopManager,
-                         LlmConfigProperties llmConfig) {
+                         LlmConfigProperties llmConfig,
+                         ChatRagEnhancer chatRagEnhancer,
+                         ChatCacheManager chatCacheManager) {
         this.messageRepository = messageRepository;
-        this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
         this.llmCallRecorder = llmCallRecorder;
@@ -165,6 +124,8 @@ public class ChatProcessor {
         this.fileContentExtractor = fileContentExtractor;
         this.streamStopManager = streamStopManager;
         this.llmConfig = llmConfig;
+        this.chatRagEnhancer = chatRagEnhancer;
+        this.chatCacheManager = chatCacheManager;
         this.modelExecutor = ThreadPoolFactory.create(5, 20, 100, "llm-worker");
     }
 
@@ -226,7 +187,7 @@ public class ChatProcessor {
      */
     private void handlePersonalChat(String reqId, Long userId, String question,
                                      List<ModelConfig> allConfigs) {
-        if (checkCacheHit(reqId, userId, question)) {
+        if (chatCacheManager.hitAndServe(reqId, userId, question)) {
             log.info("[handlePersonalChat] req_id={} userId={} cache hit, skip LLM", reqId, userId);
             return;
         }
@@ -279,30 +240,6 @@ public class ChatProcessor {
     }
 
     // ───────────── 子流程 ─────────────
-
-    private boolean checkCacheHit(String reqId, Long userId, String question) {
-        String cached = null;
-        try {
-            cached = redisTemplate.opsForValue().get(buildCacheKey(question));
-        } catch (DataAccessException ex) {
-            log.warn("Redis read failed, skipping cache: {}", ex.getMessage());
-        }
-        if (cached == null) return false;
-
-        broadcastService.broadcast("/topic/user." + userId,
-                WsMessage.of(WsMessage.TYPE_DONE).withReqId(reqId).with("answer", cached).toMap());
-        Message m = messageRepository.findByReqId(reqId);
-        if (m != null) {
-            try {
-                m.answerJson = objectMapper.writeValueAsString(Map.of("answer", cached));
-            } catch (JsonProcessingException e) {
-                m.answerJson = "{\"answer\":\"\"}";
-            }
-            m.status = "done";
-            messageRepository.updateByReqId(m);
-        }
-        return true;
-    }
 
     private boolean tryLangChain4jChat(String reqId, Long userId, String question) {
         try {
@@ -387,13 +324,13 @@ public class ChatProcessor {
                 boolean enableThinking = isComplexIntent(intent);
                 List<LLMMessage> effectiveHistory = history;
                 // 知识问答/任务类问题：自动检索知识库，RAG 索引增强生成
-                if (shouldAutoRag(intent, question)) {
-                    String ragContext = buildChatRagContext(question);
+                if (chatRagEnhancer.shouldAutoRag(intent, question)) {
+                    String ragContext = chatRagEnhancer.buildContext(question);
                     if (ragContext != null) {
                         effectiveHistory = new java.util.ArrayList<>(history);
-                        effectiveHistory.add(0, new LLMMessage("system", buildChatRagSystemPrompt(ragContext)));
+                        effectiveHistory.add(0, new LLMMessage("system", chatRagEnhancer.buildSystemPrompt(ragContext)));
                         log.info("[doPersonalStream] req_id={} 知识库RAG增强命中 kb={} ctxLen={}",
-                                reqId, chatRagKbId, ragContext.length());
+                                reqId, chatRagEnhancer.getKbId(), ragContext.length());
                     }
                 }
                 if (enableThinking) {
@@ -508,14 +445,14 @@ public class ChatProcessor {
 
         // 知识问答/任务类问题：自动检索知识库，RAG 索引增强（检索一次，注入所有并发模型）
         final List<LLMMessage> historyForCall;
-        if (shouldAutoRag(intent, question)) {
-            String ragContext = buildChatRagContext(question);
+        if (chatRagEnhancer.shouldAutoRag(intent, question)) {
+            String ragContext = chatRagEnhancer.buildContext(question);
             if (ragContext != null && history != null) {
                 List<LLMMessage> ragEnhanced = new java.util.ArrayList<>(history);
-                ragEnhanced.add(0, new LLMMessage("system", buildChatRagSystemPrompt(ragContext)));
+                ragEnhanced.add(0, new LLMMessage("system", chatRagEnhancer.buildSystemPrompt(ragContext)));
                 historyForCall = ragEnhanced;
                 log.info("[doGroupConcurrent] req_id={} 知识库RAG增强命中 kb={} ctxLen={}",
-                        reqId, chatRagKbId, ragContext.length());
+                        reqId, chatRagEnhancer.getKbId(), ragContext.length());
             } else {
                 historyForCall = history;
             }
@@ -753,12 +690,7 @@ public class ChatProcessor {
                 WsMessage.of(WsMessage.TYPE_ANSWER).withReqId(reqId)
                         .with("user_id", userId).with("answer", answer).toMap());
 
-        String cacheKey = buildCacheKey(question, provider, model);
-        try {
-            redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
-        } catch (DataAccessException ex) {
-            log.warn("[WARN] Redis write failed: {}", ex.getMessage());
-        }
+        chatCacheManager.save(question, provider, model, answer);
 
         // 保存对话记忆（异步 fire-and-forget）
         ragClient.saveMemoryAsync("personal", userId, question, answer);
@@ -796,46 +728,6 @@ public class ChatProcessor {
                 }
             }
         }
-    }
-
-    /**
-     * 计算输入字符串的 SHA-256 哈希值（16 进制字符串）；计算失败时回退到 hashCode。
-     *
-     * @param input 输入字符串
-     * @return 哈希值
-     */
-    private static String sha256(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            return Integer.toHexString(input.hashCode());
-        }
-    }
-
-    /**
-     * 构建问题级缓存 key（不区分 provider/model，命中即所有模型共用）。
-     *
-     * @param question 问题文本
-     * @return Redis 缓存 key
-     */
-    private String buildCacheKey(String question) {
-        return "question:" + sha256(question + "::model-pool");
-    }
-
-    /**
-     * 构建问题+模型级缓存 key（区分 provider/model）。
-     *
-     * @param question 问题文本
-     * @param provider 模型 provider
-     * @param model    模型名称
-     * @return Redis 缓存 key
-     */
-    private String buildCacheKey(String question, String provider, String model) {
-        return "question:" + sha256(question + "::" + (provider == null ? "" : provider) + "::" + (model == null ? "" : model));
     }
 
     // ───────────── 意图识别辅助（三层漏斗） ─────────────
@@ -876,73 +768,6 @@ public class ChatProcessor {
             || c == IntentCategory.CODE_GENERATION
             || c == IntentCategory.KNOWLEDGE_QA
             || c == IntentCategory.TASK_EXECUTION;
-    }
-
-    /**
-     * 是否需要自动检索知识库增强回答。
-     *
-     * <p>三层判定：</p>
-     * 1. 开关/配置：启用且配置了默认知识库；
-     * 2. 意图判定：知识问答（KNOWLEDGE_QA）或任务执行（TASK_EXECUTION）——概念/资料性查询；
-     * 3. 可查性判定：排除实时数据类（天气、时间、新闻、行情、比分）与个人数据类（我的订单/消息）——
-     *    知识库中不存在此类内容，检索只会浪费一次 Embedding，改由工具或模型实时回答。
-     *
-     * <p>检索后还有相似度判定（buildChatRagContext：score &lt; threshold 的片段丢弃），
-     * 三层都不命中时完全回退普通回答。</p>
-     */
-    private boolean shouldAutoRag(IntentResult intent, String question) {
-        if (!chatRagEnabled || chatRagKbId <= 0 || ragClient == null) return false;
-        if (intent == null || intent.category() == null) return false;
-        IntentCategory c = intent.category();
-        if (c != IntentCategory.KNOWLEDGE_QA && c != IntentCategory.TASK_EXECUTION) return false;
-        // 实时/个人数据类问题知识库没有答案，跳过检索
-        return !isRealTimeOrPersonalQuery(question);
-    }
-
-    /**
-     * 判断问题是否为实时数据/个人数据类查询（知识库中不存在此类内容）。
-     * <p>实时：天气、时间、新闻、金融行情、体育比分；个人：订单/账户/消息等。</p>
-     */
-    private boolean isRealTimeOrPersonalQuery(String question) {
-        if (question == null || question.isBlank()) return false;
-        for (java.util.regex.Pattern p : REALTIME_PATTERNS) {
-            if (p.matcher(question).find()) return true;
-        }
-        for (java.util.regex.Pattern p : PERSONAL_PATTERNS) {
-            if (p.matcher(question).find()) return true;
-        }
-        return false;
-    }
-
-    /**
-     * 检索默认知识库，构建 RAG 参考资料（无命中返回 null，检索失败不影响主流程）。
-     */
-    private String buildChatRagContext(String question) {
-        if (question == null || question.isBlank()) return null;
-        try {
-            List<RagClient.SearchResult> results = ragClient.search(chatRagKbId, question, chatRagTopK);
-            if (results == null || results.isEmpty()) return null;
-            StringBuilder sb = new StringBuilder();
-            int total = 0;
-            for (RagClient.SearchResult r : results) {
-                if (r.score() < chatRagScoreThreshold) continue;
-                if (total + r.text().length() > chatRagMaxChars) break;
-                sb.append("--- 资料（相似度 ").append(String.format("%.2f", r.score())).append("）---\n");
-                sb.append(r.text()).append("\n\n");
-                total += r.text().length();
-            }
-            return sb.length() > 0 ? sb.toString() : null;
-        } catch (Exception e) {
-            log.warn("[ChatRAG] 知识库检索失败 kb={} err={}", chatRagKbId, e.getMessage());
-            return null;
-        }
-    }
-
-    /** 构建 RAG 增强的 system prompt（引导依据知识库资料作答） */
-    private String buildChatRagSystemPrompt(String context) {
-        return "以下是用户知识库中检索到的参考资料。回答时请优先依据参考资料作答，"
-                + "如果参考资料不足以回答，可结合你的知识回答并简要说明。\n\n"
-                + "【参考资料】\n" + context;
     }
 
     // ═══════════════════════════════════════════════════════════════════

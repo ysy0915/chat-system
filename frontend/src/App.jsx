@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Link, useLocation, useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import apiClient from './config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import Landing from './pages/Landing'
@@ -403,44 +403,22 @@ function NavBar({ authUser, onLogout, onOpenAuth }) {
                         <div className="announcement-content">
                             <p><strong>博思AI智能体 · 最近更新</strong></p>
 
-                            <p style={{ marginTop: '16px', fontWeight: 700 }}>✨ 8月12日 · 记忆与辩论升级</p>
-                            <p style={{ fontWeight: 700 }}>🗣️ 辩论场次自由选择</p>
-                            <p>观点辩论场支持 1-5 轮场次自由选择（默认 3 轮），输入框上方即可切换；辩论阵容升级为豆包、DeepSeek、千问三方对决。</p>
-                            <p style={{ fontWeight: 700 }}>🧠 辩论反思升级</p>
-                            <p>每轮辩论后三方模型会批判性审视对方反驳并修正自身立场，交锋更有深度，最终结论经过多轮思辨沉淀，质量更高。</p>
-                            <p style={{ fontWeight: 700 }}>💌 情绪树洞 · 记忆增强</p>
-                            <p>树洞现在会记住你的情景、情绪与个人偏好，越聊越懂你——后续回答会自动贴合你习惯的回应方式。</p>
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🧩 8月13日 · Multi-Agent 并行工作流</p>
+                            <p>超长/跨域复杂任务自动拆解为最多 9 个子任务并行执行，再由主 Agent 统一收敛汇总——复杂问题回答更快、内容更全面。</p>
 
-                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🚀 8月12日 · 高可用与监控升级</p>
-                            <p style={{ fontWeight: 700 }}>🛡️ 双实例高可用部署</p>
-                            <p>核心 AI 与接入层升级为双实例运行，请求自动分摊到多节点，单个实例故障不影响服务，聊天更稳定。</p>
-                            <p style={{ fontWeight: 700 }}>📊 全链路监控告警上线</p>
-                            <p>服务状态、内存、磁盘、接口延迟实现自动化监控，异常秒级告警并推送运维，替代人工巡检，保障服务 7×24 稳定运行。</p>
-                            <p style={{ fontWeight: 700 }}>🔁 多轮会话记忆修复</p>
-                            <p>修复了"回答完就断开"的问题，个人对话与树洞的多轮上下文现在跨实例完整共享，对话不再失忆。</p>
+                            <p style={{ fontWeight: 700 }}>🚀 复杂任务大幅提速</p>
+                            <p>并行拆解 + 收敛压缩输出，一次长回答的等待时间大幅缩短。</p>
 
-                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🌳 树状辩论模式</p>
-                            <p>复杂问题 LLM 自动拆解为多个视角，豆包、DeepSeek、千问三方辩论后综合汇总。前端可拖拽 DAG 画布，缩放流畅，结论逐句展示。</p>
+                            <p style={{ fontWeight: 700 }}>🔐 登录与安全体验优化</p>
+                            <p>前端请求统一鉴权，会话过期自动跳转登录页，账号与数据更安全。</p>
 
-                            <p style={{ fontWeight: 700 }}>🎯 意图识别三层漏斗</p>
-                            <p>L1 规则 (0-1ms) → L2 语义 (30-80ms) → L3 LLM 兜底，自动匹配最佳 Temperature 和模型参数，告别硬编码。</p>
+                            <p style={{ fontWeight: 700 }}>🛡️ 系统稳定性提升</p>
+                            <p>核心服务双实例高可用 + 内存精细调优，系统运行更稳定。</p>
 
-                            <p style={{ fontWeight: 700 }}>💭 思考链实时展示</p>
-                            <p>复杂问题的 AI 推理过程以灰色斜体实时展现，了解 AI 的思考路径。</p>
+                            <p style={{ fontWeight: 700 }}>📋 全站接口规范化</p>
+                            <p>统一错误响应格式与错误码，异常提示更清晰友好，问题排查更快。</p>
 
-                            <p style={{ fontWeight: 700 }}>🛡️ 多层安全防护</p>
-                            <p>IP 全局限流 600次/分钟、用户级 20次/分钟、自动拉黑机制、CORS 白名单、UA 爬虫过滤。</p>
-
-                            <p style={{ fontWeight: 700 }}>🩺 AI 错误自愈</p>
-                            <p>LLM 调用失败不再直接报错——自动切换模型、降温、重试，按错误类型智能恢复。</p>
-
-                            <p style={{ fontWeight: 700 }}>⚡ 500 并发性能优化</p>
-                            <p>全链路调优后，AI 模式下 500 并发 P50 从 4.3s 降至 154ms，零失败。</p>
-
-                            <p style={{ fontWeight: 700 }}>🔧 全面修复与增强</p>
-                            <p>缩放按钮响应提至毫秒级、移动端双指缩放、前端报错日志、IP 管理面板。</p>
-
-                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月12日 · 博思AI团队</p>
+                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月13日 · 博思AI团队</p>
                         </div>
                     </div>
                 </div>
@@ -511,7 +489,7 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
         if (!username || !password) { setError('请输入用户名和密码'); return }
         setLoading(true); setError('')
         try {
-            const res = await axios.post('/api/v1/auth/login', { username, password })
+            const res = await apiClient.post('/api/v1/auth/login', { username, password })
             localStorage.setItem('auth_token', res.data.access_token)
             localStorage.setItem('auth_user', JSON.stringify(res.data.user))
             window.dispatchEvent(new CustomEvent('auth-changed', { detail: res.data.user }))
@@ -529,8 +507,8 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
         if (!username || !password) { setError('请输入用户名和密码'); return }
         setLoading(true); setError('')
         try {
-            await axios.post('/api/v1/auth/register', { username, password, nickname })
-            const res = await axios.post('/api/v1/auth/login', { username, password })
+            await apiClient.post('/api/v1/auth/register', { username, password, nickname })
+            const res = await apiClient.post('/api/v1/auth/login', { username, password })
             localStorage.setItem('auth_token', res.data.access_token)
             localStorage.setItem('auth_user', JSON.stringify(res.data.user))
             window.dispatchEvent(new CustomEvent('auth-changed', { detail: res.data.user }))

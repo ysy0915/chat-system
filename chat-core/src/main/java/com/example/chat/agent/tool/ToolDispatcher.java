@@ -2,10 +2,9 @@ package com.example.chat.agent.tool;
 
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
-import com.example.chat.exception.LLMCallException;
 import com.example.chat.service.LLMInvoker;
 import com.example.chat.util.BaseUrlResolver;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.chat.util.LlmToolInvoker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,13 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,10 +38,7 @@ public class ToolDispatcher {
     private final ToolRegistry toolRegistry;
     private final LLMInvoker llmInvoker;
     private final BaseUrlResolver baseUrlResolver;
-    private final ObjectMapper objectMapper;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
-            .build();
+    private final LlmToolInvoker llmToolInvoker;
 
     /** 技能自进化服务（Step 3，同 app.agent.enabled 开关） */
     @Autowired(required = false)
@@ -61,11 +51,11 @@ public class ToolDispatcher {
     public ToolDispatcher(ToolRegistry toolRegistry,
                           LLMInvoker llmInvoker,
                           BaseUrlResolver baseUrlResolver,
-                          ObjectMapper objectMapper) {
+                          LlmToolInvoker llmToolInvoker) {
         this.toolRegistry = toolRegistry;
         this.llmInvoker = llmInvoker;
         this.baseUrlResolver = baseUrlResolver;
-        this.objectMapper = objectMapper;
+        this.llmToolInvoker = llmToolInvoker;
     }
 
     /**
@@ -105,11 +95,11 @@ public class ToolDispatcher {
         List<String> executedTools = new ArrayList<>();
         while (callCount < maxToolCalls) {
             // 带工具调用 LLM
-            Map<String, Object> llmResp = callLLMWithTools(config, baseUrl, apiKey, workingMessages,
-                    temperature, toolsSchema);
+            Map<String, Object> llmResp = llmToolInvoker.callWithTools(config, baseUrl, apiKey,
+                    LlmToolInvoker.fromMapList(workingMessages), temperature, toolsSchema);
 
-            List<Map<String, Object>> toolCalls = extractToolCalls(llmResp);
-            String assistantContent = extractContent(llmResp);
+            List<Map<String, Object>> toolCalls = llmToolInvoker.extractToolCalls(llmResp);
+            String assistantContent = llmToolInvoker.extractContent(llmResp);
 
             if (toolCalls == null || toolCalls.isEmpty()) {
                 // LLM 未请求工具，直接返回内容
@@ -130,9 +120,8 @@ public class ToolDispatcher {
 
             // 执行每一个工具调用，把结果作为 tool 角色消息回填
             for (Map<String, Object> tc : toolCalls) {
-                String toolResult = executeOneToolCall(tc);
-                Map<String, Object> functionCall = asFunction(tc);
-                String toolCallId = functionCall != null ? String.valueOf(functionCall.get("name")) : "tool";
+                String toolResult = llmToolInvoker.executeOneToolCall(tc, this::executeTool);
+                String toolCallId = llmToolInvoker.toolNameOf(tc);
                 if (!executedTools.contains(toolCallId)) {
                     executedTools.add(toolCallId);
                 }
@@ -149,7 +138,7 @@ public class ToolDispatcher {
                     callCount, toolCalls.size(), scene);
 
             // 调用 LLM 生成最终回答（仍带 tools，允许 LLM 继续调用工具直到 maxToolCalls）
-            String finalAnswer = llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
+            String finalAnswer = llmInvoker.invoke(config, LlmToolInvoker.fromMapList(workingMessages), temperature, scene,
                     defaultBaseUrl, defaultApiKey);
             // Step3：任务链成功执行工具后，异步触发技能复盘沉淀
             triggerEvolution(userInput, executedTools, finalAnswer, scene, config,
@@ -159,7 +148,7 @@ public class ToolDispatcher {
 
         log.warn("[ToolDispatcher] 达到最大工具调用次数 {}，停止 (scene={})", maxToolCalls, scene);
         // 超过上限：用最后一条消息直接调 LLM（不带工具，强制输出文本）
-        String lastAnswer = llmInvoker.invoke(config, fromMapList(workingMessages), temperature, scene,
+        String lastAnswer = llmInvoker.invoke(config, LlmToolInvoker.fromMapList(workingMessages), temperature, scene,
                 defaultBaseUrl, defaultApiKey);
         triggerEvolution(userInput, executedTools, lastAnswer, scene, config, defaultBaseUrl, defaultApiKey);
         return lastAnswer;
@@ -181,130 +170,13 @@ public class ToolDispatcher {
         }
     }
 
-    /** 将 Map 消息列表转回 LLMMessage */
-    private List<LLMMessage> fromMapList(List<Map<String, Object>> maps) {
-        List<LLMMessage> result = new ArrayList<>();
-        for (Map<String, Object> m : maps) {
-            result.add(LLMMessage.fromMap(m));
-        }
-        return result;
-    }
-
-    /**
-     * 调用 LLM（带 tools 参数），返回完整响应 map（包含 choices[0].message）
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> callLLMWithTools(ModelConfig config, String baseUrl, String apiKey,
-                                                 List<Map<String, Object>> messages,
-                                                 double temperature,
-                                                 List<Map<String, Object>> toolsSchema) throws Exception {
-        String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
-
-        LinkedHashMap<String, Object> requestBody = new LinkedHashMap<>();
-        requestBody.put("model", config.model);
-        requestBody.put("messages", messages);
-        requestBody.put("temperature", temperature);
-        requestBody.put("tools", toolsSchema);
-
-        String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(Duration.ofSeconds(120))
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new LLMCallException(response.statusCode(), "ToolDispatcher LLM API returned status " + response.statusCode());
-        }
-
-        return objectMapper.readValue(response.body(), Map.class);
-    }
-
-    /** 从 LLM 响应中提取 choices[0].message.tool_calls */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractToolCalls(Map<String, Object> llmResp) {
-        try {
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) llmResp.get("choices");
-            if (choices == null || choices.isEmpty()) return Collections.emptyList();
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            if (message == null) return Collections.emptyList();
-            Object toolCalls = message.get("tool_calls");
-            if (toolCalls instanceof List) {
-                return (List<Map<String, Object>>) toolCalls;
-            }
-        } catch (Exception e) {
-            log.warn("[ToolDispatcher] 解析 tool_calls 失败: {}", e.getMessage());
-        }
-        return Collections.emptyList();
-    }
-
-    /** 从 LLM 响应中提取 choices[0].message.content */
-    @SuppressWarnings("unchecked")
-    private String extractContent(Map<String, Object> llmResp) {
-        try {
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) llmResp.get("choices");
-            if (choices == null || choices.isEmpty()) return null;
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            if (message == null) return null;
-            Object content = message.get("content");
-            return content != null ? content.toString() : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /** 取 tool_call 中的 function 子对象 */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> asFunction(Map<String, Object> toolCall) {
-        if (toolCall == null) return null;
-        Object fn = toolCall.get("function");
-        return fn instanceof Map ? (Map<String, Object>) fn : null;
-    }
-
-    /**
-     * 执行单个 tool_call
-     * tool_call 结构：{"id":..., "type":"function", "function":{"name":..., "arguments":"<json string>"}}
-     */
-    private String executeOneToolCall(Map<String, Object> toolCall) {
-        Map<String, Object> function = asFunction(toolCall);
-        if (function == null) {
-            return "[工具调用格式错误: 缺少 function 字段]";
-        }
-        String toolName = String.valueOf(function.get("name"));
+    /** 从工具注册中心按名执行工具；未知工具返回占位提示 */
+    private String executeTool(String toolName, Map<String, Object> params) {
         Tool tool = toolRegistry.getTool(toolName);
         if (tool == null) {
             log.warn("[ToolDispatcher] 未知工具: {}", toolName);
             return "[未知工具: " + toolName + "]";
         }
-
-        Map<String, Object> params = new LinkedHashMap<>();
-        Object arguments = function.get("arguments");
-        if (arguments instanceof String) {
-            try {
-                Object parsed = objectMapper.readValue((String) arguments, Object.class);
-                if (parsed instanceof Map) {
-                    params.putAll((Map<String, Object>) parsed);
-                }
-            } catch (Exception e) {
-                log.warn("[ToolDispatcher] 解析工具 {} 参数失败: {}", toolName, e.getMessage());
-            }
-        } else if (arguments instanceof Map) {
-            params.putAll((Map<String, Object>) arguments);
-        }
-
-        try {
-            String result = tool.execute(params);
-            log.info("[ToolDispatcher] 工具 {} 执行成功 resultLen={}", toolName,
-                    result != null ? result.length() : 0);
-            return result != null ? result : "";
-        } catch (Exception e) {
-            log.error("[ToolDispatcher] 工具 {} 执行失败: {}", toolName, e.getMessage(), e);
-            return "[工具 " + toolName + " 执行失败: " + e.getMessage() + "]";
-        }
+        return tool.execute(params);
     }
 }

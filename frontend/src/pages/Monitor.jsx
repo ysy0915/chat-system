@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
@@ -115,7 +115,7 @@ export default function Monitor() {
 
   async function fetchData() {
     try {
-      const res = await axios.get('/api/v1/monitor/online-history', { params: { days: 8 } })
+      const res = await apiClient.get('/api/v1/monitor/online-history', { params: { days: 8 } })
       setCurrent(res.data.current || {})
       setDailyVisits(res.data.dailyVisits || {})
       setHourlyTotal(res.data.hourlyTotal || 0)
@@ -474,7 +474,7 @@ export default function Monitor() {
           <form onSubmit={async (e) => {
             e.preventDefault()
             try {
-              await axios.post('/api/v1/monitor/login', { password: pwd })
+              await apiClient.post('/api/v1/monitor/login', { password: pwd })
               setAuthed(true)
               sessionStorage.setItem('monitor_authed', '1')
               setLoginErr('')

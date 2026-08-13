@@ -2,14 +2,14 @@ package com.example.chat.agent.workflow;
 
 import com.example.chat.agent.protocol.SubAgentResult;
 import com.example.chat.agent.protocol.SubAgentTask;
+import com.example.chat.agent.tool.Tool;
 import com.example.chat.agent.tool.ToolRegistry;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
-import com.example.chat.exception.LLMCallException;
 import com.example.chat.service.LLMInvoker;
 import com.example.chat.util.BaseUrlResolver;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.chat.util.LlmToolInvoker;
 import com.rabbitmq.client.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,13 +21,7 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,25 +47,21 @@ public class SubAgentWorker {
     private final LlmConfigProperties llmConfig;
     private final ToolRegistry toolRegistry;
     private final BaseUrlResolver baseUrlResolver;
-    private final ObjectMapper objectMapper;
+    private final LlmToolInvoker llmToolInvoker;
     private final SubTaskProducer subTaskProducer;
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
-            .build();
 
     @Autowired
     public SubAgentWorker(LLMInvoker llmInvoker,
                           LlmConfigProperties llmConfig,
                           ToolRegistry toolRegistry,
                           BaseUrlResolver baseUrlResolver,
-                          ObjectMapper objectMapper,
+                          LlmToolInvoker llmToolInvoker,
                           SubTaskProducer subTaskProducer) {
         this.llmInvoker = llmInvoker;
         this.llmConfig = llmConfig;
         this.toolRegistry = toolRegistry;
         this.baseUrlResolver = baseUrlResolver;
-        this.objectMapper = objectMapper;
+        this.llmToolInvoker = llmToolInvoker;
         this.subTaskProducer = subTaskProducer;
     }
 
@@ -164,9 +154,9 @@ public class SubAgentWorker {
         String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
                 ? config.apiKeyEncrypted : llmConfig.getApiKey();
 
-        Map<String, Object> llmResp = callLLMWithTools(config, baseUrl, apiKey, messages, tools);
-        List<Map<String, Object>> toolCalls = extractToolCalls(llmResp);
-        String content = extractContent(llmResp);
+        Map<String, Object> llmResp = llmToolInvoker.callWithTools(config, baseUrl, apiKey, messages, 0.2, tools);
+        List<Map<String, Object>> toolCalls = llmToolInvoker.extractToolCalls(llmResp);
+        String content = llmToolInvoker.extractContent(llmResp);
         if (toolCalls == null || toolCalls.isEmpty()) {
             return content != null ? content : "";
         }
@@ -180,8 +170,8 @@ public class SubAgentWorker {
         working.add(assistantMsg);
 
         for (Map<String, Object> tc : toolCalls) {
-            String toolResult = executeOneToolCall(tc);
-            String toolName = toolNameOf(tc);
+            String toolResult = llmToolInvoker.executeOneToolCall(tc, this::executeTool);
+            String toolName = llmToolInvoker.toolNameOf(tc);
             Map<String, Object> toolMsg = new LinkedHashMap<>();
             toolMsg.put("role", "tool");
             toolMsg.put("name", toolName);
@@ -189,118 +179,19 @@ public class SubAgentWorker {
             working.add(toolMsg);
         }
 
-        return llmInvoker.invoke(config, fromMapList(working), 0.2, "subagent",
+        return llmInvoker.invoke(config, LlmToolInvoker.fromMapList(working), 0.2, "subagent",
                 llmConfig.getBaseUrl(), llmConfig.getApiKey());
     }
 
-    /** 将 Map 消息列表转回 LLMMessage */
-    private List<LLMMessage> fromMapList(List<Map<String, Object>> maps) {
-        List<LLMMessage> result = new ArrayList<>();
-        for (Map<String, Object> m : maps) {
-            result.add(LLMMessage.fromMap(m));
+    /** 从工具注册中心按名执行工具；未知工具返回占位提示 */
+    private String executeTool(String toolName, Map<String, Object> params) {
+        Tool tool = toolRegistry.getTool(toolName);
+        if (tool == null) {
+            log.warn("[SubAgentWorker] 未知工具: {}", toolName);
+            return "[未知工具: " + toolName + "]";
         }
-        return result;
-    }
-
-    /** 带限定 tools 调 LLM（OpenAI 兼容 /chat/completions） */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> callLLMWithTools(ModelConfig config, String baseUrl, String apiKey,
-                                                 List<LLMMessage> messages,
-                                                 List<Map<String, Object>> tools) throws Exception {
-        String url = baseUrl.replaceAll("/+$", "") + "/chat/completions";
-        LinkedHashMap<String, Object> requestBody = new LinkedHashMap<>();
-        requestBody.put("model", config.model);
-        requestBody.put("messages", LLMMessage.toMapList(messages));
-        requestBody.put("temperature", 0.2);
-        requestBody.put("tools", tools);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .timeout(Duration.ofSeconds(120))
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
-                .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new LLMCallException(response.statusCode(),
-                    "SubAgentWorker LLM API returned status " + response.statusCode());
-        }
-        return objectMapper.readValue(response.body(), Map.class);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  工具执行（与 ToolDispatcher 相同的 OpenAI function calling 解析）
-    // ═══════════════════════════════════════════════════════════════════
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractToolCalls(Map<String, Object> llmResp) {
-        try {
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) llmResp.get("choices");
-            if (choices == null || choices.isEmpty()) return Collections.emptyList();
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            if (message == null) return Collections.emptyList();
-            Object toolCalls = message.get("tool_calls");
-            if (toolCalls instanceof List) {
-                return (List<Map<String, Object>>) toolCalls;
-            }
-        } catch (Exception e) {
-            log.warn("[SubAgentWorker] 解析 tool_calls 失败: {}", e.getMessage());
-        }
-        return Collections.emptyList();
-    }
-
-    private String extractContent(Map<String, Object> llmResp) {
-        try {
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) llmResp.get("choices");
-            if (choices == null || choices.isEmpty()) return null;
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            if (message == null) return null;
-            Object content = message.get("content");
-            return content != null ? content.toString() : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private String toolNameOf(Map<String, Object> toolCall) {
-        if (toolCall == null) return "tool";
-        Object fn = toolCall.get("function");
-        if (fn instanceof Map) {
-            Object name = ((Map<?, ?>) fn).get("name");
-            if (name != null) return name.toString();
-        }
-        return "tool";
-    }
-
-    private String executeOneToolCall(Map<String, Object> toolCall) {
-        String toolName = toolNameOf(toolCall);
-        Object fn = toolCall.get("function");
-        if (!(fn instanceof Map)) return "[工具调用格式错误]";
-        Map<?, ?> function = (Map<?, ?>) fn;
-        Object arguments = function.get("arguments");
-
-        Map<String, Object> params = new LinkedHashMap<>();
-        if (arguments instanceof String) {
-            try {
-                Object parsed = objectMapper.readValue((String) arguments, Object.class);
-                if (parsed instanceof Map) {
-                    params.putAll((Map<String, Object>) parsed);
-                }
-            } catch (Exception e) {
-                log.warn("[SubAgentWorker] 解析工具 {} 参数失败: {}", toolName, e.getMessage());
-            }
-        } else if (arguments instanceof Map) {
-            params.putAll((Map<String, Object>) arguments);
-        }
-
-        try {
-            String result = toolRegistry.getTool(toolName).execute(params);
-            return result != null ? result : "";
-        } catch (Exception e) {
-            log.error("[SubAgentWorker] 工具 {} 执行失败: {}", toolName, e.getMessage());
-            return "[工具 " + toolName + " 执行失败: " + e.getMessage() + "]";
-        }
+        String result = tool.execute(params);
+        return result != null ? result : "";
     }
 
     private ModelConfig defaultConfig() {

@@ -1,5 +1,6 @@
 package com.example.chat.llm;
 
+import com.example.chat.config.GlobalExceptionHandler;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.security.JwtUtil;
 import com.example.chat.service.DirectLLMClient;
@@ -29,7 +30,8 @@ import org.springframework.context.annotation.Import;
 @MapperScan({"com.example.chat.repository",
         "com.example.chat.llm.rag.legacy",
         "com.example.chat.llm.llm.routing.db"})
-@Import({LlmConfigProperties.class, DirectLLMClient.class, BaseUrlResolver.class, JwtUtil.class})
+@Import({LlmConfigProperties.class, DirectLLMClient.class, BaseUrlResolver.class, JwtUtil.class,
+        GlobalExceptionHandler.class})
 public class LlmApplication {
 
     public static void main(String[] args) {

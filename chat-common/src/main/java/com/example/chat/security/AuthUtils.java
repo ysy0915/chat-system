@@ -33,4 +33,30 @@ public final class AuthUtils {
             return null;
         }
     }
+
+    /**
+     * 从 SecurityContextHolder 提取用户 ID（由 JwtAuthenticationFilter 填充 credentials=uid），
+     * 供已接入统一安全过滤链的各模块 Controller 复用，未登录返回 null。
+     */
+    public static Long extractUserIdFromContext() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return null;
+        Object credentials = auth.getCredentials();
+        if (credentials instanceof Long uid) return uid;
+        if (credentials instanceof Number num) return num.longValue();
+        return null;
+    }
+
+    /** 从 SecurityContextHolder 提取用户名（principal 的 subject，已去除 @ 后缀），未登录返回 null */
+    public static String extractUsernameFromContext() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof org.springframework.security.core.userdetails.User user)) {
+            return null;
+        }
+        String subject = user.getUsername();
+        if (subject != null && subject.contains("@")) return subject.substring(0, subject.indexOf('@'));
+        return subject;
+    }
 }

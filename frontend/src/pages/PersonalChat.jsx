@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
@@ -61,10 +61,8 @@ export default function PersonalChat() {
     setSearching(true)
     setSelectedResult(null)
     setSearchPage(page)
-    const token = localStorage.getItem('auth_token')
-    axios.get('/api/v1/messages/search', {
-      params: { user_id: userId, keyword: searchKeyword, page, size: 5 },
-      headers: { Authorization: token ? `Bearer ${token}` : '' }
+    apiClient.get('/api/v1/messages/search', {
+      params: { user_id: userId, keyword: searchKeyword, page, size: 5 }
     })
       .then(res => {
         setSearchResults(res.data?.items || [])
@@ -77,10 +75,8 @@ export default function PersonalChat() {
   }
 
   const loadSearchResult = (item) => {
-    const token = localStorage.getItem('auth_token')
-    axios.get('/api/v1/messages/context', {
-      params: { user_id: userId, msg_id: item.id },
-      headers: { Authorization: token ? `Bearer ${token}` : '' }
+    apiClient.get('/api/v1/messages/context', {
+      params: { user_id: userId, msg_id: item.id }
     })
       .then(res => {
         const context = (res.data || []).reverse()
@@ -298,7 +294,7 @@ export default function PersonalChat() {
     }
     const reqId = generateId()
     try {
-      await axios.post('/api/v1/messages', {
+      await apiClient.post('/api/v1/messages', {
         req_id: reqId,
         question: model.keyword,
         user_id: userId,
@@ -315,7 +311,7 @@ export default function PersonalChat() {
 
   useEffect(() => {
     if (!userId) return
-    axios.get('/api/v1/messages/recent', { params: { user_id: userId } })
+    apiClient.get('/api/v1/messages/recent', { params: { user_id: userId } })
       .then(res => {
         const history = (res.data || [])
           .filter(m => m.answerJson && m.answerJson.trim())
@@ -336,7 +332,7 @@ export default function PersonalChat() {
   useEffect(() => {
     if (!userId) return
     connectedRef.current = false
-    axios.get('/api/v1/messages/online-count', { params: { page: 'personal' } })
+    apiClient.get('/api/v1/messages/online-count', { params: { page: 'personal' } })
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
 
@@ -407,12 +403,12 @@ export default function PersonalChat() {
         formData.append('question', text)
         formData.append('user_id', userId)
         formData.append('req_id', reqId)
-        await axios.post('/api/v1/messages/with-file', formData, {
+        await apiClient.post('/api/v1/messages/with-file', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
           timeout: timeoutMs
         })
       } else {
-        const res = await axios.post('/api/v1/messages', {
+        const res = await apiClient.post('/api/v1/messages', {
           req_id: reqId,
           question: text,
           user_id: userId,
@@ -474,7 +470,7 @@ export default function PersonalChat() {
     const reqId = streamingReqIdRef.current
     if (!reqId) return
     try {
-      await axios.post('/api/v1/messages/stop', { req_id: reqId }, { timeout: 5000 })
+      await apiClient.post('/api/v1/messages/stop', { req_id: reqId }, { timeout: 5000 })
     } catch (e) {
       console.error('停止生成请求失败', e)
     }
@@ -510,7 +506,7 @@ export default function PersonalChat() {
     // 调用后端重新生成接口
     setTyping(true)
     try {
-      await axios.post('/api/v1/messages/regenerate', {
+      await apiClient.post('/api/v1/messages/regenerate', {
         req_id: aiMessage.reqId,
         user_id: userId
       }, { timeout: 30000 })

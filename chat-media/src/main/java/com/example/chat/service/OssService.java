@@ -75,62 +75,88 @@ public class OssService {
      * @param sourceUrl 第三方临时 URL
      * @param mediaType image / video / 3d
      * @return OSS 上的永久 URL，失败返回原 URL
+     * 设计：视频生成后百炼临时 URL 可能短暂未就绪/下载超时，重试 3 次（间隔 5s）提升转存成功率，
+     * 避免失败后保留过期的第三方 URL 导致历史记录 403。
      */
     public String transferToOss(String sourceUrl, String mediaType) {
         if (!enabled || ossClient == null || sourceUrl == null || sourceUrl.isBlank()) {
             return sourceUrl;
         }
-        try {
-            // 下载文件
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(sourceUrl))
-                    .timeout(java.time.Duration.ofSeconds(60))
-                    .GET()
-                    .build();
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() != 200) {
-                log.warn("OSS 下载失败 status={} url={}", response.statusCode(), sourceUrl);
-                return sourceUrl;
+        int maxAttempts = 3;
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                // 下载文件
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(sourceUrl))
+                        .timeout(java.time.Duration.ofSeconds(90))
+                        .GET()
+                        .build();
+                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() != 200) {
+                    lastError = new IllegalStateException("下载 status=" + response.statusCode());
+                    log.warn("OSS 下载失败 status={} url={} (尝试 {}/{})", response.statusCode(), sourceUrl, attempt, maxAttempts);
+                    sleepQuietly(5000);
+                    continue;
+                }
+                byte[] data = response.body();
+                String contentType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
+
+                // 根据类型确定扩展名
+                String ext = getExtension(sourceUrl, contentType);
+                // 按日期分目录: media/3d/2026-08-07/uuid.glb
+                String dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+                String objectKey = String.format("media/%s/%s/%s.%s", mediaType, dateStr, UUID.randomUUID().toString().replace("-", ""), ext);
+
+                // 上传到 OSS
+                com.aliyun.oss.model.ObjectMetadata metadata = new com.aliyun.oss.model.ObjectMetadata();
+                metadata.setContentLength(data.length);
+                metadata.setContentType(contentType);
+                ossClient.putObject(bucketName, objectKey, new java.io.ByteArrayInputStream(data), metadata);
+
+                // 生成签名 URL（有效期 7 天），确保即使 Bucket 私有也能访问
+                java.util.Date expiration = new java.util.Date(System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000);
+                String signedUrl = ossClient.generatePresignedUrl(bucketName, objectKey, expiration).toString();
+                log.info("OSS 转存成功 {} -> {} ({}KB)", mediaType, signedUrl, data.length / 1024);
+                return signedUrl;
+            } catch (Exception e) {
+                lastError = e;
+                log.warn("OSS 转存失败(尝试 {}/{}): {} - {}", attempt, maxAttempts, sourceUrl, e.getMessage());
+                if (attempt < maxAttempts) sleepQuietly(5000);
             }
-            byte[] data = response.body();
-            String contentType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
+        }
+        log.warn("OSS 转存最终失败, 保留原URL: {} - {}", sourceUrl, lastError == null ? "unknown" : lastError.getMessage());
+        return sourceUrl;
+    }
 
-            // 根据类型确定扩展名
-            String ext = getExtension(sourceUrl, contentType);
-            // 按日期分目录: media/3d/2026-08-07/uuid.glb
-            String dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-            String objectKey = String.format("media/%s/%s/%s.%s", mediaType, dateStr, UUID.randomUUID().toString().replace("-", ""), ext);
-
-            // 上传到 OSS
-            com.aliyun.oss.model.ObjectMetadata metadata = new com.aliyun.oss.model.ObjectMetadata();
-            metadata.setContentLength(data.length);
-            metadata.setContentType(contentType);
-            ossClient.putObject(bucketName, objectKey, new java.io.ByteArrayInputStream(data), metadata);
-
-            // 生成签名 URL（有效期 7 天），确保即使 Bucket 私有也能访问
-            java.util.Date expiration = new java.util.Date(System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000);
-            String signedUrl = ossClient.generatePresignedUrl(bucketName, objectKey, expiration).toString();
-            log.info("OSS 转存成功 {} -> {} ({}KB)", mediaType, signedUrl, data.length / 1024);
-            return signedUrl;
-        } catch (Exception e) {
-            log.warn("OSS 转存失败, 保留原URL: {} - {}", sourceUrl, e.getMessage());
-            return sourceUrl;
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
     /**
      * 刷新签名 URL
      * 数据库存的是签名 URL（会过期），这个方法从 URL 中提取 objectKey，重新生成签名 URL
-     * 如果 URL 不是 OSS 签名 URL（比如第三方临时 URL），直接返回原 URL
+     * 关键修复：只刷新**本项目 bucket** 的 URL；第三方临时地址（如百炼 dashscope 返回的
+     * oss-accelerate 域名）原样返回，避免用本项目密钥对第三方 key 签名产生 404。
+     * 第三方地址是否过期由前端 onError 兜底提示（历史修复见 MediaGen 页面）。
      */
     public String refreshSignedUrl(String storedUrl) {
         if (!enabled || ossClient == null || storedUrl == null || storedUrl.isBlank()) {
             return storedUrl;
         }
         try {
+            URI uri = URI.create(storedUrl);
+            String host = uri.getHost();
+            // 仅处理本项目 bucket 的 URL（host 包含 bucket 名），第三方地址一律原样返回
+            if (host == null || !host.startsWith(bucketName + ".")) {
+                return storedUrl;
+            }
             // 从 URL 中提取 objectKey
             // 签名 URL 格式: https://bucket.oss-cn-shanghai.aliyuncs.com/media/image/2026-08-07/uuid.png?...
-            URI uri = URI.create(storedUrl);
             String path = uri.getPath();
             if (path == null || path.isEmpty()) return storedUrl;
             // 去掉开头的 /

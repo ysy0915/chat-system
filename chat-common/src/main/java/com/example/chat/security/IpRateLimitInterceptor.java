@@ -27,6 +27,7 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(IpRateLimitInterceptor.class);
 
     private final StringRedisTemplate redis;
+    private final RateLimitChecker rateLimitChecker;
 
     // 全站限流：单 IP 每分钟 600 次（多页面+多标签同时访问）
     private static final int GLOBAL_PER_MINUTE = 600;
@@ -55,8 +56,9 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
     private static final String KEY_BLACKLIST = "ip:blacklist:";
     private static final String KEY_REQUEST_COUNT = "ip:count:";
 
-    public IpRateLimitInterceptor(StringRedisTemplate redis) {
+    public IpRateLimitInterceptor(StringRedisTemplate redis, RateLimitChecker rateLimitChecker) {
         this.redis = redis;
+        this.rateLimitChecker = rateLimitChecker;
     }
 
     /**
@@ -88,12 +90,12 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
 
         // 4. 敏感接口限流（登录/注册）
         if (isSensitiveEndpoint(uri)
-                && !checkRate(KEY_SENSITIVE + ip, SENSITIVE_PER_MINUTE, Duration.ofMinutes(1))) {
+                && !rateLimitChecker.checkAndIncrement(KEY_SENSITIVE + ip, SENSITIVE_PER_MINUTE, Duration.ofMinutes(1))) {
             return reject(response, 429, "操作过于频繁，请1分钟后再试");
         }
 
         // 5. 全局限流
-        if (!checkRate(KEY_GLOBAL + ip, GLOBAL_PER_MINUTE, Duration.ofMinutes(1))) {
+        if (!rateLimitChecker.checkAndIncrement(KEY_GLOBAL + ip, GLOBAL_PER_MINUTE, Duration.ofMinutes(1))) {
             return reject(response, 429, "请求过于频繁，请稍后再试");
         }
 
@@ -132,27 +134,6 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
         return false;
-    }
-
-    /**
-     * 限流计数检查：首次访问设置过期时间，超过限额返回 false。
-     * Redis 异常时放行（fail-open）。
-     * @param key Redis 计数 key
-     * @param limit 限流上限
-     * @param ttl 计数窗口时长
-     * @return true 允许访问；false 已超限
-     */
-    private boolean checkRate(String key, int limit, Duration ttl) {
-        try {
-            Long current = redis.opsForValue().increment(key);
-            if (current != null && current == 1) {
-                redis.expire(key, ttl);
-            }
-            return current == null || current <= limit;
-        } catch (Exception e) {
-            // Redis 异常时放行（fail-open）
-            return true;
-        }
     }
 
     /**

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import './KnowledgeBase.css'
 
 export default function KnowledgeBase() {
@@ -17,24 +17,20 @@ export default function KnowledgeBase() {
   const [error, setError] = useState('')
   const [forbidden, setForbidden] = useState(false)
 
-  const [token] = useState(localStorage.getItem('auth_token') || '')
-
   useEffect(() => {
     loadKnowledgeBases()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时加载一次
   }, [])
 
-  const authHeader = { headers: { Authorization: token ? `Bearer ${token}` : '' } }
-
   const loadKnowledgeBases = async () => {
     setLoading(true)
-    if (!token) {
+    if (!localStorage.getItem('auth_token')) {
       setForbidden(true)
       setLoading(false)
       return
     }
     try {
-      const res = await axios.get('/api/v1/rag/kb', authHeader)
+      const res = await apiClient.get('/api/v1/rag/kb')
       setKnowledgeBases(res.data || [])
       setForbidden(false)
     } catch (e) {
@@ -51,7 +47,7 @@ export default function KnowledgeBase() {
   const createKnowledgeBase = async () => {
     if (!newKbName.trim()) return
     try {
-      await axios.post('/api/v1/rag/kb', { name: newKbName, description: newKbDesc }, authHeader)
+      await apiClient.post('/api/v1/rag/kb', { name: newKbName, description: newKbDesc })
       setNewKbName('')
       setNewKbDesc('')
       setShowCreate(false)
@@ -64,7 +60,7 @@ export default function KnowledgeBase() {
   const deleteKnowledgeBase = async (id, name) => {
     if (!confirm(`确认删除知识库「${name}」？所有向量数据将一并删除。`)) return
     try {
-      await axios.delete(`/api/v1/rag/kb/${id}`, authHeader)
+      await apiClient.delete(`/api/v1/rag/kb/${id}`)
       if (selectedKb === id) {
         setSelectedKb(null)
         setDocuments([])
@@ -79,7 +75,7 @@ export default function KnowledgeBase() {
     setSelectedKb(kbId)
     setSearchResults([])
     try {
-      const res = await axios.get(`/api/v1/rag/kb/${kbId}/documents`, authHeader)
+      const res = await apiClient.get(`/api/v1/rag/kb/${kbId}/documents`)
       setDocuments(res.data || [])
     } catch (e) {
       setError(e.response?.data?.error || '加载文档失败')
@@ -93,9 +89,8 @@ export default function KnowledgeBase() {
     const formData = new FormData()
     formData.append('file', file)
     try {
-      await axios.post(`/api/v1/rag/kb/${selectedKb}/documents`, formData, {
-        ...authHeader,
-        headers: { ...authHeader.headers, 'Content-Type': 'multipart/form-data' },
+      await apiClient.post(`/api/v1/rag/kb/${selectedKb}/documents`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       })
       loadDocuments(selectedKb)
@@ -110,7 +105,7 @@ export default function KnowledgeBase() {
   const deleteDocument = async (id, name) => {
     if (!confirm(`确认删除文档「${name}」？`)) return
     try {
-      await axios.delete(`/api/v1/rag/documents/${id}`, authHeader)
+      await apiClient.delete(`/api/v1/rag/documents/${id}`)
       loadDocuments(selectedKb)
     } catch (e) {
       setError(e.response?.data?.error || '删除失败')
@@ -122,11 +117,11 @@ export default function KnowledgeBase() {
     setSearching(true)
     setSearchResults([])
     try {
-      const res = await axios.post('/api/v1/rag/search', {
+      const res = await apiClient.post('/api/v1/rag/search', {
         knowledgeBaseId: selectedKb,
         query: searchQuery,
         topK: 5,
-      }, authHeader)
+      })
       setSearchResults(res.data || [])
     } catch (e) {
       setError(e.response?.data?.error || '检索失败')
@@ -155,9 +150,9 @@ export default function KnowledgeBase() {
       {forbidden ? (
         <div className="kb-forbidden">
           <span className="kb-forbidden-icon">🔒</span>
-          <h2>{token ? '仅管理员可访问' : '请先登录'}</h2>
-          <p>{token ? '知识库管理功能仅对管理员开放，普通用户无权访问。' : '知识库管理功能需要登录管理员账号才能使用。'}</p>
-          <p className="kb-forbidden-hint">{token ? '如需开通权限，请联系管理员。' : '请登录后重试，或联系管理员开通权限。'}</p>
+          <h2>{localStorage.getItem('auth_token') ? '仅管理员可访问' : '请先登录'}</h2>
+          <p>{localStorage.getItem('auth_token') ? '知识库管理功能仅对管理员开放，普通用户无权访问。' : '知识库管理功能需要登录管理员账号才能使用。'}</p>
+          <p className="kb-forbidden-hint">{localStorage.getItem('auth_token') ? '如需开通权限，请联系管理员。' : '请登录后重试，或联系管理员开通权限。'}</p>
         </div>
       ) : (
         <>

@@ -603,3 +603,57 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 - **manual ack 零丢失：8 个 plan 子任务执行完成数 == 分发数**
 - **Reconciler 端到端**：伪造"结果已齐但收敛未执行"的卡住 plan → 30s 内自动重新收敛 → DB processing→done；删除锁模拟锁过期后不再重复触发（converged 标记去重）
 - 测试套件 `scripts/test-multiagent-suite.sh` 全量 PASS=12 / FAIL=0（T01-T06）
+
+---
+
+## 九、2026-08-13 代码质量与架构优化（P0/P1/P2 全部落地）
+
+> 面向「可维护性」的系统性重构：消除跨模块重复代码、统一响应/鉴权/限流出口、拆分上帝类。
+> 全部改动已编译验证（`mvn install` 全绿）+ 单元测试通过，并完成生产部署。
+
+### 1. 前端 axios 统一封装（P0-1）
+
+- 新增 `frontend/src/config/http.js` 的 `apiClient`（请求拦截器自动附加 JWT `auth_token` + 401 统一登出）
+- **15 个页面 52 处裸 `import axios` 调用全部迁移**，删除各页面私有 `getAuthHeaders()` / `authHeader` 等重复代码
+- 修复 token 键名 bug：`localStorage.getItem('token')` → `'auth_token'`（与 App.jsx 写入键一致）
+- `SqlExecutor` 保留独立 `sql_token` 会话，`X-Admin-Token` header 保留
+
+### 2. 鉴权统一（P1-4）
+
+- `chat-common/security/AuthUtils` 新增 `extractUserIdFromContext()` / `extractUsernameFromContext()`（读 SecurityContextHolder，由 JwtAuthenticationFilter 填充）
+- `MediaGenController`、`CastleSiegeLordController` 删除各自私有实现与 `JwtUtil` 依赖
+
+### 3. 限流统一（P1-5）
+
+- 新建 `chat-common/security/RateLimitChecker`：统一 Redis 固定窗口计数（increment + 首设 TTL + fail-open）
+- `RateLimitService`（用户级 20/min + 200/hour）与 `IpRateLimitInterceptor`（IP 全局 600/min + 敏感接口 10/min）全部接入，删除重复的 `checkRate()`
+
+### 4. LLM 工具调用下沉 chat-common（P1-3）
+
+- 新建 `chat-common/util/LlmToolInvoker`（OpenAI 兼容 function calling：POST /chat/completions + tool_calls 提取 + 参数解析 + 工具执行）
+- 新建 `chat-common/util/LlmToolExecutor`（函数式回调接口，解耦 `ToolRegistry`）
+- `ToolDispatcher` 与 `SubAgentWorker` 各删除约 6 个重复私有方法，工具执行经回调注入，协议层唯一
+
+### 5. 统一响应体与全局异常（P1-6）
+
+- 新建 `chat-common/common/ErrorCode` 枚举（400/401/403/404/429/500）
+- `ApiResponse` 增强：新增 `success` / `fail` / `ErrorCode` 重载（旧方法向后兼容）
+- `GlobalExceptionHandler` 输出统一为 `{"ok":false,"code":<HTTP状态码>,"error":"..."}`（原为 timestamp/status/error/message 三处不一致格式）
+- **修复 chat-llm 异常出口缺失**：`LlmApplication` 默认只扫 `com.example.chat.llm`，全局异常处理从不生效 → `@Import(GlobalExceptionHandler.class)` 补齐
+
+### 6. ChatProcessor 拆解（P2-3，1019 → ~830 行）
+
+- 抽出 `ChatRagEnhancer`：RAG 三层判定 / 知识库检索 / system prompt 构建 + 实时/个人数据正则 + 5 个 `app.rag.chat.*` 配置项
+- 抽出 `ChatCacheManager`：缓存 key 构建（SHA-256）/ 命中广播回填 / 24h TTL 写入
+- 个人流式 + 群聊竞速两条链路统一复用，行为零变化
+
+### 7. chat-media JVM 内存减配
+
+- `restart-media.sh` 增强：`-Xmx160m -Xss256k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=48m -XX:G1HeapRegionSize=1m` + `--server.tomcat.threads.max=50`
+- 生效结果：RSS 475MB → **415MB**，VSZ 4070MB → 2911MB（media 因 `transferToOss` 需缓存整个视频 byte[]，保留 160m 而非 games 的 128m）
+
+### 验证与部署
+
+- 单测通过：`RateLimitServiceTest` / `IpRateLimitInterceptorTest` / `ApiResponseTest` / `ChatProcessorTest` / `ToolDispatcherTest`
+- 生产验证：login 接口返回新版错误体 `{"error":"参数错误...","code":400,"ok":false}`；4 个 jar 内嵌 chat-common 均确认新版
+- **部署教训**：`mvn ... | tail` 管道会掩盖 Maven 真实退出码，全量构建后需按 jar mtime 校验每个模块是否真正重新打包（本次 chat-web 曾漏打包，上传旧 jar 导致异常格式未生效）

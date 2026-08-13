@@ -1,7 +1,7 @@
 // frontend/src/pages/Landing.jsx
 import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
+import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 
@@ -12,7 +12,7 @@ export default function Landing() {
 
   useEffect(() => {
     // 获取 1 小时内活跃人数
-    axios.get('/api/v1/messages/online-count', { params: { page: 'landing' } })
+    apiClient.get('/api/v1/messages/online-count', { params: { page: 'landing' } })
       .then(res => { if (res.data?.hourlyActive != null) setOnlineCount(res.data.hourlyActive) })
       .catch(() => {})
 
@@ -43,7 +43,7 @@ export default function Landing() {
   }, [])
 
   useEffect(() => {
-    axios.get('/api/v1/monitor/total-usage').then(res => {
+    apiClient.get('/api/v1/monitor/total-usage').then(res => {
       setTotalUsage(res.data?.totalUsage || 0)
     }).catch(() => {})
   }, [])

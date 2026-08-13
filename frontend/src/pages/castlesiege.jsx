@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
+import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 /* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环+STOMP 生命周期，内部函数经 ref/闭包转发取最新值 */
@@ -1715,7 +1715,7 @@ export default function CastleSiege() {
 
     const loadLordRanking = useCallback(async () => {
         try {
-            const response = await axios.get(`/api/v1/games/castlesiege/lords?limit=${LORD_LEADERBOARD_LIMIT}`)
+            const response = await apiClient.get(`/api/v1/games/castlesiege/lords?limit=${LORD_LEADERBOARD_LIMIT}`)
             const ranking = response.data?.ranking || []
             setLordRanking(ranking)
             syncTitlesToCanvas(ranking)
@@ -1760,9 +1760,7 @@ export default function CastleSiege() {
             return null
         }
 
-        const response = await axios.post('/api/v1/games/castlesiege/lords/sync', JSON.parse(payload), {
-            headers: context.token ? { Authorization: `Bearer ${context.token}` } : undefined
-        })
+        const response = await apiClient.post('/api/v1/games/castlesiege/lords/sync', JSON.parse(payload))
         game.submittedRecruitScore = game.playerRecruitScore
         game.submittedRecruitByType = { ...game.playerRecruitByType }
         return response.data?.ranking || null

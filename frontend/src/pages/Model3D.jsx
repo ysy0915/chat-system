@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 
 export default function Model3D() {
@@ -18,15 +18,12 @@ export default function Model3D() {
         const user = JSON.parse(userStr)
         setAuthUser(user)
         // 检查 3D 权限
-        axios.get('/api/v1/media/3d-access', {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(res => {
+        apiClient.get('/api/v1/media/3d-access').then(res => {
           setHas3DAccess(res.data?.allowed || false)
         }).catch(() => setHas3DAccess(false))
         // 加载 3D 历史记录
-        axios.get('/api/v1/media/history', {
-          params: { type: '3d', limit: 50 },
-          headers: { Authorization: `Bearer ${token}` }
+        apiClient.get('/api/v1/media/history', {
+          params: { type: '3d', limit: 50 }
         }).then(res => {
           if (res.data && Array.isArray(res.data) && res.data.length > 0) {
             const sorted = [...res.data].reverse()
@@ -58,7 +55,7 @@ export default function Model3D() {
             })
             setMessages(history)
             runningRecords.forEach(({ recordId, msgIndex }) => {
-              pollRecordStatus(recordId, msgIndex, token)
+              pollRecordStatus(recordId, msgIndex)
             })
           }
         }).catch(() => {})
@@ -67,10 +64,7 @@ export default function Model3D() {
     const handler = (e) => {
       setAuthUser(e.detail)
       if (e.detail) {
-        const t = localStorage.getItem('auth_token')
-        axios.get('/api/v1/media/3d-access', {
-          headers: { Authorization: `Bearer ${t}` }
-        }).then(res => setHas3DAccess(res.data?.allowed || false))
+        apiClient.get('/api/v1/media/3d-access').then(res => setHas3DAccess(res.data?.allowed || false))
           .catch(() => setHas3DAccess(false))
       } else {
         setHas3DAccess(false)
@@ -91,11 +85,9 @@ export default function Model3D() {
   }
 
   // 轮询单条记录状态
-  const pollRecordStatus = (recordId, msgIndex, token) => {
+  const pollRecordStatus = (recordId, msgIndex) => {
     const poll = () => {
-      axios.get(`/api/v1/media/status/${recordId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).then(res => {
+      apiClient.get(`/api/v1/media/status/${recordId}`).then(res => {
         const data = res.data
         if (data.status === 'done') {
           setMessages(prev => {
@@ -145,13 +137,11 @@ export default function Model3D() {
     setGenerating(true)
 
     try {
-      const token = localStorage.getItem('auth_token')
-      const res = await axios.post('/api/v1/media/generate', {
+      const res = await apiClient.post('/api/v1/media/generate', {
         prompt: text,
         type: '3d'
       }, {
-        timeout: 600000,
-        headers: { Authorization: `Bearer ${token}` }
+        timeout: 600000
       })
       setGenerating(false)
       setMessages(prev => [...prev, {

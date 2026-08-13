@@ -25,7 +25,7 @@ class RateLimitServiceTest {
         boolean throwOnAccess = false;
 
         InMemoryRateLimitService() {
-            super(null); // Redis 不会被用到
+            super(null); // RateLimitChecker 不会被用到（子类已覆盖核心方法）
         }
 
         @Override

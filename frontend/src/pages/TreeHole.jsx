@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import axios from 'axios'
+import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import '../styles/treehole.css'
@@ -31,11 +31,6 @@ const formatTime = (ts) => {
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('auth_token')
-    return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
 export default function TreeHole() {
     const authUser = useAuthUser()
     const [messages, setMessages] = useState([])   // { role: 'user'|'ai', text, mood, time }
@@ -53,7 +48,7 @@ export default function TreeHole() {
         setSearching(true)
         setSelectedResult(null)
         setSearchPage(page)
-        axios.get('/api/v1/treehole/search', { params: { keyword: searchKeyword, page, size: 5 }, headers: getAuthHeaders() })
+        apiClient.get('/api/v1/treehole/search', { params: { keyword: searchKeyword, page, size: 5 } })
             .then(res => {
                 setSearchResults(res.data?.items || [])
                 setSearchTotal(res.data?.total || 0)
@@ -65,7 +60,7 @@ export default function TreeHole() {
     }
 
     const loadSearchResult = (item) => {
-        axios.get('/api/v1/treehole/context', { params: { msg_id: item.id }, headers: getAuthHeaders() })
+        apiClient.get('/api/v1/treehole/context', { params: { msg_id: item.id } })
             .then(res => {
                 const context = (res.data || []).reverse()
                 if (context.length > 0) {
@@ -106,7 +101,7 @@ export default function TreeHole() {
     // 加载历史记录
     useEffect(() => {
         if (!authUser) return
-        axios.get('/api/v1/treehole/recent', { headers: getAuthHeaders() })
+        apiClient.get('/api/v1/treehole/recent')
             .then(res => {
                 const history = (res.data || []).reverse()
                 const msgs = []
@@ -282,8 +277,8 @@ export default function TreeHole() {
                 formData.append('file', fileToSend, fileToSend.name)
                 formData.append('question', text)
                 formData.append('mood', mood)
-                const res = await axios.post('/api/v1/treehole/ask-with-file', formData, {
-                    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+                const res = await apiClient.post('/api/v1/treehole/ask-with-file', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
                     timeout: 120000
                 })
                 const answerText = extractAnswer(res.data.answerJson) || '树洞暂时没有回应...'
@@ -291,9 +286,8 @@ export default function TreeHole() {
                 setTyping(false)
             } else {
                 // 普通文本走流式（通过 WebSocket 推送）
-                await axios.post('/api/v1/treehole/ask',
-                    { question: text, mood },
-                    { headers: getAuthHeaders() }
+                await apiClient.post('/api/v1/treehole/ask',
+                    { question: text, mood }
                 )
                 // 流式版本：typing 由 WebSocket stream_start 消息关闭，不在这里关闭
                 return
@@ -319,7 +313,7 @@ export default function TreeHole() {
         const reqId = streamingReqIdRef.current
         if (!reqId) return
         try {
-            await axios.post('/api/v1/treehole/stop', { req_id: reqId }, { headers: getAuthHeaders(), timeout: 5000 })
+            await apiClient.post('/api/v1/treehole/stop', { req_id: reqId }, { timeout: 5000 })
         } catch (e) {
             console.error('停止生成请求失败', e)
         }
@@ -342,9 +336,9 @@ export default function TreeHole() {
         if (!aiMessage?.reqId) return
         setTyping(true)
         try {
-            await axios.post('/api/v1/treehole/regenerate',
+            await apiClient.post('/api/v1/treehole/regenerate',
                 { req_id: aiMessage.reqId },
-                { headers: getAuthHeaders(), timeout: 30000 }
+                { timeout: 30000 }
             )
         } catch (e) {
             console.error('重新生成请求失败', e)

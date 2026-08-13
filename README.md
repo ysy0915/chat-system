@@ -230,17 +230,17 @@ mvn clean install -DskipTests
 
 ---
 
-## 评分
+## 工程指标
 
-| 维度 | 得分 | 说明 |
-|------|:--:|------|
-| 测试覆盖 | 24/25 | 源文件全面覆盖，真实测试持续扩充 |
-| 测试质量 | 17/20 | ✅ 空壳测试全清理 + chat-web 全 Controller 测试（87 个全绿）+ 前端 hooks 测试 + 2026-08-13 测试质量专项（Mapper 契约测试 32 例 + 弱测试升级真实断言）+ W7 games/media 反射清零（70 例）+ W8 chat-web 反射/弱测试清零（66 例） |
-| 代码规范 | 14/15 | ✅ Checkstyle 0违规, PMD 2000+→92, CI阻断就绪, 跨模块重复代码下沉 |
-| 架构设计 | 14.5/15 | ✅ 双 core/双 web 高可用 + stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流（Reconciler ZSet 索引 + Worker DLX 死信重试） |
-| 模型抽象与通用性 | 10/10 | ✅ Provider 策略+SPI 策略工厂+注册中心+动态路由+模型自助管理面+工具平台化+存储 SPI 热插拔+配置分层（2026-08-13 扣分清零） |
-| 可观测性 | 5/5 | ✅ Prometheus 栈告警上线、指标化替代巡检 + **2026-08-13 业务级指标落地**（意图漏斗/工作流入 Prometheus，4 条业务告警）+ **同日切面化**（`CoreBusinessMetricsAspect` AOP 横切埋点，业务类零侵入，chat-core 212 例全绿） |
-| 文档 | 10/10 | ✅ 架构全盘说明 + 评估报告 + springdoc/Swagger + 部署运维手册 + **ADR 架构决策记录（22 条）** |
-| CI/CD | 9/10 | ✅ GitHub Actions CI + Deploy + Security + OWASP |
-| 安全性 | 5/5 | ✅ JWT弱密钥校验 + 三层限流 + DTO校验 + 上传限制 + CORS + CSP + OWASP |
-| **综合** | **97/100** | ✅ 90→91（策略工厂 SPI 落地）→ 92（Multi-Agent 可靠性闭环）→ 93（工具平台化 + 存储 SPI）→ 94（测试质量专项）→ 95（@SpringBootTest 集成测试落地 10 例全绿）→ **W7/W8 games/media/chat-web 反射测试清零（全量 700 用例全绿），评分维持 95** → 96（ADR 架构决策记录补齐 21 条）→ **97（业务级指标 + 4 条业务告警落地，可观测性 4 → 5）→ 同日切面化（AOP 横切埋点替代手写埋点，业务类零侵入，chat-core 212 例全绿）**；纯软件口径 **98/100**（排除可扩容的硬件指标） |
+| 维度 | 指标 |
+|------|------|
+| 测试 | 全量 **715 用例全绿**（chat-common 272 / chat-core 212 / chat-web 87 / chat-llm 74 / chat-games 44 / chat-media 26），含 @SpringBootTest 集成测试、Mapper 契约测试 32 例 |
+| 代码规范 | Checkstyle **0 违规**（统一 Google 风格）· PMD 由 2000+ 收敛至 92 · SpotBugs 0 阻断 |
+| 架构设计 | 双 core/双 web 高可用 + stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流（Reconciler ZSet 索引 + Worker DLX 死信重试） |
+| 模型抽象 | Provider 策略 + SPI 策略工厂 + 注册中心 + 动态路由 + 模型自助管理面 + 工具平台化 + 存储 SPI 热插拔 |
+| 可观测性 | Prometheus 监控栈（系统 8 条 + 业务 4 条告警规则）+ Micrometer Tracing 全链路追踪 + AOP 切面业务指标采集 |
+| 文档 | 7 类文档中心 + ADR 架构决策记录（22 条）+ Swagger API 文档 |
+| CI/CD | GitHub Actions CI + Deploy + Security + OWASP 依赖扫描 |
+| 安全性 | JWT 弱密钥校验 + 三层限流 + DTO 校验 + 上传限制 + CORS/CSP + 内容安全过滤 |
+
+> 架构评估详情见 [架构评估报告](docs/01-架构设计/架构评估报告.md)。

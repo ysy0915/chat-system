@@ -97,6 +97,10 @@ app:
       converge-model: qwen-turbo
       reconcile-interval-ms: 30000
       llm-judge: false
+      retry:
+        initial-delay-ms: 1000
+        max-delay-ms: 60000
+        max-attempts: 5
   intent:
     enabled: ${INTENT_ENABLED:true}
     model: ${INTENT_MODEL:qwen-turbo}

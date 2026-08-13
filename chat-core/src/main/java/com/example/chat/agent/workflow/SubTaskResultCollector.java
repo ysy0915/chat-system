@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.handler.annotation.Header;
@@ -47,6 +48,10 @@ public class SubTaskResultCollector {
 
     private final ExecutorService collectExecutor = ThreadPoolFactory.create(2, 4, 50, "agent-collect");
 
+    /** Reconciler 对账扫描周期（毫秒）：结果未到齐时 ZSet 分数推到未来，避免被扫描 */
+    @Value("${app.agent.planner.reconcile-interval-ms:30000}")
+    private long reconcileIntervalMs;
+
     @Autowired
     public SubTaskResultCollector(StringRedisTemplate redisTemplate,
                                   ObjectMapper objectMapper,
@@ -77,10 +82,15 @@ public class SubTaskResultCollector {
             redisTemplate.expire(AgentWorkflowOrchestrator.keyReceived(planId), Duration.ofMinutes(30));
             String totalStr = redisTemplate.opsForValue().get(AgentWorkflowOrchestrator.keyTotal(planId));
             long total = totalStr != null ? Long.parseLong(totalStr) : 0;
+            boolean complete = total > 0 && received != null && received >= total;
             pushProgress(planId, result, received, total);
 
+            // 2.5 维护 Reconciler 扫描索引：未到齐保持“未来”分数（不被扫描），
+            //     到齐置 0（下轮对账扫描立即纳入，保证崩溃后能重新收敛）
+            updateReconcilerScore(planId, complete);
+
             // 3. 全部到齐 → 分布式锁 → 异步收敛（保证双实例只收敛一次）
-            if (total > 0 && received != null && received >= total) {
+            if (complete) {
                 Boolean locked = redisTemplate.opsForValue()
                         .setIfAbsent(AgentWorkflowOrchestrator.keyLock(planId), "1", Duration.ofMinutes(2));
                 if (Boolean.TRUE.equals(locked)) {
@@ -114,6 +124,17 @@ public class SubTaskResultCollector {
             channel.basicNack(deliveryTag, false, requeue);
         } catch (IOException e) {
             log.warn("[SubTaskCollector] basicNack 失败 tag={}: {}", deliveryTag, e.getMessage());
+        }
+    }
+
+    /** 维护 Reconciler ZSet 索引分数：结果到齐置 0（立即进入对账扫描），未到齐推到未来（跳过扫描） */
+    private void updateReconcilerScore(String planId, boolean complete) {
+        try {
+            double score = complete ? 0 : System.currentTimeMillis() + reconcileIntervalMs;
+            redisTemplate.opsForZSet().add(AgentWorkflowOrchestrator.keyReconcilerZSet(), planId, score);
+            redisTemplate.expire(AgentWorkflowOrchestrator.keyReconcilerZSet(), Duration.ofMinutes(30));
+        } catch (Exception e) {
+            log.warn("[SubTaskCollector] planId={} 更新 Reconciler 索引异常: {}", planId, e.getMessage());
         }
     }
 

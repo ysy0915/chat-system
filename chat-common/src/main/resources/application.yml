@@ -198,3 +198,7 @@ app:
       task-timeout-ms: 120000      # 子任务软超时（毫秒）
       max-concurrent: 8            # Worker 最大并发消费者数
       llm-judge: false             # 是否启用 LLM 二次判定（false=仅规则判定，省成本）
+      retry:
+        initial-delay-ms: 1000     # 失败重试初始退避（毫秒），指数 1s→2s→4s…
+        max-delay-ms: 60000        # 退避上限（毫秒），与 DLQ 兜底 TTL 一致
+        max-attempts: 5            # 最大执行次数（含首次），超过后回传终态失败不再重试

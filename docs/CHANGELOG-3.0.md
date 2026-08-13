@@ -33,6 +33,13 @@
 - 删除前备份：`/opt/app/backup/deprecated_tables_20260813.sql`（mysqldump 全量）
 - `llm_routing_schema.sql` 已同步移除废弃表 DDL 与示例数据
 
+### 4. Multi-Agent 可靠性加固（Reconciler ZSet 索引 + Worker 死信重试）
+
+- **Reconciler 扫描 O(N) → O(logN)**：新增 ZSet 索引 `agent:reconciler:plans`（score=下次检查时间戳），结果到齐置 0 立即纳入，收敛成功 `ZREM` 移除；`ZRANGEBYSCORE 0 now LIMIT 500` 只取到期候选，存量 plan 兜底 keys() 扫描随 30min TTL 自然淘汰
+- **Worker 失败指数退避重试**：新增死信链路 `agent.subtask.dlx` + `agent.subtask.dlq`（TTL 兜底 60s）；失败按 `x-death` 累计次数 `min(1000×2^n, 60000)`ms 延迟重投 + ack，达 `max-attempts=5` 才回传终态失败，不再 nack 即终态
+- **配置**：`app.agent.planner.retry.*`（initial-delay-ms=1000 / max-delay-ms=60000 / max-attempts=5），Nacos `chat-core-prod.yml` 已同步
+- **测试**：新增 `SubAgentWorkerTest`（9 例）+ `WorkflowReconcilerTest`（3 例），chat-core 全量 181 用例通过
+
 ---
 
 ## 一、树状辩论模式

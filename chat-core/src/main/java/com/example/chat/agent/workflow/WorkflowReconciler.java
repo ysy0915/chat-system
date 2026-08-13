@@ -14,13 +14,15 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 /**
- * 工作流对账器（Reconciler）—— 收敛补偿兜底，方案 A。
+ * 工作流对账器（Reconciler）—— 收敛补偿兜底，方案 A（ZSet 索引版）。
  *
  * <p>纯事件驱动的收敛存在盲区：若子任务结果已全部到齐（received ≥ total）但收敛中途
  * 崩溃（JVM 退出 / 异常吞掉），重启后 result 队列已无新消息，收敛永远不会再触发，
@@ -31,6 +33,11 @@ import java.util.concurrent.ExecutorService;
  *   <li>收敛锁可获取（未被正常触发路径或其他实例占用）→ 重新触发
  *       {@link AgentWorkflowOrchestrator#converge(String)}。</li>
  * </ul>
+ * <p><b>扫描索引</b>：任务启动时 planId 注册进 ZSet（{@code agent:reconciler:plans}），
+ * score=下一次检查时间戳。结果未到齐时 score 保持“未来”不被返回；结果到齐后置 0，
+ * 对账器仅需 {@code ZRANGEBYSCORE 0 now} 取出极少数到期的 plan——
+ * 复杂度从全量 keys() 扫描的 O(N) 降到 O(logN)（跳表定位）+ 少量读取，
+ * 百万级任务量下每 30s 对账不再打爆 Redis CPU。收敛成功后在 Orchestrator 侧移除成员。</p>
  * <p>双实例（9090/9092）同时运行安全：SETNX 收敛锁保证同一时刻只有一个实例真正触发；
  * 收敛结束后 DB 状态变 done，后续扫描自动跳过，不会重复执行。</p>
  */
@@ -42,6 +49,10 @@ public class WorkflowReconciler {
 
     private static final String META_KEY_PREFIX = "agent:plan:";
     private static final String META_KEY_SUFFIX = ":meta";
+    /** Reconciler 扫描索引（ZSet，与 AgentWorkflowOrchestrator.KEY_RECONCILER_ZSET 同键） */
+    private static final String RECONCILER_ZSET = "agent:reconciler:plans";
+    /** 单轮对账最多处理的候选数：超过则下轮继续（score=0 的候选不会被移除，不会丢失） */
+    private static final int SCAN_LIMIT = 500;
     /** 对账触发的收敛锁 TTL：比正常路径（2min）更长，避免收敛超过 2 分钟时被重复触发 */
     private static final Duration RECONCILE_LOCK_TTL = Duration.ofMinutes(5);
 
@@ -63,29 +74,56 @@ public class WorkflowReconciler {
     }
 
     /**
-     * 周期性扫描（默认 30s）。Redis 中 plan 数量有界（最多 ≈ max-concurrent 个并行 + 少量残留），
-     * keys() 扫描在此规模下开销可忽略。
+     * 周期性扫描（默认 30s）。ZSet 索引只返回 score≤now 的到期候选
+     * （结果已到齐但未收敛完成的 plan），数量有界且与总量无关。
      */
     @Scheduled(fixedRateString = "${app.agent.planner.reconcile-interval-ms:30000}", initialDelay = 30000)
     public void reconcile() {
         try {
-            Set<String> metaKeys = redisTemplate.keys(META_KEY_PREFIX + "*" + META_KEY_SUFFIX);
-            if (metaKeys == null || metaKeys.isEmpty()) return;
+            Set<String> planIds = collectCandidates();
+            if (planIds == null || planIds.isEmpty()) return;
             int triggered = 0;
-            for (String key : metaKeys) {
-                String planId = extractPlanId(key);
-                if (planId != null && tryReconcile(planId)) {
+            for (String planId : planIds) {
+                if (tryReconcile(planId)) {
                     triggered++;
                 }
             }
             if (triggered > 0) {
-                log.info("[Reconciler] 本轮扫描 planKeys={} 触发重新收敛 {} 个", metaKeys.size(), triggered);
+                log.info("[Reconciler] 本轮扫描 candidates={} 触发重新收敛 {} 个", planIds.size(), triggered);
             } else {
-                log.debug("[Reconciler] 本轮扫描 planKeys={} 无卡住的 plan", metaKeys.size());
+                log.debug("[Reconciler] 本轮扫描 candidates={} 无卡住的 plan", planIds.size());
             }
         } catch (Exception e) {
             log.warn("[Reconciler] 对账扫描异常: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 候选收集：优先走 ZSet 索引（O(logN) 定位 + 至多 SCAN_LIMIT 个候选）。
+     * 仅当索引完全为空（如升级前已启动的存量 plan）时兜底全量 keys() 扫描，
+     * 存量 plan 随 30min TTL 自然过期后不再触发兜底。
+     */
+    private Set<String> collectCandidates() {
+        Long tracked = redisTemplate.opsForZSet().zCard(RECONCILER_ZSET);
+        if (tracked != null && tracked > 0) {
+            return redisTemplate.opsForZSet()
+                    .rangeByScore(RECONCILER_ZSET, 0, System.currentTimeMillis(), 0, SCAN_LIMIT);
+        }
+        return legacyScan();
+    }
+
+    /** 兼容旧版本（未注册 ZSet）的兜底扫描：keys() 全量，仅 ZSet 完全为空时触发 */
+    private Set<String> legacyScan() {
+        Set<String> metaKeys = redisTemplate.keys(META_KEY_PREFIX + "*" + META_KEY_SUFFIX);
+        if (metaKeys == null || metaKeys.isEmpty()) return Collections.emptySet();
+        Set<String> planIds = new HashSet<>();
+        for (String key : metaKeys) {
+            String planId = extractPlanId(key);
+            if (planId != null) {
+                planIds.add(planId);
+            }
+        }
+        return planIds;
     }
 
     private boolean tryReconcile(String planId) {
@@ -97,7 +135,7 @@ public class WorkflowReconciler {
             if (total <= 0) return false;
             String receivedStr = redisTemplate.opsForValue().get(AgentWorkflowOrchestrator.keyReceived(planId));
             long received = receivedStr != null ? Long.parseLong(receivedStr) : 0;
-            if (received < total) return false; // 子任务未完成：交给事件驱动 + RabbitMQ requeue 恢复
+            if (received < total) return false; // 子任务未完成：交给事件驱动 + RabbitMQ 重试恢复
 
             // 2. 元信息缺失（Redis 部分丢失）→ 无法收敛（拿不到 reqId/userId/question）
             String metaJson = redisTemplate.opsForValue().get(AgentWorkflowOrchestrator.keyMeta(planId));

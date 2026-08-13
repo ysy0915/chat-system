@@ -60,6 +60,13 @@ public class AgentWorkflowOrchestrator {
     /** 收敛成功标记（30min 与工作流状态同生命周期）：供 Reconciler 去重，防止重复触发收敛 */
     private static final String KEY_CONVERGED = "agent:plan:%s:converged";
 
+    /**
+     * Reconciler 扫描索引（ZSet）：成员为进行中的 planId，score=下次对账检查时间戳。
+     * 结果未到齐时 score 保持“未来”（不被扫描）；结果到齐后置 0（立即进入扫描）；
+     * 收敛成功移除成员。O(N) keys 全量扫描 → O(logN) 定位 + 少量读取。
+     */
+    private static final String KEY_RECONCILER_ZSET = "agent:reconciler:plans";
+
     /** 全局并行工作流计数（Redis 原子计数，双实例共享，避免 acquire/release 跨实例错配） */
     private static final String KEY_ACTIVE = "agent:workflow:active";
 
@@ -92,6 +99,10 @@ public class AgentWorkflowOrchestrator {
 
     @Value("${app.agent.planner.max-concurrent:8}")
     private int maxConcurrent;
+
+    /** Reconciler 对账扫描周期（毫秒）：plan 注册进 ZSet 时的初始“未来”分数偏移 */
+    @Value("${app.agent.planner.reconcile-interval-ms:30000}")
+    private long reconcileIntervalMs;
 
     /** 收敛总结专用轻量模型（如 qwen-turbo）；留空则使用用户所选模型 */
     @Value("${app.agent.planner.converge-model:}")
@@ -211,6 +222,12 @@ public class AgentWorkflowOrchestrator {
             redisTemplate.delete(key(KEY_RECEIVED, planId));
             redisTemplate.delete(key(KEY_LOCK, planId));
 
+            // 1.5 注册到 Reconciler 扫描索引（ZSet）：score=下一次对账检查时间（未来），
+            //     结果未到齐前不会被扫描；ResultCollector 收到结果后会刷新分数
+            redisTemplate.opsForZSet().add(KEY_RECONCILER_ZSET, planId,
+                    System.currentTimeMillis() + reconcileIntervalMs);
+            redisTemplate.expire(KEY_RECONCILER_ZSET, Duration.ofMinutes(30));
+
             // 2. 推送计划到前端
             List<Map<String, Object>> taskBriefs = new ArrayList<>();
             for (SubAgentTask t : plan.tasks) {
@@ -325,6 +342,8 @@ public class AgentWorkflowOrchestrator {
             // 收敛成功标记（30min）：供 Reconciler 去重。内部 API 请求可能无 DB 行，
             // 不能依赖 DB 状态判断收敛是否完成，此标记是主要去重依据
             redisTemplate.opsForValue().set(key(KEY_CONVERGED, planId), "1", Duration.ofMinutes(30));
+            // 收敛成功 → 从 Reconciler 扫描索引移除（失败则保留 score=0，下轮对账继续重试）
+            removeFromReconciler(planId);
             log.info("[MultiAgent] 收敛完成 planId={} tasks={} answerLen={}",
                     planId, results.size(), cleanAnswer.length());
         } catch (Exception e) {
@@ -425,4 +444,15 @@ public class AgentWorkflowOrchestrator {
     public static String keyResultHash(String planId) { return key(KEY_RESULT_HASH, planId); }
     public static String keyLock(String planId) { return key(KEY_LOCK, planId); }
     public static String keyConverged(String planId) { return key(KEY_CONVERGED, planId); }
+    /** 供 Reconciler / ResultCollector 访问的扫描索引键 */
+    public static String keyReconcilerZSet() { return KEY_RECONCILER_ZSET; }
+
+    /** 收敛成功后将 planId 从 Reconciler 扫描索引移除（幂等，失败仅告警不阻塞） */
+    private void removeFromReconciler(String planId) {
+        try {
+            redisTemplate.opsForZSet().remove(KEY_RECONCILER_ZSET, planId);
+        } catch (Exception e) {
+            log.warn("[MultiAgent] planId={} 移除 Reconciler 索引异常: {}", planId, e.getMessage());
+        }
+    }
 }

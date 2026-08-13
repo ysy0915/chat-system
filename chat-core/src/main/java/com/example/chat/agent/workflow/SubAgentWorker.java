@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
@@ -36,6 +37,10 @@ import java.util.Map;
  *   <li>tools_scope 非空：按范围注入限定工具，最多 1 轮工具调用后产出摘要；</li>
  *   <li>执行完毕仅将 {@link SubAgentResult} 结构化摘要回传结果队列，不携带上下文。</li>
  * </ul>
+ * <p><b>失败重试</b>：执行失败不再直接回传终态失败，而是按 {@code x-death}
+ * 累计重试次数做指数退避（1s→2s→4s→…→60s，默认最多 5 次执行），
+ * 经 {@link SubTaskRabbitConfig#SUBTASK_DLX} 死信队列延迟重试；
+ * 达到上限后才回传终态失败结果（ack，不重试）。</p>
  */
 @Component
 @ConditionalOnProperty(name = "app.agent.planner.enabled", havingValue = "true")
@@ -49,6 +54,16 @@ public class SubAgentWorker {
     private final BaseUrlResolver baseUrlResolver;
     private final LlmToolInvoker llmToolInvoker;
     private final SubTaskProducer subTaskProducer;
+
+    /** 失败重试初始退避（毫秒），指数 1s→2s→4s… */
+    @Value("${app.agent.planner.retry.initial-delay-ms:1000}")
+    private long retryInitialDelayMs;
+    /** 失败重试退避上限（毫秒），与重试队列兜底 TTL 保持一致 */
+    @Value("${app.agent.planner.retry.max-delay-ms:60000}")
+    private long retryMaxDelayMs;
+    /** 最大执行次数（含首次），超过后回传终态失败不再重试 */
+    @Value("${app.agent.planner.retry.max-attempts:5}")
+    private int retryMaxAttempts;
 
     @Autowired
     public SubAgentWorker(LLMInvoker llmInvoker,
@@ -67,7 +82,8 @@ public class SubAgentWorker {
 
     @RabbitListener(queues = SubTaskRabbitConfig.SUBTASK_QUEUE, ackMode = "MANUAL")
     public void onSubTask(SubAgentTask task, Channel channel,
-                          @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) {
+                          @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag,
+                          @Header(value = "x-death", required = false) List<Map<String, Object>> xDeath) {
         long start = System.currentTimeMillis();
         if (task == null) {
             basicAck(channel, deliveryTag);
@@ -83,12 +99,47 @@ public class SubAgentWorker {
                     task.taskId, summary.length(), System.currentTimeMillis() - start);
             basicAck(channel, deliveryTag);
         } catch (Exception e) {
-            log.error("[SubAgentWorker] 任务执行失败 taskId={}: {}", task.taskId, e.getMessage(), e);
-            subTaskProducer.sendResult(SubAgentResult.failure(task, e.getMessage(),
-                    System.currentTimeMillis() - start));
-            // requeue=false：失败结果已回传（收敛会标记该子任务失败），避免无限重试导致计数重复
-            basicNack(channel, deliveryTag, false);
+            // 读 x-death 累计死亡次数 = 已重试次数（每次 DLQ 到期重投 +1）
+            int deathCount = deathCount(xDeath);
+            int attempt = deathCount + 1;
+            if (attempt >= retryMaxAttempts) {
+                // 终态失败：回传失败结果 + ack（不再重试），收敛侧将该子任务标记为失败
+                log.error("[SubAgentWorker] 任务执行失败已达上限 attempt={}/{} taskId={}: {}",
+                        attempt, retryMaxAttempts, task.taskId, e.getMessage(), e);
+                subTaskProducer.sendResult(SubAgentResult.failure(task, e.getMessage(),
+                        System.currentTimeMillis() - start));
+                basicAck(channel, deliveryTag);
+            } else {
+                // 可重试：发布到 DLX（带指数退避 TTL）+ ack 原消息，到期后回到任务队列重试
+                long delay = backoffDelayMs(deathCount);
+                log.warn("[SubAgentWorker] 任务执行失败 attempt={}/{} taskId={}，进入死信重试 delay={}ms: {}",
+                        attempt, retryMaxAttempts, task.taskId, delay, e.getMessage());
+                subTaskProducer.sendRetry(task, delay);
+                basicAck(channel, deliveryTag);
+            }
         }
+    }
+
+    /**
+     * 读取消息 {@code x-death} 头中的累计死亡次数（每次在重试队列到期重投 +1），
+     * 即该任务已重试的次数；无该头表示首次执行。
+     */
+    int deathCount(List<Map<String, Object>> xDeath) {
+        if (xDeath == null || xDeath.isEmpty()) return 0;
+        int count = 0;
+        for (Map<String, Object> entry : xDeath) {
+            Object value = entry.get("count");
+            if (value instanceof Number n) {
+                count = Math.max(count, n.intValue());
+            }
+        }
+        return count;
+    }
+
+    /** 指数退避：initial * 2^retry，封顶 max（1s→2s→4s→…→60s） */
+    long backoffDelayMs(int deathCount) {
+        long delay = retryInitialDelayMs * (long) Math.pow(2, deathCount);
+        return Math.min(delay, retryMaxDelayMs);
     }
 
     /** 手动确认：成功处理，通知 RabbitMQ 可继续派发下一条 */
@@ -97,15 +148,6 @@ public class SubAgentWorker {
             channel.basicAck(deliveryTag, false);
         } catch (IOException e) {
             log.warn("[SubAgentWorker] basicAck 失败 tag={}: {}", deliveryTag, e.getMessage());
-        }
-    }
-
-    /** 手动拒收：requeue=true 时消息重新入队（如结果回传瞬时失败需重试） */
-    private void basicNack(Channel channel, long deliveryTag, boolean requeue) {
-        try {
-            channel.basicNack(deliveryTag, false, requeue);
-        } catch (IOException e) {
-            log.warn("[SubAgentWorker] basicNack 失败 tag={}: {}", deliveryTag, e.getMessage());
         }
     }
 

@@ -33,7 +33,8 @@
      → 子结果写 Redis hash（幂等覆盖 + received 计数）
      → SubTaskResultCollector 轮询收敛 → LLM 汇总压缩 ≤1000 字
      → 全局并发闸门：Redis Lua 原子计数 agent:workflow:active ≤8
-     → WorkflowReconciler 30s 对账兜底（结果齐但未收敛 → 重新触发收敛）
+     → WorkflowReconciler 30s 对账兜底（ZSet 索引扫描，结果齐但未收敛 → 重新触发收敛）
+     → 失败子任务：DLX 死信队列 + 指数退避重试（1s→2s→4s→…→60s，≤5 次）
 ```
 
 三个关键阶段：
@@ -72,9 +73,10 @@
 
 | 环节 | 行为 | 语义 |
 |------|------|------|
-| SubAgentWorker | 成功 → `basicAck`；失败 → `basicNack(requeue=false)` | 失败不重复计数，防止死循环重投 |
+| SubAgentWorker | 成功 → `basicAck`；失败 → 按 `x-death` 累计次数指数退避后投递 DLX 延迟重试 + `basicAck` | 不再 nack 即终态；1s→2s→4s→…→60s，超过 `max-attempts=5` 才回传终态失败 |
 | SubTaskResultCollector | 失败 → `requeue=true` 重新入队 | 依赖 Redis 幂等覆盖，重投不产生脏数据 |
 | 子结果存储 | Redis hash `agent:subtask:result:{planId}` 幂等覆盖 + received INCR | 双实例同时写同一 key 也只收敛一次 |
+| 失败重试链路 | `agent.subtask.dlx`（死信交换机）+ `agent.subtask.dlq`（重试队列，per-message TTL） | 到期经 x-dead-letter-exchange 回到任务队列，`x-death` 头累计重试次数 |
 
 **Redis 幂等 + 消息不丢**双保险：T04 实测 20 个 plan 的子任务**执行完成数 == 分发数，零丢失**。
 
@@ -90,7 +92,8 @@ RabbitMQ 消息有持久化，重启后能重新投递；但**收敛这一步**�
 
 - `@Scheduled` 每 30s（`reconcile-interval-ms=30000`）扫描 Redis 中的 plan；
 - 触发条件：`received ≥ total`（结果已齐）+ 无 `converged` 标记 + DB 非 done + SETNX 锁成功（TTL 5min）；
-- 满足即**重新触发收敛**，把卡住的 plan 救活。
+- 满足即**重新触发收敛**，把卡住的 plan 救活；
+- 扫描索引：`agent:reconciler:plans` ZSet，score=下次检查时间戳；结果未到齐 score 保持"未来"不被扫描，到齐置 0 立即纳入 → `ZRANGEBYSCORE 0 now` 只取有界候选，O(N) keys 全量扫描降为 O(logN)。
 
 三层去重防重复收敛：**converged 标记（主判据）→ DB 状态 → SETNX 锁**。端到端验证×2：伪造卡住 plan → 30s 内 Reconciler 触发 → DB `processing → done`；删除锁后不再重复触发。
 
@@ -141,8 +144,37 @@ RabbitMQ 消息有持久化，重启后能重新投递；但**收敛这一步**�
 | 风险 | 现状 | 下一步 |
 |------|------|--------|
 | 工作流状态依赖 Redis | Redis 故障则工作流中断，Reconciler 兜底也失效 | Redis AOF 持久化 + 高可用；Reconciler 增加 DB 源对账 |
-| Worker 失败不重试 | `nack(requeue=false)` 即终态，靠 Collector 重投 | 失败子任务进死信队列 + 指数退避重试 |
+| ~~Worker 失败不重试~~ | ✅ 已修复：DLX 死信 + 指数退避重试（见下方"第二轮加固"） | 观察真实退避命中率，按需调 `max-attempts` |
+| ~~Reconciler 全量扫描~~ | ✅ 已修复：ZSet 索引扫描 O(logN)（见下方"第二轮加固"） | 存量 keys 兜底随 30min TTL 自然淘汰 |
 | 服务器单点 + 内存紧张 | 双服务器均为单点，可用内存 ~500MB | 第二台服务器 + 备份演练；扩容/压缩 JVM 堆 |
+
+---
+
+## 十、第二轮加固（同日）：ZSet 索引扫描 + 死信队列重试
+
+针对"遗留风险"两条（Reconciler 全量扫描、Worker 失败不重试）当日完成第二轮加固：
+
+**① Reconciler 扫描从 O(N) 降到 O(logN)（方案 A：ZSet 索引）**
+
+- 任务启动：planId `ZADD` 进 `agent:reconciler:plans`，score = now + 30s（未来，不被扫描）；
+- 结果到齐：`SubTaskResultCollector` 将该 plan score 置 `0` → 下轮对账 `ZRANGEBYSCORE 0 now LIMIT 500` 立即纳入；
+- 收敛成功：Orchestrator 收敛完成后 `ZREM` 移除成员（幂等）；
+- 兜底：仅当 ZSet 完全为空（升级前存量 plan）才退回首版 keys() 全量扫描，存量随 30min TTL 自然淘汰；
+- 效果：百万级任务量下对账不再全表扫 Redis，跳表定位 + 至多 500 个到期候选。
+
+**② Worker 失败从"nack 即终态"改为"死信队列 + 指数退避重试"**
+
+- 新增死信链路：`agent.subtask.dlx`（交换机）+ `agent.subtask.dlq`（重试队列，TTL 兜底 60s，x-dead-letter-exchange 指回主交换机）；
+- Worker 捕获异常：读 `x-death` 头累计死亡次数 → `backoffDelayMs = min(1000 × 2^n, 60000)` → 投递 DLX 带 per-message TTL + `basicAck` 原消息；
+- 达 `max-attempts=5`：回传 `SubAgentResult.failure` + ack，收敛侧标记该子任务失败，不再无限重试；
+- 语义对齐：失败重试不依赖 Collector 重投，且不再有 requeue 死循环风险。
+
+**③ 单测加固（chat-core，181 用例全绿）**
+
+- 新增 `SubAgentWorkerTest`（9 例）：deathCount 解析（null/空/多条取最大）、指数退避与 60s 封顶、成功/可重试/终态三条路径的 sendResult/sendRetry/ack 断言；
+- 新增 `WorkflowReconcilerTest`（3 例）：ZSet 非空走索引不触发 keys()、ZSet 为空兜底 legacyScan、zCard null 不崩溃。
+
+**④ 配置落位**：Nacos `chat-core-prod.yml`（group=CHAT）+ 本地 `application.yml` 新增 `app.agent.planner.retry.*`（initial-delay-ms=1000 / max-delay-ms=60000 / max-attempts=5）。
 
 ---
 

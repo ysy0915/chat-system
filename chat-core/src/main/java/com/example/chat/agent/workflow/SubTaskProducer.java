@@ -41,6 +41,24 @@ public class SubTaskProducer {
         }
     }
 
+    /**
+     * 失败重试：将子任务投递到死信交换机（DLX），携带指数退避 TTL（毫秒）。
+     * 到期后经 {@code agent.subtask.dlq} 的 x-dead-letter-exchange 回到任务队列重新执行。
+     */
+    public void sendRetry(SubAgentTask task, long delayMs) {
+        try {
+            rabbitTemplate.convertAndSend(SubTaskRabbitConfig.SUBTASK_DLX,
+                    SubTaskRabbitConfig.ROUTING_RETRY, task,
+                    m -> {
+                        m.getMessageProperties().setExpiration(String.valueOf(delayMs));
+                        return m;
+                    });
+            log.info("[SubTask] 子任务进入重试队列 taskId={} delay={}ms", task.taskId, delayMs);
+        } catch (Exception e) {
+            log.error("[SubTask] 子任务重试入队失败 taskId={}: {}", task.taskId, e.getMessage());
+        }
+    }
+
     /** Worker 回传执行结果到结果队列 */
     public void sendResult(SubAgentResult result) {
         try {

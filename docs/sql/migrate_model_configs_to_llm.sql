@@ -60,6 +60,29 @@ FROM model_configs m
 JOIN llm_provider_config p ON p.provider_name = m.provider
 WHERE m.api_key_encrypted IS NOT NULL AND m.api_key_encrypted <> '';
 
+-- ─── 3.5 提供商请求路径（llm_provider_props，STRING）────────
+-- ⚠️ 必配！DEFAULT_PATH=/v1/chat/completions 只对 base_url 以 /v1 或
+-- /compatible-mode 结尾的厂商适用。豆包 base_url 是 .../api/v3，
+-- 拼接会得到 .../api/v3/v1/chat/completions → 404（2026-08-13 线上事故根因）。
+-- 这里按厂商显式指定，与 chat-llm application.yml 静态配置保持一致：
+--   doubao   → /chat/completions  （Ark API v3 路径）
+--   deepseek → /chat/completions  （其 /v1/chat/completions 也可用，显式统一）
+--   qwen     → /v1/chat/completions
+--   zhipu    → /chat/completions  （base_url 以 /api/paas/v4 结尾）
+-- 其余厂商（base_url 以 /v1 或 /compatible-mode 结尾）可用默认值
+INSERT INTO llm_provider_props (provider_config_id, prop_key, prop_value, prop_type, description)
+SELECT p.id, 'path',
+       CASE p.provider_name
+           WHEN 'doubao'   THEN '/chat/completions'
+           WHEN 'deepseek' THEN '/chat/completions'
+           WHEN 'qwen'     THEN '/v1/chat/completions'
+           WHEN 'zhipu'    THEN '/chat/completions'
+           ELSE '/v1/chat/completions'
+       END,
+       'STRING', 'model_configs 迁移'
+FROM llm_provider_config p
+WHERE p.description = 'model_configs 迁移';
+
 -- ─── 4. 模型（llm_model_config，显式 id 与旧表一致）──────────
 INSERT INTO llm_model_config
     (id, provider_config_id, model_name, display_name, model_type, max_tokens,
@@ -104,6 +127,13 @@ SELECT p.provider_name, LEFT(pp.prop_value, 20) AS key_preview, pp.prop_type
 FROM llm_provider_props pp
 JOIN llm_provider_config p ON pp.provider_config_id = p.id
 WHERE pp.prop_key = 'api_key' AND pp.description = 'model_configs 迁移';
+
+SELECT CONCAT('== 请求路径 (必配, 豆包应为 /chat/completions) ==') AS _;
+SELECT p.provider_name, pp.prop_value AS path
+FROM llm_provider_props pp
+JOIN llm_provider_config p ON pp.provider_config_id = p.id
+WHERE pp.prop_key = 'path' AND pp.description = 'model_configs 迁移'
+ORDER BY p.id;
 
 SELECT CONCAT('== 模型级 base_url ==') AS _;
 SELECT model_config_id, prop_value FROM llm_model_props WHERE prop_key = 'base_url' ORDER BY model_config_id;

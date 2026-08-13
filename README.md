@@ -162,37 +162,37 @@ mvn clean install -DskipTests
 
 | 文档 | 内容 |
 |------|------|
-| [docs/架构全盘说明.md](docs/架构全盘说明.md) | **总纲**：整体架构 → 模块细节 → 核心流程 → 数据流 → 部署（一册通览） |
-| [docs/架构评估报告.md](docs/架构评估报告.md) | 整体系统评分 91/100 + 架构说明 + 风险路线图 |
-| [docs/系统架构说明.md](docs/系统架构说明.md) | 前后端架构、数据流、调用链 |
-| [docs/api-design.md](docs/api-design.md) | 全部 REST API 设计 |
-| [docs/数据库设计说明.md](docs/数据库设计说明.md) | MySQL 表结构、Redis Key、索引策略 |
-| [docs/LLM策略与路由说明.md](docs/LLM策略与路由说明.md) | LLM 策略、路由、容错、已知问题 |
-| [docs/安全配置说明.md](docs/安全配置说明.md) | JWT 鉴权、弱密钥校验、三层限流、DTO 校验、内容安全 |
-| [docs/CHANGELOG-3.0.md](docs/CHANGELOG-3.0.md) | 版本变更记录、模块分工 |
+| [docs/01-架构设计/架构全盘说明.md](docs/01-架构设计/架构全盘说明.md) | **总纲**：整体架构 → 模块细节 → 核心流程 → 数据流 → 部署（一册通览） |
+| [docs/01-架构设计/架构评估报告.md](docs/01-架构设计/架构评估报告.md) | 整体系统评分 91/100 + 架构说明 + 风险路线图 |
+| [docs/01-架构设计/系统架构说明.md](docs/01-架构设计/系统架构说明.md) | 前后端架构、数据流、调用链 |
+| [docs/02-API与数据库/api-design.md](docs/02-API与数据库/api-design.md) | 全部 REST API 设计 |
+| [docs/02-API与数据库/数据库设计说明.md](docs/02-API与数据库/数据库设计说明.md) | MySQL 表结构、Redis Key、索引策略 |
+| [docs/01-架构设计/LLM策略与路由说明.md](docs/01-架构设计/LLM策略与路由说明.md) | LLM 策略、路由、容错、已知问题 |
+| [docs/04-安全合规/安全配置说明.md](docs/04-安全合规/安全配置说明.md) | JWT 鉴权、弱密钥校验、三层限流、DTO 校验、内容安全 |
+| [docs/07-变更与经验/CHANGELOG-3.0.md](docs/07-变更与经验/CHANGELOG-3.0.md) | 版本变更记录、模块分工 |
 
 ### 运维与排错
 
 | 文档 | 内容 |
 |------|------|
-| [docs/部署运维手册.md](docs/部署运维手册.md) | 本机/服务器/Docker 部署全流程、监控告警 |
+| [docs/03-运维部署/部署运维手册.md](docs/03-运维部署/部署运维手册.md) | 本机/服务器/Docker 部署全流程、监控告警 |
 | [docs/prometheus-prod.yml](docs/prometheus-prod.yml) + [prometheus-alert-rules.yml](docs/prometheus-alert-rules.yml) | 生产监控抓取 + 告警规则 |
-| [docs/CI_CD.md](docs/CI_CD.md) | GitHub Actions 流水线、自动部署、回滚策略 |
-| [docs/故障排查指南.md](docs/故障排查指南.md) | 常见问题现象→根因→修复步骤 |
+| [docs/03-运维部署/CI_CD.md](docs/03-运维部署/CI_CD.md) | GitHub Actions 流水线、自动部署、回滚策略 |
+| [docs/03-运维部署/故障排查指南.md](docs/03-运维部署/故障排查指南.md) | 常见问题现象→根因→修复步骤 |
 
 ### 架构与设计
 
 | 文档 | 内容 |
 |------|------|
-| [docs/架构设计说明.md](docs/架构设计说明.md) | LLM 调用架构、无状态化设计、多实例部署 |
+| [docs/01-架构设计/架构设计说明.md](docs/01-架构设计/架构设计说明.md) | LLM 调用架构、无状态化设计、多实例部署 |
 
 ### 质量与安全
 
 | 文档 | 内容 |
 |------|------|
-| [docs/代码规范与质量说明.md](docs/代码规范与质量说明.md) | Checkstyle/PMD/SpotBugs 规范与使用 |
-| [docs/测试规范.md](docs/测试规范.md) | 测试分层、Mock 策略、空壳清理计划 |
-| [docs/安全合规说明.md](docs/安全合规说明.md) | 安全扫描、秘钥管理、合规检查清单 |
+| [docs/05-测试与质量/代码规范与质量说明.md](docs/05-测试与质量/代码规范与质量说明.md) | Checkstyle/PMD/SpotBugs 规范与使用 |
+| [docs/05-测试与质量/测试规范.md](docs/05-测试与质量/测试规范.md) | 测试分层、Mock 策略、空壳清理计划 |
+| [docs/04-安全合规/安全合规说明.md](docs/04-安全合规/安全合规说明.md) | 安全扫描、秘钥管理、合规检查清单 |
 
 ### 运维与配置
 

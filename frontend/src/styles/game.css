@@ -1,0 +1,1591 @@
+/* Games Page */
+.games-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px 20px;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.games-title {
+    text-align: center;
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+}
+
+.games-subtitle {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 16px;
+    margin-bottom: 40px;
+}
+
+/* Games List */
+.games-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.game-list-item {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(56,189,248,0.1);
+    border-radius: 16px;
+    padding: 24px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.game-list-item:hover {
+    border-color: var(--border-glow);
+    transform: translateX(8px);
+    box-shadow: 0 8px 32px rgba(56,189,248,0.1);
+}
+
+.game-list-item.disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+}
+
+.game-list-item.disabled:hover {
+    border-color: rgba(56,189,248,0.1);
+    transform: none;
+    box-shadow: none;
+}
+
+.game-item-icon {
+    font-size: 48px;
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-dim);
+    border-radius: 16px;
+}
+
+.game-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.game-item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.game-item-header h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.game-item-tag {
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.game-item-info p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.game-item-arrow {
+    font-size: 32px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    transition: all 0.3s;
+}
+
+.game-list-item:hover .game-item-arrow {
+    color: var(--accent);
+    transform: translateX(4px);
+}
+
+.game-list-item.disabled .game-item-arrow {
+    font-size: 14px;
+    color: #f59e0b;
+}
+
+.game-list-item.disabled:hover .game-item-arrow {
+    color: #f59e0b;
+    transform: none;
+}
+
+/* Ping Pong Select */
+.pingpong-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px 20px;
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.pingpong-select {
+    text-align: center;
+}
+
+.pingpong-select h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 40px;
+}
+
+.model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 24px;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.model-card {
+    background: var(--bg-card);
+    border: 2px solid var(--model-color);
+    border-radius: 16px;
+    padding: 32px 24px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.model-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 32px rgba(56,189,248,0.15);
+}
+
+.model-emoji {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.model-name {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Ping Pong Game */
+.pingpong-game {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.pingpong-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.pingpong-header h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.pingpong-score {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.score-player {
+    color: #3b82f6;
+}
+
+.score-vs {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.score-ai {
+    font-weight: 700;
+}
+
+.score-round {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-left: 16px;
+}
+
+.pingpong-instructions {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.pingpong-canvas {
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+    border-radius: 20px;
+    cursor: pointer;
+    display: block;
+    margin: 0 auto;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.95));
+    box-shadow: 0 20px 48px rgba(2, 6, 23, 0.32), 0 0 0 6px rgba(255, 255, 255, 0.04);
+    touch-action: none;
+    user-select: none;
+}
+
+/* Game Over Overlay */
+.gameover-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+}
+
+.gameover-content {
+    background: var(--bg-card);
+    border-radius: 20px;
+    padding: 40px 60px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.win-title {
+    font-size: 36px;
+    font-weight: 700;
+    color: #10b981;
+    margin-bottom: 16px;
+}
+
+.lose-title {
+    font-size: 36px;
+    font-weight: 700;
+    color: #ef4444;
+    margin-bottom: 16px;
+}
+
+.final-score {
+    font-size: 20px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+}
+
+.gameover-buttons {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+}
+
+.btn-restart {
+    padding: 12px 32px;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-restart:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+}
+
+.btn-back-games {
+    padding: 12px 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.3s;
+}
+
+.btn-back-games:hover {
+    background: var(--accent-dim);
+    border-color: var(--border-glow);
+}
+
+/* Skill Buttons */
+.skill-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.skill-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 20px;
+    border-radius: 12px;
+    border: 2px solid var(--skill-color);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.3s;
+    min-width: 80px;
+}
+
+.skill-btn:hover {
+    background: var(--skill-color);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.skill-btn.active {
+    background: var(--skill-color);
+    color: white;
+    box-shadow: 0 0 20px var(--skill-color);
+}
+
+.skill-icon {
+    font-size: 24px;
+}
+
+.skill-name {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.skill-desc {
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+/* Snake King */
+.snakeking-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px 32px;
+    max-width: 1220px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.snakeking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+    padding: 16px 20px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(15,23,42,0.82), rgba(5,46,22,0.36));
+    border: 1px solid rgba(34,197,94,0.14);
+    backdrop-filter: blur(12px);
+}
+
+.snakeking-title-wrap {
+    flex: 1;
+    min-width: 0;
+}
+
+.snakeking-title {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #4ade80 0%, #22d3ee 60%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.3px;
+}
+
+.snakeking-subtitle {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.85;
+}
+
+.snake-action-btn {
+    border: 1px solid rgba(34, 197, 94, 0.32);
+    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(16,185,129,0.08));
+    color: #4ade80;
+    border-radius: 12px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: all 0.25s;
+    white-space: nowrap;
+}
+
+.snake-action-btn:hover {
+    background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(16,185,129,0.16));
+    border-color: rgba(74, 222, 128, 0.55);
+    box-shadow: 0 0 16px rgba(34,197,94,0.18);
+    transform: translateY(-2px);
+}
+
+.snake-board-shell {
+    position: relative;
+    margin: 0 auto 18px;
+    max-width: 1160px;
+}
+
+.snake-board-shell.shake .snake-canvas-wrap {
+    animation: snakeShake 0.26s linear;
+}
+
+@keyframes snakeShake {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(-4px, 2px); }
+    50% { transform: translate(4px, -2px); }
+    75% { transform: translate(-3px, -1px); }
+    100% { transform: translate(0, 0); }
+}
+
+.snake-canvas-wrap {
+    position: relative;
+    border-radius: 24px;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 118, 110, 0.18));
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 24px 56px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.snakeking-canvas {
+    width: 100%;
+    display: block;
+    border-radius: 24px;
+    cursor: crosshair;
+}
+
+.snake-overlay {
+    position: absolute;
+    top: 16px;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.snake-overlay-left {
+    left: 16px;
+}
+
+.snake-overlay-right {
+    right: 16px;
+}
+
+.snake-overlay-card {
+    min-width: 188px;
+    max-width: 248px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid rgba(34, 197, 94, 0.16);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.snake-status-card {
+    border-color: rgba(56, 189, 248, 0.22);
+}
+
+.snake-overlay-title {
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #93c5fd;
+    margin-bottom: 10px;
+    font-weight: 700;
+}
+
+.snake-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.snake-rank-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: #e2e8f0;
+    font-size: 13px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.snake-rank-item:last-child {
+    border-bottom: none;
+}
+
+.snake-rank-pos {
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.snake-rank-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.snake-rank-len {
+    font-size: 14px;
+    color: #4ade80;
+    font-variant-numeric: tabular-nums;
+}
+
+.snake-rank-item.dead {
+    opacity: 0.45;
+    filter: grayscale(0.5);
+}
+
+.snake-status-text {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.snake-status-note {
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.snake-minimap {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 136px;
+    height: 92px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.62);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 10px 20px rgba(2, 6, 23, 0.24);
+}
+
+.snake-minimap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, transparent 24%, rgba(148, 163, 184, 0.08) 25%, transparent 26%, transparent 49%, rgba(148, 163, 184, 0.08) 50%, transparent 51%, transparent 74%, rgba(148, 163, 184, 0.08) 75%, transparent 76%),
+        linear-gradient(transparent 24%, rgba(148, 163, 184, 0.08) 25%, transparent 26%, transparent 49%, rgba(148, 163, 184, 0.08) 50%, transparent 51%, transparent 74%, rgba(148, 163, 184, 0.08) 75%, transparent 76%);
+}
+
+.snake-minimap-dot,
+.snake-minimap-snake {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+}
+
+.snake-minimap-dot {
+    background: rgba(125, 211, 252, 0.9);
+}
+
+.snake-minimap-dot.remains {
+    background: rgba(250, 204, 21, 0.95);
+}
+
+.snake-minimap-dot.power {
+    width: 8px;
+    height: 8px;
+    background: #fde047;
+    box-shadow: 0 0 10px rgba(253, 224, 71, 0.7);
+}
+
+.snake-minimap-snake {
+    width: 8px;
+    height: 8px;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.12);
+}
+
+.snake-toast {
+    position: absolute;
+    left: 50%;
+    top: 20px;
+    transform: translateX(-50%);
+    padding: 10px 18px;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    background: rgba(15, 23, 42, 0.84);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 14px 28px rgba(2, 6, 23, 0.32);
+    z-index: 2;
+}
+
+.snake-toast.power {
+    background: rgba(202, 138, 4, 0.92);
+}
+
+.snake-toast.tail {
+    background: rgba(139, 92, 246, 0.92);
+}
+
+.snake-toast.danger {
+    background: rgba(220, 38, 38, 0.9);
+}
+
+.snake-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.snake-info-card {
+    border-radius: 18px;
+    border: 1px solid rgba(34, 197, 94, 0.12);
+    background: linear-gradient(135deg, var(--bg-card), rgba(5,46,22,0.18));
+    padding: 18px 22px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.snake-info-card:hover {
+    border-color: rgba(34,197,94,0.24);
+    box-shadow: 0 4px 24px rgba(34,197,94,0.08);
+}
+
+.snake-info-card h3 {
+    margin: 0 0 10px;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.snake-info-card p {
+    margin: 0;
+    line-height: 1.75;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+}
+
+.snake-kill-card {
+    margin-top: 10px;
+    border-color: rgba(239, 68, 68, 0.18);
+}
+
+.snake-kill-count {
+    font-size: 14px;
+    color: #f87171;
+    font-variant-numeric: tabular-nums;
+    min-width: 20px;
+    text-align: right;
+}
+
+.snake-highlight {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+.snake-highlight-blue {
+    color: #38bdf8;
+    font-weight: 600;
+}
+
+.snake-highlight-green {
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.snake-highlight-purple {
+    color: #c084fc;
+    font-weight: 600;
+}
+
+.snake-joystick-panel {
+    display: none;
+    margin: 20px auto 0;
+    align-items: center;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.snake-joystick-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.snake-joystick-pad {
+    position: relative;
+    width: 170px;
+    height: 170px;
+    border-radius: 50%;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.18), rgba(2, 6, 23, 0.96) 74%);
+    box-shadow: inset 0 8px 16px rgba(255, 255, 255, 0.04), 0 16px 32px rgba(2, 6, 23, 0.25);
+    touch-action: none;
+}
+
+.snake-joystick-ring {
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    border: 1px dashed rgba(148, 163, 184, 0.32);
+    background:
+        linear-gradient(90deg, transparent calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% + 1px), transparent calc(50% + 1px)),
+        linear-gradient(transparent calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.snake-joystick-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 68px;
+    height: 68px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(125, 211, 252, 0.94), rgba(29, 78, 216, 0.95));
+    border: 1px solid rgba(191, 219, 254, 0.38);
+    box-shadow: 0 10px 24px rgba(30, 64, 175, 0.32);
+    transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.snake-joystick-core.active {
+    background: radial-gradient(circle at 30% 30%, rgba(186, 230, 253, 0.98), rgba(37, 99, 235, 1));
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.34);
+}
+
+.joystick-panel {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.joystick-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.joystick-pad {
+    position: relative;
+    width: 188px;
+    height: 188px;
+    border-radius: 50%;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.16) 0, rgba(59, 130, 246, 0.08) 42%, rgba(15, 23, 42, 0.82) 72%, rgba(2, 6, 23, 0.96) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    box-shadow: inset 0 10px 24px rgba(255, 255, 255, 0.06), 0 16px 32px rgba(2, 6, 23, 0.24);
+    touch-action: none;
+}
+
+.joystick-ring {
+    position: absolute;
+    inset: 22px;
+    border-radius: 50%;
+    border: 1px dashed rgba(148, 163, 184, 0.3);
+    background:
+        linear-gradient(90deg, transparent calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% + 1px), transparent calc(50% + 1px)),
+        linear-gradient(transparent calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.joystick-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 68px;
+    height: 68px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: rgba(226, 232, 240, 0.9);
+    background: radial-gradient(circle at 30% 30%, rgba(96, 165, 250, 0.55), rgba(30, 41, 59, 0.96));
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    box-shadow: inset 0 4px 10px rgba(255, 255, 255, 0.08), 0 8px 20px rgba(2, 6, 23, 0.26);
+    transition: box-shadow 0.15s ease, background 0.15s ease;
+    pointer-events: none;
+}
+
+.joystick-core.active {
+    background: radial-gradient(circle at 30% 30%, rgba(125, 211, 252, 0.82), rgba(37, 99, 235, 0.92));
+    box-shadow: inset 0 4px 10px rgba(255, 255, 255, 0.12), 0 0 24px rgba(59, 130, 246, 0.3);
+}
+
+/* Castle War */
+.castlewar-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px 28px;
+    max-width: 1280px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.castlewar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+    padding: 16px 20px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(15,23,42,0.85), rgba(67,20,7,0.32));
+    border: 1px solid rgba(251, 191, 36, 0.14);
+    backdrop-filter: blur(12px);
+}
+
+.castlewar-header-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.castlewar-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.castlewar-title {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #fbbf24 0%, #f97316 50%, #ef4444 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.3px;
+}
+
+.castlewar-subtitle {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.85;
+}
+
+.castlewar-action-btn {
+    border: 1px solid rgba(251, 191, 36, 0.24);
+    background: rgba(251, 191, 36, 0.08);
+    color: var(--text-primary);
+    border-radius: 12px;
+    padding: 10px 18px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: all 0.25s;
+    white-space: nowrap;
+}
+
+.castlewar-action-btn--rank {
+    border-color: rgba(251, 191, 36, 0.32);
+    background: linear-gradient(135deg, rgba(251,191,36,0.12), rgba(245,158,11,0.08));
+    color: #fbbf24;
+}
+
+.castlewar-action-btn--restart {
+    border-color: rgba(239, 68, 68, 0.32);
+    background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(220,38,38,0.08));
+    color: #f87171;
+}
+
+.castlewar-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 16px rgba(251, 191, 36, 0.16);
+}
+
+.castlewar-action-btn--rank:hover {
+    background: linear-gradient(135deg, rgba(251,191,36,0.22), rgba(245,158,11,0.16));
+    border-color: rgba(251,191,36,0.55);
+}
+
+.castlewar-action-btn--restart:hover {
+    background: linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.16));
+    border-color: rgba(239,68,68,0.55);
+}
+
+.castlewar-lord-panel {
+    margin: -4px 0 18px;
+    padding: 14px 18px;
+    border-radius: 18px;
+    background: rgba(2, 6, 23, 0.82);
+    border: 1px solid rgba(251, 191, 36, 0.16);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 16px 40px rgba(2, 6, 23, 0.36), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.castlewar-board-shell {
+    position: relative;
+    max-width: 1180px;
+    margin: 0 auto 18px;
+}
+
+.castlewar-board-shell.shake .castlewar-canvas-wrap {
+    animation: snakeShake 0.22s linear;
+}
+
+.castlewar-overlay {
+    position: absolute;
+    top: 16px;
+    z-index: 2;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.castlewar-overlay-left {
+    left: 16px;
+}
+
+.castlewar-overlay-right {
+    right: 16px;
+}
+
+.castlewar-overlay-center {
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.castlewar-overlay-card {
+    min-width: 200px;
+    max-width: 260px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(2, 6, 23, 0.78);
+    border: 1px solid rgba(251, 191, 36, 0.14);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.castlewar-overlay-title {
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #93c5fd;
+    margin-bottom: 10px;
+    font-weight: 700;
+}
+
+.castlewar-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.castlewar-rank-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+.castlewar-rank-item.dead {
+    opacity: 0.55;
+}
+
+.castlewar-status-text {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.castlewar-status-note {
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.castlewar-canvas-wrap {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 1120 / 720;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(6, 78, 59, 0.22));
+    box-shadow: 0 24px 56px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.castlewar-canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 24px;
+    cursor: crosshair;
+}
+
+.castlewar-minimap {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 144px;
+    height: 98px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.64);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 10px 20px rgba(2, 6, 23, 0.24);
+}
+
+.castlewar-minimap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, transparent 24%, rgba(148, 163, 184, 0.08) 25%, transparent 26%, transparent 49%, rgba(148, 163, 184, 0.08) 50%, transparent 51%, transparent 74%, rgba(148, 163, 184, 0.08) 75%, transparent 76%),
+        linear-gradient(transparent 24%, rgba(148, 163, 184, 0.08) 25%, transparent 26%, transparent 49%, rgba(148, 163, 184, 0.08) 50%, transparent 51%, transparent 74%, rgba(148, 163, 184, 0.08) 75%, transparent 76%);
+}
+
+.castlewar-minimap-dot,
+.castlewar-minimap-army,
+.castlewar-minimap-castle,
+.castlewar-minimap-powerup {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+}
+
+/* AI 军队：圆形 */
+.castlewar-minimap-army {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(255,255,255,0.14);
+    left: 50%;
+    top: 50%;
+}
+
+.castlewar-minimap-marker {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+}
+
+.castlewar-minimap-dot {
+    width: 4px;
+    height: 4px;
+    background: rgba(226, 232, 240, 0.92);
+    border-radius: 50%;
+}
+
+/* 玩家图标改为五角星徽章（部队样式） */
+.castlewar-minimap-marker.player .castlewar-minimap-army {
+    width: 0;
+    height: 0;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+    display: none;
+}
+
+.castlewar-minimap-marker.player::before {
+    content: '★';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    line-height: 1;
+    color: #fbbf24;
+    filter: drop-shadow(0 0 5px rgba(251,191,36,0.9)) drop-shadow(0 0 2px rgba(0,0,0,0.8));
+    z-index: 3;
+}
+
+.castlewar-minimap-marker.player::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    background: rgba(251, 191, 36, 0.2);
+    border: 1px solid rgba(251, 191, 36, 0.55);
+    z-index: 2;
+}
+
+.castlewar-minimap-player-label {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(249, 115, 22, 0.35);
+    color: #fde68a;
+    font-size: 9px;
+    line-height: 1.2;
+    white-space: nowrap;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.castlewar-minimap-castle {
+    width: 10px;
+    height: 10px;
+    background: rgba(96, 165, 250, 0.95);
+    box-shadow: 0 0 12px rgba(96, 165, 250, 0.28);
+}
+
+.castlewar-minimap-powerup {
+    width: 6px;
+    height: 6px;
+    box-shadow: 0 0 10px rgba(255,255,255,0.28);
+}
+
+.castlewar-toast {
+    position: absolute;
+    left: 50%;
+    top: 20px;
+    transform: translateX(-50%);
+    padding: 10px 18px;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    background: rgba(15, 23, 42, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 14px 28px rgba(2, 6, 23, 0.32);
+    z-index: 2;
+}
+
+.castlewar-toast.power {
+    background: rgba(37, 99, 235, 0.92);
+}
+
+.castlewar-toast.danger {
+    background: rgba(220, 38, 38, 0.9);
+}
+
+.castlewar-joystick-panel {
+    display: none;
+    margin: 20px auto 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.castlewar-powerup-panel {
+    margin: 16px auto 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.castlewar-powerup-bar {
+    width: min(100%, 780px);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.castlewar-powerup-btn {
+    appearance: none;
+    border: 1px solid color-mix(in srgb, var(--powerup-color) 54%, rgba(255,255,255,0.12));
+    background: color-mix(in srgb, var(--powerup-color) 14%, rgba(2, 6, 23, 0.92));
+    color: #f8fafc;
+    border-radius: 16px;
+    padding: 12px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 24px rgba(2, 6, 23, 0.24);
+}
+
+.castlewar-powerup-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 26px rgba(2, 6, 23, 0.28);
+}
+
+.castlewar-powerup-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.castlewar-powerup-btn.active {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--powerup-color) 76%, transparent), 0 0 18px color-mix(in srgb, var(--powerup-color) 34%, transparent);
+}
+
+.castlewar-powerup-icon {
+    font-size: 18px;
+}
+
+.castlewar-powerup-name {
+    flex: 1;
+    text-align: left;
+    font-size: 13px;
+}
+
+.castlewar-powerup-count {
+    font-size: 16px;
+    color: color-mix(in srgb, var(--powerup-color) 72%, #ffffff);
+}
+
+.castlewar-powerup-active {
+    width: min(100%, 780px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    color: #e2e8f0;
+    font-size: 12px;
+}
+
+.castlewar-powerup-active span {
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.castlewar-joystick-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.castlewar-joystick-pad {
+    position: relative;
+    width: 176px;
+    height: 176px;
+    border-radius: 50%;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.2), rgba(2, 6, 23, 0.96) 74%);
+    box-shadow: inset 0 8px 16px rgba(255,255,255,0.04), 0 16px 32px rgba(2, 6, 23, 0.25);
+    touch-action: none;
+}
+
+.castlewar-joystick-ring {
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    border: 1px dashed rgba(148, 163, 184, 0.32);
+    background:
+        linear-gradient(90deg, transparent calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% + 1px), transparent calc(50% + 1px)),
+        linear-gradient(transparent calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% - 1px), rgba(148, 163, 184, 0.18) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.castlewar-joystick-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 72px;
+    height: 72px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(191, 219, 254, 0.95), rgba(37, 99, 235, 0.96));
+    border: 1px solid rgba(191, 219, 254, 0.38);
+    box-shadow: 0 10px 24px rgba(30, 64, 175, 0.32);
+    transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.castlewar-joystick-core.active {
+    background: radial-gradient(circle at 30% 30%, rgba(219, 234, 254, 1), rgba(29, 78, 216, 1));
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.34);
+}
+
+.castlewar-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.castlewar-info-card {
+    border-radius: 18px;
+    border: 1px solid rgba(56, 189, 248, 0.12);
+    background: var(--bg-card);
+    padding: 18px 20px;
+}
+
+.castlewar-info-card h3 {
+    margin: 0 0 10px;
+    color: var(--text-primary);
+    font-size: 17px;
+}
+
+.castlewar-info-card p {
+    margin: 0;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    .games-page {
+        padding: 20px 16px;
+    }
+
+    .game-list-item {
+        padding: 20px 16px;
+        gap: 16px;
+    }
+
+    .game-item-icon {
+        width: 56px;
+        height: 56px;
+        font-size: 36px;
+    }
+
+    .game-item-header h3 {
+        font-size: 18px;
+    }
+
+    .model-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pingpong-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .gameover-content {
+        padding: 30px 40px;
+        margin: 20px;
+    }
+
+    .win-title, .lose-title {
+        font-size: 28px;
+    }
+
+    .gameover-buttons {
+        flex-direction: column;
+    }
+
+    .skill-buttons {
+        gap: 8px;
+    }
+
+    .skill-btn {
+        padding: 10px 16px;
+        min-width: 70px;
+    }
+
+    .skill-icon {
+        font-size: 20px;
+    }
+
+    .skill-name {
+        font-size: 12px;
+    }
+
+    .skill-desc {
+        font-size: 10px;
+    }
+
+    .snakeking-page {
+        padding: 14px;
+    }
+
+    .snakeking-header {
+        flex-direction: column;
+    }
+
+    .snake-board-shell {
+        margin-bottom: 16px;
+    }
+
+    .snake-overlay {
+        position: static;
+        margin-bottom: 10px;
+    }
+
+    .snake-overlay-card {
+        max-width: none;
+        width: 100%;
+    }
+
+    .snake-canvas-wrap {
+        border-radius: 18px;
+    }
+
+    .snakeking-canvas {
+        border-radius: 18px;
+    }
+
+    .snake-minimap {
+        width: 112px;
+        height: 76px;
+        right: 10px;
+        bottom: 10px;
+    }
+
+    .snake-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .snake-joystick-panel {
+        display: flex;
+    }
+
+    .castlewar-page {
+        padding: 8px;
+        max-width: none;
+    }
+
+    .castlewar-header {
+        flex-direction: column;
+    }
+
+    .castlewar-header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .castlewar-overlay {
+        position: static;
+        margin-bottom: 10px;
+        transform: none;
+    }
+
+    .castlewar-overlay-card {
+        width: 100%;
+        max-width: none;
+    }
+
+    .castlewar-canvas-wrap {
+        border-radius: 16px;
+        margin-left: -8px;
+        margin-right: -8px;
+    }
+
+    .castlewar-canvas {
+        border-radius: 16px;
+        height: auto;
+    }
+
+    .castlewar-minimap {
+        width: 118px;
+        height: 82px;
+        right: 10px;
+        bottom: 10px;
+    }
+
+    .castlewar-joystick-panel {
+        display: flex;
+        margin-top: 14px;
+    }
+
+    .castlewar-powerup-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .castlewar-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .joystick-panel {
+        margin-top: 20px;
+        padding-bottom: 8px;
+    }
+
+    .joystick-pad {
+        width: 176px;
+        height: 176px;
+    }
+
+    .joystick-ring {
+        inset: 20px;
+    }
+
+    .joystick-core {
+        width: 64px;
+        height: 64px;
+        font-size: 20px;
+    }
+}
+
+/* ===== 游戏服务维护提示（高峰降级时展示） ===== */
+.games-maintenance {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0 auto 24px;
+    max-width: 720px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #fff7e6, #fff3d6);
+    border: 1px solid #ffd591;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(250, 173, 20, 0.12);
+}
+
+.games-maintenance-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.games-maintenance-info h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    color: #ad6800;
+}
+
+.games-maintenance-info p {
+    margin: 0;
+    font-size: 13px;
+    color: #874d00;
+    line-height: 1.6;
+}
+
+.games-maintenance .games-maintenance-info h3 {
+    color: #b26a00;
+}

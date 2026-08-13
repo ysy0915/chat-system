@@ -1,0 +1,156 @@
+# chat-common 公共生产配置（所有模块共享，由 Nacos 统一管理）
+# 模块专属配置在各 chat-xxx-prod.yml 中覆盖
+
+spring:
+  datasource:
+    url: jdbc:mysql://your-rds-host:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:your_db_user}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 600000
+
+  data:
+    redis:
+      host: your-intra-ip-3
+      port: 6379
+      database: 0
+      timeout: 5000ms
+
+  rabbitmq:
+    host: your-nginx-ip
+    port: 5672
+    username: chatapp
+    password: ${MQ_PASSWORD:}
+    virtual-host: /
+    connection-timeout: 5000ms
+    requested-heartbeat: 10s
+    listener:
+      simple:
+        auto-startup: false
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  mvc:
+    async:
+      request-timeout: 120000
+
+server:
+  forward-headers-strategy: native
+  tomcat:
+    connection-timeout: 120000
+    keep-alive-timeout: 120000
+    max-http-form-post-size: 10MB
+    threads:
+      max: 200
+      min-spare: 10
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+jwt:
+  secret: ${JWT_SECRET:change-me-to-a-random-256-bit-string}
+  expiration: 3600000
+
+# Actuator + Prometheus
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers,retries,ratelimiters
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 30s
+    tags:
+      application: ${spring.application.name}
+
+# RAG 知识库（公共默认值，各模块可在专属配置中覆盖）
+app:
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    milvus:
+      enabled: ${MILVUS_ENABLED:true}
+      host: ${MILVUS_HOST:your-intra-ip-2}
+      port: 19530
+      collection-prefix: kb_
+    embedding:
+      mode: ${EMBEDDING_MODE:dashscope}
+      provider: dashscope
+      base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/api/v1}
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${EMBEDDING_MODEL:text-embedding-v4}
+      dimension: ${EMBEDDING_DIMENSION:1024}
+    search:
+      top-k: 5
+      score-threshold: 0.3
+    context:
+      max-chars: 3000
+    upload:
+      max-size: 10485760
+    memory:
+      short-term-rounds: 5
+      long-term-top-k: 3
+      long-term-threshold: 0.5
+      redis-ttl-hours: 24
+      profile-ttl-days: 30
+      profile-provider: qwen
+      profile-model: qwen-plus
+    chat:
+      enabled: ${CHAT_RAG_ENABLED:true}
+      kb-id: ${CHAT_RAG_KB_ID:0}
+      top-k: 3
+      score-threshold: 0.3
+      max-chars: 2000
+  observability:
+    enabled: true
+    trace-retention: 1000
+    auto-heal: true
+  agent:
+    enabled: true
+    max-tool-calls: 3
+    default-kb-id: 1
+  router:
+    enabled: true
+  classifier:
+    enabled: true
+
+# 阿里云内容安全
+content-safety:
+  enabled: true
+  access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:}
+  access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:}
+  endpoint: green-cip.cn-beijing.aliyuncs.com
+  region-id: cn-beijing
+
+# 阿里云 OSS
+oss:
+  enabled: true
+  endpoint: https://oss-cn-shanghai.aliyuncs.com
+  internal-endpoint: https://oss-cn-shanghai-internal.aliyuncs.com
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  bucket-name: your-bucket-name
+  public-domain: https://your-bucket-name.oss-cn-shanghai.aliyuncs.com
+
+# SQL执行器
+sql-executor:
+  password: ${SQL_EXECUTOR_PASSWORD:}
+
+# 在线人数监控
+monitor:
+  password: ${MONITOR_PASSWORD:}

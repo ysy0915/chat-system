@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.example.chat.llm.grpc";
+option java_outer_classname = "LlmLangGraphProto";
+
+package llm.graph;
+
+// ============ 服务定义 ============
+
+service LlmLangGraph {
+  // 非流式执行 Graph
+  rpc Execute (GraphRequest) returns (GraphResponse);
+
+  // 流式执行 Graph (SSE 风格)
+  rpc StreamExecute (GraphRequest) returns (stream GraphStreamEvent);
+}
+
+// ============ 请求 ============
+
+message GraphRequest {
+  // ── 全局配置 ──
+  string provider = 1;                        // 模型提供商
+  string model = 2;                           // 全局模型名称
+  double temperature = 3;                     // 全局温度
+  int32  max_tokens = 4;                      // 全局最大 Token
+  string entry_point = 5;                     // 入口节点 ID
+  int32  max_steps = 6;                       // 最大执行步数
+  map<string, string> state = 7;              // 初始状态
+
+  // ── 图构件 ──
+  repeated GraphNode nodes = 10;
+  repeated GraphEdge edges = 11;
+
+  // ── 追踪 ──
+  string trace_id = 20;                       // 分布式追踪 ID
+}
+
+message GraphNode {
+  // ── 核心 ──
+  string id = 1;                              // 节点唯一 ID
+  string label = 2;                           // 节点标签
+  string system_prompt = 3;                   // 系统提示
+  string user_prompt = 4;                     // 用户提示 (支持 {{state.xxx}})
+  string model = 5;                           // 本节点覆盖的模型
+  double temperature = 6;                     // 本节点覆盖的温度
+
+  // ── 路由 ──
+  bool   router = 10;                         // 是否为路由节点
+  bool   terminal = 11;                       // 是否为终结节点
+  repeated ToolDefinition tools = 12;         // 工具列表
+
+  // ── 自愈 (v2) ──
+  int32  retry_count = 20;                    // 失败重试次数 (默认 0)
+  int64  retry_backoff_ms = 21;               // 重试退避 (毫秒，默认 500)
+  string fallback_node_id = 22;               // 降级节点 ID (重试耗尽后跳转)
+}
+
+message GraphEdge {
+  string from = 1;                            // 源节点 ID
+  string to = 2;                              // 目标节点 ID
+  string label = 3;                           // 边标签 (可选)
+  string condition = 4;                       // 条件表达式: contains({{output}}, 'xx') | equals({{output}}, 'xx')
+  bool   default_route = 5;                   // 是否为默认路由
+}
+
+message ToolDefinition {
+  string name = 1;                            // 工具名称
+  string description = 2;                     // 工具描述
+  string parameters_json = 3;                 // JSON Schema 参数定义
+}
+
+// ============ 响应 ============
+
+message GraphResponse {
+  bool   success = 1;                         // 是否成功
+  int32  total_steps = 2;                     // 执行步数
+  int64  elapsed_ms = 3;                      // 总耗时
+  string error = 4;                           // 错误信息
+  string trace_id = 5;                        // 追踪 ID
+  bool   fallback_used = 6;                   // 是否触发降级
+
+  repeated StepTrace trace = 10;              // 执行追踪
+  map<string, string> final_state = 11;       // 最终状态
+}
+
+message StepTrace {
+  string node_id = 1;                         // 节点 ID
+  string label = 2;                           // 节点标签
+  string input = 3;                           // 输入 (JSON)
+  string output = 4;                          // 输出 (JSON)
+  int64  elapsed_ms = 5;                      // 耗时
+  string raw_content = 6;                     // LLM 原始返回
+  int32  retries = 7;                         // 本步重试次数
+  bool   fallback = 8;                        // 是否降级
+}
+
+// ============ 流式事件 ============
+
+message GraphStreamEvent {
+  oneof event {
+    string node_start = 1;                    // 节点开始 (nodeId)
+    string delta = 2;                         // 文本增量内容
+    string node_end = 3;                      // 节点结束 (nodeId)
+    bool   done = 4;                          // Graph 执行完成
+  }
+}

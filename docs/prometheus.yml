@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "chat-core"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-core:9090"]
+
+  - job_name: "chat-web"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-web:8081"]
+
+  - job_name: "chat-games"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-games:8083"]
+
+  - job_name: "chat-media"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-media:8084"]
+
+  - job_name: "chat-llm"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["chat-llm:9095"]
+
+  # 生产环境 Nginx 反向代理指标（主服务器 your-nginx-ip）
+  # 需在主服务器安装 nginx-prometheus-exporter：docker run -d -p 9113:9113 \
+  #   nginx/nginx-prometheus-exporter:1.1.0 -nginx.scrape-uri=http://127.0.0.1:8080/stub_status
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["your-intra-ip:9113"]

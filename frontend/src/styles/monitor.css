@@ -1,0 +1,186 @@
+/* /Users/apple/IdeaProjects/chat-system-project/frontend/src/styles/monitor.css */
+.monitor-page {
+    flex: 1;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+/* Monitor 不在 KeepAliveRoute 中，需要让 body 和 app-layout 都能滚动 */
+body:has(.monitor-page) {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: auto;
+}
+
+body:has(.monitor-page) .app-layout {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+}
+
+.monitor-title {
+    font-size: 22px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #38bdf8, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 12px 0 4px;
+    text-align: center;
+}
+
+.monitor-subtitle {
+    color: #94a3b8;
+    font-size: 13px;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.monitor-stats {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+.monitor-stat-card {
+    background: rgba(56, 189, 248, 0.05);
+    border: 1px solid rgba(56, 189, 248, 0.15);
+    border-radius: 12px;
+    padding: 14px 20px;
+    text-align: center;
+    min-width: 100px;
+    backdrop-filter: blur(8px);
+}
+
+.monitor-stat-label {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.monitor-stat-value {
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.monitor-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.monitor-controls-label {
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.monitor-range-select {
+    min-width: 120px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    background: rgba(15, 23, 42, 0.85);
+    color: #38bdf8;
+    font-size: 13px;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.monitor-range-select:focus {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
+.monitor-date-picker-wrap {
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.monitor-date-picker {
+    min-width: 140px;
+    width: 100%;
+    height: 44px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    background: rgba(15, 23, 42, 0.85);
+    color: #f59e0b;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    color-scheme: dark;
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+}
+
+.monitor-date-picker:focus {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
+.monitor-loading {
+    color: #64748b;
+    font-size: 14px;
+    padding: 20px;
+}
+
+.monitor-chart-container {
+    width: 100%;
+    max-width: 860px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(56, 189, 248, 0.1);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.monitor-chart-container canvas {
+    display: block;
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+    .monitor-page {
+        padding: 16px 10px 40px;
+    }
+    .monitor-chart-container {
+        padding: 10px;
+    }
+    .monitor-stat-card {
+        min-width: 80px;
+        padding: 10px 14px;
+    }
+    .monitor-stat-value {
+        font-size: 22px;
+    }
+    .monitor-controls {
+        gap: 6px;
+    }
+    .monitor-date-picker {
+        min-width: 120px;
+    }
+}

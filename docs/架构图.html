@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博思AI智能体 · 最佳实践图鉴</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #fff;
+    padding: 40px 0;
+  }
+  .page-title {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-title h1 {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b, #ef4444, #8b5cf6, #3b82f6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .page-title p {
+    color: rgba(255,255,255,0.45);
+    font-size: 15px;
+    margin-top: 10px;
+  }
+  .cards {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+  }
+  .card {
+    width: 840px;
+    height: 470px;
+    border-radius: 18px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.35), 0 2px 10px rgba(0,0,0,0.2);
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+    background-size: 22px 22px;
+    z-index: 0;
+  }
+  .card > * { position: relative; z-index: 1; }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 26px 36px 0;
+  }
+  .badge {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 20px;
+    border: 2px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-size: 23px;
+    font-weight: 700;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  }
+  .takeaways {
+    position: absolute;
+    bottom: 22px;
+    left: 36px;
+    right: 36px;
+    background: rgba(0,0,0,0.28);
+    border-radius: 12px;
+    padding: 14px 18px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .takeaways p {
+    font-size: 13px;
+    opacity: 0.88;
+    line-height: 1.7;
+    margin: 0;
+  }
+  .takeaways p span.dot { opacity: 0.4; margin-right: 8px; }
+
+  /* ===== Chapter 1 ===== */
+  .ch1 { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0c4a6e 100%); }
+  .ch1 .badge { background: rgba(56,189,248,0.3); }
+  .ch1-scene { position: relative; height: 280px; margin: 8px 36px 0; }
+  .ch1-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 76px; height: 76px; border-radius: 50%;
+    background: linear-gradient(135deg, #38bdf8, #818cf8);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; box-shadow: 0 0 50px rgba(56,189,248,0.4);
+  }
+  .ch1-pain {
+    position: absolute;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(4px);
+    border-radius: 10px; padding: 9px 15px;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.15);
+    display: flex; align-items: center; gap: 7px;
+    white-space: nowrap;
+  }
+  .ch1-pain .icon { font-size: 19px; }
+
+  /* ===== Chapter 2 ===== */
+  .ch2 { background: linear-gradient(135deg, #0d4f4f 0%, #0e7490 50%, #155e75 100%); }
+  .ch2 .badge { background: rgba(20,184,166,0.4); }
+  .ch2-layers { padding: 18px 56px 0; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .ch2-bar {
+    height: 30px; border-radius: 6px;
+    display: flex; align-items: center; padding-left: 14px;
+    font-size: 12px; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  /* ===== Chapter 3 ===== */
+  .ch3 { background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 50%, #6d28d9 100%); }
+  .ch3 .badge { background: rgba(167,139,250,0.4); }
+  .ch3-scene { position: relative; height: 260px; margin: 8px 36px 0; }
+  .ch3-node {
+    position: absolute; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid rgba(255,255,255,0.25);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  .ch3-line { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .ch3-hierarchy {
+    position: absolute; bottom: 14px; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 10px; align-items: center;
+  }
+  .ch3-hierarchy span {
+    font-size: 11px; font-weight: 600;
+    background: rgba(255,255,255,0.1); padding: 4px 11px; border-radius: 5px;
+  }
+  .ch3-hierarchy .arrow { background: none; padding: 0; font-weight: 400; opacity: 0.4; }
+
+  /* ===== Chapter 4 ===== */
+  .ch4 { background: linear-gradient(135deg, #92400e 0%, #d97706 50%, #b45309 100%); }
+  .ch4 .badge { background: rgba(253,224,71,0.4); }
+  .ch4-funnel { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 18px; }
+  .ch4-layer {
+    display: flex; align-items: center; gap: 16px;
+  }
+  .ch4-bar {
+    height: 46px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .ch4-meta { text-align: left; min-width: 120px; font-size: 11px; opacity: 0.7; line-height: 1.6; }
+  .ch4-result {
+    background: rgba(255,255,255,0.15); border-radius: 8px;
+    padding: 9px 26px; font-size: 14px; font-weight: 700; margin-top: 6px;
+  }
+
+  /* ===== Chapter 5 ===== */
+  .ch5 { background: linear-gradient(135deg, #064e3b 0%, #059669 50%, #047857 100%); }
+  .ch5 .badge { background: rgba(52,211,153,0.4); }
+  .ch5-scene { position: relative; height: 260px; margin: 8px 36px 0; }
+  .ch5-debate-node {
+    position: absolute; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    border: 2px solid rgba(255,255,255,0.25);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  .ch5-section-title { position: absolute; font-size: 13px; font-weight: 700; opacity: 0.7; }
+  .ch5-worker {
+    background: rgba(255,255,255,0.12); border-radius: 8px;
+    padding: 9px 18px; font-size: 12px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.15); width: 170px; text-align: center;
+    margin-bottom: 6px;
+  }
+  .ch5-worker.highlight-yellow { background: rgba(251,191,36,0.3); }
+  .ch5-worker.highlight-green { background: rgba(52,211,153,0.3); }
+
+  /* ===== Chapter 6 ===== */
+  .ch6 { background: linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #4338ca 100%); }
+  .ch6 .badge { background: rgba(129,140,248,0.4); }
+  .ch6-pipeline { padding: 26px 36px 0; display: flex; align-items: flex-start; justify-content: center; gap: 6px; }
+  .ch6-step { text-align: center; width: 105px; }
+  .ch6-step-icon {
+    width: 66px; height: 66px; border-radius: 15px;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; margin: 0 auto 10px;
+  }
+  .ch6-step-label { font-size: 13px; font-weight: 700; }
+  .ch6-step-sub { font-size: 10px; opacity: 0.6; margin-top: 3px; }
+  .ch6-arrow { margin-top: 28px; font-size: 20px; opacity: 0.35; }
+  .ch6-flow {
+    margin: 22px 64px 0; background: rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 16px;
+  }
+  .ch6-flow-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .ch6-flow-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ch6-flow-steps span {
+    font-size: 11px; font-weight: 600;
+    background: rgba(255,255,255,0.1); padding: 4px 11px; border-radius: 5px;
+  }
+  .ch6-flow-steps .arr { background: none; padding: 0; font-weight: 400; opacity: 0.35; }
+
+  /* ===== Chapter 7 ===== */
+  .ch7 { background: linear-gradient(135deg, #831843 0%, #db2777 50%, #be185d 100%); }
+  .ch7 .badge { background: rgba(244,114,182,0.4); }
+  .ch7-layers { display: flex; justify-content: center; gap: 24px; padding: 22px 36px 0; }
+  .ch7-layer {
+    width: 200px; border-radius: 15px; padding: 26px 18px;
+    text-align: center; border: 1px solid rgba(255,255,255,0.15);
+  }
+  .ch7-layer-icon { font-size: 38px; margin-bottom: 10px; }
+  .ch7-layer-title { font-size: 16px; font-weight: 700; }
+  .ch7-layer-sub { font-size: 11px; opacity: 0.7; margin-top: 5px; }
+  .ch7-connect { text-align: center; padding: 14px 0 0; font-size: 13px; opacity: 0.6; }
+
+  /* ===== Chapter 8 ===== */
+  .ch8 { background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 50%, #b91c1c 100%); }
+  .ch8 .badge { background: rgba(252,165,165,0.4); }
+  .ch8-layers { padding: 18px 56px 0; display: flex; flex-direction: column; gap: 8px; }
+  .ch8-layer {
+    display: flex; align-items: center; gap: 14px;
+    border-radius: 10px; padding: 11px 18px;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .ch8-layer-icon { font-size: 25px; }
+  .ch8-layer-name { font-size: 14px; font-weight: 700; }
+  .ch8-layer-desc { font-size: 11px; opacity: 0.7; }
+  .ch8-layer-check { margin-left: auto; font-size: 12px; opacity: 0.5; }
+  .ch8-scanners { margin-top: 14px; display: flex; justify-content: center; gap: 10px; }
+  .ch8-scanners span {
+    font-size: 10px; background: rgba(255,255,255,0.1);
+    padding: 3px 9px; border-radius: 4px; font-weight: 600;
+  }
+
+  /* ===== Chapter 9 ===== */
+  .ch9 { background: linear-gradient(135deg, #064e3b 0%, #10b981 50%, #059669 100%); }
+  .ch9 .badge { background: rgba(110,231,183,0.4); }
+  .ch9-cols { display: flex; gap: 20px; padding: 18px 36px 0; justify-content: center; }
+  .ch9-col { flex: 1; }
+  .ch9-col-title { font-size: 13px; font-weight: 700; margin-bottom: 12px; opacity: 0.75; }
+  .ch9-instance {
+    border-radius: 8px; padding: 7px 13px; margin-bottom: 5px;
+    font-size: 11px; display: flex; justify-content: space-between;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .ch9-heal {
+    font-size: 11px; padding: 6px 11px;
+    background: rgba(255,255,255,0.08); border-radius: 6px;
+    margin-bottom: 5px; border-left: 3px solid rgba(52,211,153,0.5);
+  }
+
+  /* ===== Chapter 10 ===== */
+  .ch10 { background: linear-gradient(135deg, #1e293b 0%, #475569 50%, #334155 100%); }
+  .ch10 .badge { background: rgba(148,163,184,0.4); }
+  .ch10-cols { display: flex; gap: 16px; padding: 18px 36px 0; justify-content: center; }
+  .ch10-col {
+    flex: 1; background: rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .ch10-col-title { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+  .ch10-alert { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 3px 0; }
+  .ch10-alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .ch10-cmd {
+    font-size: 11px; font-family: 'SF Mono', Menlo, monospace;
+    padding: 5px 9px; background: rgba(0,0,0,0.2);
+    border-radius: 5px; margin-bottom: 5px;
+  }
+
+  /* ===== Chapter 11 ===== */
+  .ch11 { background: linear-gradient(135deg, #4c1d95 0%, #8b5cf6 50%, #7c3aed 100%); }
+  .ch11 .badge { background: rgba(196,181,253,0.4); }
+  .ch11-cols { display: flex; gap: 22px; padding: 18px 44px 0; justify-content: center; }
+  .ch11-browser {
+    width: 350px; background: rgba(0,0,0,0.2);
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .ch11-browser-bar {
+    background: rgba(0,0,0,0.3); padding: 7px 13px;
+    display: flex; gap: 6px; align-items: center;
+  }
+  .ch11-browser-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .ch11-tabs { display: flex; gap: 3px; flex-wrap: wrap; padding: 10px; margin-bottom: 8px; }
+  .ch11-tab {
+    font-size: 9px; padding: 2px 7px; border-radius: 3px;
+    background: rgba(255,255,255,0.08);
+  }
+  .ch11-tab.active { background: rgba(139,92,246,0.4); font-weight: 700; }
+  .ch11-content {
+    height: 82px; background: rgba(255,255,255,0.04);
+    border-radius: 6px; display: flex;
+    align-items: center; justify-content: center;
+    font-size: 11px; opacity: 0.4; margin: 0 10px 10px;
+  }
+  .ch11-features { display: flex; flex-direction: column; gap: 10px; justify-content: center; }
+  .ch11-feature {
+    display: flex; align-items: center; gap: 9px;
+    background: rgba(255,255,255,0.08); border-radius: 8px;
+    padding: 9px 13px; font-size: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .ch11-feature-icon { font-size: 19px; }
+
+  /* ===== Chapter 12 ===== */
+  .ch12 { background: linear-gradient(135deg, #78350f 0%, #d97706 50%, #b45309 100%); }
+  .ch12 .badge { background: rgba(253,224,71,0.4); }
+  .ch12-stats { display: flex; justify-content: center; gap: 18px; padding: 22px 56px 0; margin-bottom: 22px; }
+  .ch12-stat {
+    text-align: center; background: rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 12px 18px; min-width: 100px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .ch12-stat-num { font-size: 24px; font-weight: 800; }
+  .ch12-stat-label { font-size: 10px; opacity: 0.7; }
+  .ch12-timeline { display: flex; align-items: center; justify-content: center; }
+  .ch12-milestone { text-align: center; }
+  .ch12-milestone-dot {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; margin: 0 auto 7px;
+  }
+  .ch12-milestone-year { font-size: 12px; font-weight: 700; }
+  .ch12-milestone-label { font-size: 10px; opacity: 0.7; }
+  .ch12-connector { width: 64px; height: 2px; background: rgba(255,255,255,0.2); margin-bottom: 28px; }
+
+  .footer {
+    text-align: center; margin-top: 48px;
+    color: rgba(255,255,255,0.3); font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>博思AI智能体 · 最佳实践图鉴</h1>
+  <p>AI应用产品最佳实践 —— 12章配图总览</p>
+</div>
+
+<div class="cards">
+
+  <!-- ========== Chapter 1 ========== -->
+  <div class="card ch1">
+    <div class="card-header">
+      <div class="badge" style="color:#38bdf8">01</div>
+      <div class="card-title">引言：AI应用产品面临的真实挑战</div>
+    </div>
+    <div class="ch1-scene">
+      <div class="ch1-center">👤</div>
+      <div class="ch1-pain" style="top:8px;left:50%;transform:translateX(-50%)"><span class="icon">🎯</span>单一模型偏见</div>
+      <div class="ch1-pain" style="top:50px;right:40px"><span class="icon">🔮</span>黑盒推理</div>
+      <div class="ch1-pain" style="top:130px;right:20px"><span class="icon">⚡</span>意图识别粗暴</div>
+      <div class="ch1-pain" style="bottom:48px;right:60px"><span class="icon">🏝️</span>能力孤岛</div>
+      <div class="ch1-pain" style="bottom:10px;left:50%;transform:translateX(-50%)"><span class="icon">😰</span>稳定性焦虑</div>
+      <div class="ch1-pain" style="bottom:48px;left:60px"><span class="icon">🛡️</span>安全与体验矛盾</div>
+      <div class="ch1-pain" style="top:130px;left:20px"><span class="icon">🧠</span>记忆缺失</div>
+      <div class="ch1-pain" style="top:50px;left:40px"><span class="icon">📚</span>知识断层</div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>8大根本性问题定义AI产品核心挑战</p>
+      <p><span class="dot">●</span>从单一模型偏见到多模型协作的范式转变</p>
+      <p><span class="dot">●</span>博思系统的核心理念：一群AI一起帮你</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 2 ========== -->
+  <div class="card ch2">
+    <div class="card-header">
+      <div class="badge" style="color:#14b8a6">02</div>
+      <div class="card-title">系统架构设计最佳实践</div>
+    </div>
+    <div class="ch2-layers">
+      <div class="ch2-bar" style="width:92%;background:rgba(56,189,248,0.65)">前端层 · React SPA（Vite）</div>
+      <div class="ch2-bar" style="width:88%;background:rgba(99,102,241,0.65)">负载均衡层 · Nginx ip_hash 粘性</div>
+      <div class="ch2-bar" style="width:84%;background:rgba(139,92,246,0.65)">网关层 · chat-web（8081 / 8082）</div>
+      <div class="ch2-bar" style="width:80%;background:rgba(236,72,153,0.55)">安全层 · JWT + 限流 + 内容安全</div>
+      <div class="ch2-bar" style="width:76%;background:rgba(245,158,11,0.65)">应用核心 · chat-core（9090 / 9092）</div>
+      <div class="ch2-bar" style="width:72%;background:rgba(16,185,129,0.65)">AI服务层 · chat-llm / games / media</div>
+      <div class="ch2-bar" style="width:68%;background:rgba(6,182,212,0.65)">中间件层 · RabbitMQ + Redis + Nacos</div>
+      <div class="ch2-bar" style="width:64%;background:rgba(99,102,241,0.55)">大数据层 · Milvus + Neo4j</div>
+      <div class="ch2-bar" style="width:60%;background:rgba(107,114,128,0.65)">存储层 · MySQL RDS + Redis</div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>九层分层架构，每层职责明确、可独立演进</p>
+      <p><span class="dot">●</span>无状态化设计：Session / WebSocket 状态全部存 Redis</p>
+      <p><span class="dot">●</span>双服务器拓扑：IO 密集与计算密集物理隔离</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 3 ========== -->
+  <div class="card ch3">
+    <div class="card-header">
+      <div class="badge" style="color:#a78bfa">03</div>
+      <div class="card-title">多模型协同与LLM调用最佳实践</div>
+    </div>
+    <div class="ch3-scene">
+      <svg class="ch3-line">
+        <line x1="420" y1="135" x2="130" y2="55" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
+        <line x1="420" y1="135" x2="660" y2="55" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
+        <line x1="420" y1="168" x2="420" y2="220" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
+      </svg>
+      <div class="ch3-node" style="width:72px;height:72px;background:linear-gradient(135deg,#a78bfa,#7c3aed);top:100px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;text-align:center;line-height:1.3;color:#fff">
+        LLM<br>Invoker
+      </div>
+      <div class="ch3-node" style="width:86px;height:86px;background:#f59e0b;top:12px;left:86px;text-align:center;color:#fff">
+        <div><div style="font-size:14px;font-weight:700">千问</div><div style="font-size:9px;opacity:0.8">多模态·整合</div></div>
+      </div>
+      <div class="ch3-node" style="width:86px;height:86px;background:#3b82f6;top:12px;right:86px;text-align:center;color:#fff">
+        <div><div style="font-size:14px;font-weight:700">DeepSeek</div><div style="font-size:9px;opacity:0.8">深度推理</div></div>
+      </div>
+      <div class="ch3-node" style="width:86px;height:86px;background:#10b981;bottom:28px;left:50%;transform:translateX(-50%);text-align:center;color:#fff">
+        <div><div style="font-size:14px;font-weight:700">豆包</div><div style="font-size:9px;opacity:0.8">联网搜索</div></div>
+      </div>
+      <div class="ch3-hierarchy">
+        <span>LLMClient</span><span class="arrow">→</span>
+        <span>LLMInvoker</span><span class="arrow">→</span>
+        <span>LlmBundleClient</span><span class="arrow">→</span>
+        <span>Provider</span>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>策略模式：新增 LLM 厂商零代码接入</p>
+      <p><span class="dot">●</span>Fluent Builder API 统一降级 / 重试 / 熔断</p>
+      <p><span class="dot">●</span>Nacos 动态配置热更新，无需重启服务</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 4 ========== -->
+  <div class="card ch4">
+    <div class="card-header">
+      <div class="badge" style="color:#fde047">04</div>
+      <div class="card-title">意图识别与智能路由最佳实践</div>
+    </div>
+    <div style="padding:0 36px">
+      <div class="ch4-funnel">
+        <div class="ch4-layer">
+          <div class="ch4-bar" style="width:500px;background:rgba(251,191,36,0.75)"><span style="font-size:20px">⚡</span> L1 规则匹配</div>
+          <div class="ch4-meta">速度: 0-1ms<br>命中: 15-25%</div>
+        </div>
+        <div class="ch4-layer">
+          <div class="ch4-bar" style="width:360px;background:rgba(245,158,11,0.75)"><span style="font-size:20px">🧠</span> L2 语义匹配</div>
+          <div class="ch4-meta">速度: 30-80ms<br>命中: 80-90%</div>
+        </div>
+        <div class="ch4-layer">
+          <div class="ch4-bar" style="width:220px;background:rgba(217,119,6,0.75)"><span style="font-size:20px">🤖</span> L3 LLM 分类</div>
+          <div class="ch4-meta">速度: 200-1000ms<br>命中: &lt;10%</div>
+        </div>
+        <div style="font-size:30px;margin-top:4px">▼</div>
+        <div class="ch4-result">L1 + L2 综合命中率 &gt; 95%</div>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>三层漏斗按命中概率分配计算资源</p>
+      <p><span class="dot">●</span>自增强闭环：L3 高置信结果自动反哺 L1 / L2</p>
+      <p><span class="dot">●</span>意图驱动 Temperature：代码 0.2 / 创作 0.95</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 5 ========== -->
+  <div class="card ch5">
+    <div class="card-header">
+      <div class="badge" style="color:#34d399">05</div>
+      <div class="card-title">Agent编排与Multi-Agent工作流最佳实践</div>
+    </div>
+    <div class="ch5-scene">
+      <div class="ch5-section-title" style="left:36px;top:8px">辩论图编排</div>
+      <svg style="position:absolute;top:0;left:0;width:330px;height:230px;pointer-events:none">
+        <line x1="168" y1="55" x2="72" y2="165" stroke="rgba(255,255,255,0.25)" stroke-width="2"/>
+        <line x1="168" y1="55" x2="264" y2="165" stroke="rgba(255,255,255,0.25)" stroke-width="2"/>
+        <line x1="72" y1="165" x2="264" y2="165" stroke="rgba(255,255,255,0.25)" stroke-width="2"/>
+      </svg>
+      <div class="ch5-debate-node" style="width:66px;height:66px;background:#3b82f6;top:22px;left:135px;color:#fff">正方</div>
+      <div class="ch5-debate-node" style="width:66px;height:66px;background:#ef4444;top:132px;left:39px;color:#fff">反方</div>
+      <div class="ch5-debate-node" style="width:66px;height:66px;background:#a855f7;top:132px;left:231px;color:#fff">中立</div>
+      <div style="position:absolute;top:200px;left:36px;font-size:10px;opacity:0.5">debate → reflect → shouldContinue → summary</div>
+
+      <div class="ch5-section-title" style="right:36px;top:8px;left:auto">Multi-Agent 并行</div>
+      <div style="position:absolute;right:36px;top:38px">
+        <div class="ch5-worker highlight-yellow">📋 TaskPlanner</div>
+        <div class="ch5-worker">🤖 Worker ×10</div>
+        <div class="ch5-worker">🤖 Worker ×10</div>
+        <div class="ch5-worker highlight-green">📊 Collector</div>
+        <div style="text-align:center;font-size:10px;opacity:0.55;margin-top:4px">RabbitMQ → 并行 → 收敛</div>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>LangGraph 混合模式：编译时静态 + 运行时动态</p>
+      <p><span class="dot">●</span>Redis Lua 原子限流 + manual ack 零丢失</p>
+      <p><span class="dot">●</span>WorkflowReconciler 30s 对账兜底</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 6 ========== -->
+  <div class="card ch6">
+    <div class="card-header">
+      <div class="badge" style="color:#818cf8">06</div>
+      <div class="card-title">RAG检索增强生成最佳实践</div>
+    </div>
+    <div class="ch6-pipeline">
+      <div class="ch6-step"><div class="ch6-step-icon">📄</div><div class="ch6-step-label">文档上传</div><div class="ch6-step-sub">异步 202</div></div>
+      <div class="ch6-arrow">→</div>
+      <div class="ch6-step"><div class="ch6-step-icon">🔍</div><div class="ch6-step-label">解析分块</div><div class="ch6-step-sub">Parser + Chunker</div></div>
+      <div class="ch6-arrow">→</div>
+      <div class="ch6-step"><div class="ch6-step-icon">🔢</div><div class="ch6-step-label">向量化</div><div class="ch6-step-sub">1536维 Embed</div></div>
+      <div class="ch6-arrow">→</div>
+      <div class="ch6-step"><div class="ch6-step-icon">💾</div><div class="ch6-step-label">Milvus</div><div class="ch6-step-sub">向量存储</div></div>
+      <div class="ch6-arrow">→</div>
+      <div class="ch6-step"><div class="ch6-step-icon">🔎</div><div class="ch6-step-label">检索增强</div><div class="ch6-step-sub">topK = 3</div></div>
+    </div>
+    <div class="ch6-flow">
+      <div class="ch6-flow-title">🔄 对话自动 RAG 流程</div>
+      <div class="ch6-flow-steps">
+        <span>意图判定</span><span class="arr">→</span>
+        <span>可查性三层判定</span><span class="arr">→</span>
+        <span>向量检索</span><span class="arr">→</span>
+        <span>注入 Prompt</span><span class="arr">→</span>
+        <span>增强回答</span>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>文档上传异步化，不阻塞主线程</p>
+      <p><span class="dot">●</span>可查性三层判定避免无效 Embedding 检索</p>
+      <p><span class="dot">●</span>未命中 / 失败自动降级普通回答</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 7 ========== -->
+  <div class="card ch7">
+    <div class="card-header">
+      <div class="badge" style="color:#f472b6">07</div>
+      <div class="card-title">记忆系统与用户画像最佳实践</div>
+    </div>
+    <div class="ch7-layers">
+      <div class="ch7-layer" style="background:rgba(251,191,36,0.2);border-color:rgba(251,191,36,0.35)">
+        <div class="ch7-layer-icon">⚡</div>
+        <div class="ch7-layer-title">短期记忆</div>
+        <div class="ch7-layer-sub">Redis · 最近 5 轮</div>
+      </div>
+      <div class="ch7-layer" style="background:rgba(59,130,246,0.2);border-color:rgba(59,130,246,0.35)">
+        <div class="ch7-layer-icon">🌊</div>
+        <div class="ch7-layer-title">长期记忆</div>
+        <div class="ch7-layer-sub">Milvus · 向量 top-3</div>
+      </div>
+      <div class="ch7-layer" style="background:rgba(168,85,247,0.2);border-color:rgba(168,85,247,0.35)">
+        <div class="ch7-layer-icon">🧠</div>
+        <div class="ch7-layer-title">用户画像</div>
+        <div class="ch7-layer-sub">LLM 提炼 · 30 天 TTL</div>
+      </div>
+    </div>
+    <div class="ch7-connect">三层记忆协同 → 回答逐步贴合个人偏好 🎯</div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>异步无侵入：画像提炼失败仅告警不阻断</p>
+      <p><span class="dot">●</span>增量合并策略，偏好逐步累积非覆盖</p>
+      <p><span class="dot">●</span>会话历史跨实例恢复，根治多轮失忆</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 8 ========== -->
+  <div class="card ch8">
+    <div class="card-header">
+      <div class="badge" style="color:#fca5a5">08</div>
+      <div class="card-title">安全体系与内容合规最佳实践</div>
+    </div>
+    <div class="ch8-layers">
+      <div class="ch8-layer" style="background:rgba(239,68,68,0.25)"><span class="ch8-layer-icon">🌐</span><div><div class="ch8-layer-name">网络层</div><div class="ch8-layer-desc">IP 限流 · 爬虫过滤 · CORS</div></div><span class="ch8-layer-check">✓</span></div>
+      <div class="ch8-layer" style="background:rgba(245,158,11,0.25)"><span class="ch8-layer-icon">🔐</span><div><div class="ch8-layer-name">认证层</div><div class="ch8-layer-desc">JWT · DTO 校验 · 弱密钥拒绝</div></div><span class="ch8-layer-check">✓</span></div>
+      <div class="ch8-layer" style="background:rgba(16,185,129,0.25)"><span class="ch8-layer-icon">⚙️</span><div><div class="ch8-layer-name">应用层</div><div class="ch8-layer-desc">多层限流 · 自动拉黑</div></div><span class="ch8-layer-check">✓</span></div>
+      <div class="ch8-layer" style="background:rgba(59,130,246,0.25)"><span class="ch8-layer-icon">🛡️</span><div><div class="ch8-layer-name">内容层</div><div class="ch8-layer-desc">阿里云内容安全 · AI 标识</div></div><span class="ch8-layer-check">✓</span></div>
+      <div class="ch8-layer" style="background:rgba(139,92,246,0.25)"><span class="ch8-layer-icon">🔧</span><div><div class="ch8-layer-name">运维层</div><div class="ch8-layer-desc">.env 权限 · 告警 · logrotate</div></div><span class="ch8-layer-check">✓</span></div>
+    </div>
+    <div class="ch8-scanners">
+      <span>Checkstyle</span><span>PMD</span><span>SpotBugs</span><span>Gitleaks</span><span>OWASP</span><span>npm audit</span>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>纵深防御五层体系，层层设防</p>
+      <p><span class="dot">●</span>Fail-open 容错：Redis 异常不阻断业务</p>
+      <p><span class="dot">●</span>构建时 6 大安全扫描工具全链路覆盖</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 9 ========== -->
+  <div class="card ch9">
+    <div class="card-header">
+      <div class="badge" style="color:#6ee7b7">09</div>
+      <div class="card-title">高可用与弹性设计最佳实践</div>
+    </div>
+    <div class="ch9-cols">
+      <div class="ch9-col">
+        <div class="ch9-col-title">双实例部署</div>
+        <div class="ch9-instance" style="background:rgba(52,211,153,0.25)"><span style="font-weight:600">core 主 :9090</span><span style="opacity:0.6">Xmx768m</span></div>
+        <div class="ch9-instance" style="background:rgba(52,211,153,0.15)"><span style="font-weight:600">core 从 :9092</span><span style="opacity:0.6">Xmx512m</span></div>
+        <div class="ch9-instance" style="background:rgba(56,189,248,0.15)"><span style="font-weight:600">web :8081</span><span style="opacity:0.6">Xmx256m</span></div>
+        <div class="ch9-instance" style="background:rgba(56,189,248,0.15)"><span style="font-weight:600">web :8082</span><span style="opacity:0.6">Xmx256m</span></div>
+      </div>
+      <div class="ch9-col">
+        <div class="ch9-col-title">熔断自愈</div>
+        <div class="ch9-heal">正常 → 熔断打开</div>
+        <div class="ch9-heal">半开探测 → 恢复 / 重熔断</div>
+        <div class="ch9-heal">降级链: llm → 直连 → 兜底</div>
+        <div class="ch9-heal">RabbitMQ 不可用 → 直调</div>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>stop 请求广播到所有实例，任一成功即成功</p>
+      <p><span class="dot">●</span>nodeId 固定为 node-{port}，杜绝队列堆积</p>
+      <p><span class="dot">●</span>跨节点通信：RabbitMQ TopicExchange + 防回环</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 10 ========== -->
+  <div class="card ch10">
+    <div class="card-header">
+      <div class="badge" style="color:#94a3b8">10</div>
+      <div class="card-title">可观测性与运维最佳实践</div>
+    </div>
+    <div class="ch10-cols">
+      <div class="ch10-col">
+        <div class="ch10-col-title">📊 Prometheus 监控栈</div>
+        <div class="ch10-alert"><div class="ch10-alert-dot" style="background:#ef4444"></div>ServiceDown：服务宕机</div>
+        <div class="ch10-alert"><div class="ch10-alert-dot" style="background:#ef4444"></div>HostMemory：可用内存 &lt;8%</div>
+        <div class="ch10-alert"><div class="ch10-alert-dot" style="background:#f59e0b"></div>DiskWillFill：磁盘 &lt;15%</div>
+        <div class="ch10-alert"><div class="ch10-alert-dot" style="background:#f59e0b"></div>JvmHeapHigh：堆 &gt;85%</div>
+        <div class="ch10-alert"><div class="ch10-alert-dot" style="background:#22c55e"></div>HighCPU / HighLoad</div>
+        <div class="ch10-alert"><div class="ch10-alert-dot" style="background:#22c55e"></div>延迟 / 5xx 异常</div>
+      </div>
+      <div class="ch10-col">
+        <div class="ch10-col-title">🚀 一键部署</div>
+        <div class="ch10-cmd">$ deploy.sh install</div>
+        <div class="ch10-cmd">$ deploy.sh install-all</div>
+        <div class="ch10-cmd">$ deploy.sh all</div>
+        <div class="ch10-cmd">$ deploy.sh core|web|llm</div>
+        <div style="font-size:10px;opacity:0.45;margin-top:8px">启动顺序: llm → core → web → games → media</div>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>12 条告警规则（系统 8 + 业务 4：漏斗命中率/工作流降级率/收敛失败/LLM token 激增）替代手工 tail，异常秒级推送钉钉</p>
+      <p><span class="dot">●</span>前端 ErrorBoundary + window.error 三路上报</p>
+      <p><span class="dot">●</span>守护线程 60s 健康检查，Neo4j 自动重连</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 11 ========== -->
+  <div class="card ch11">
+    <div class="card-header">
+      <div class="badge" style="color:#c4b5fd">11</div>
+      <div class="card-title">前端体验最佳实践</div>
+    </div>
+    <div class="ch11-cols">
+      <div class="ch11-browser">
+        <div class="ch11-browser-bar">
+          <div class="ch11-browser-dot" style="background:#ef4444"></div>
+          <div class="ch11-browser-dot" style="background:#f59e0b"></div>
+          <div class="ch11-browser-dot" style="background:#22c55e"></div>
+          <span style="font-size:10px;margin-left:8px;opacity:0.45">博思AI</span>
+        </div>
+        <div class="ch11-tabs">
+          <span class="ch11-tab active">群聊</span>
+          <span class="ch11-tab active">个人</span>
+          <span class="ch11-tab active">辩论</span>
+          <span class="ch11-tab">树洞</span>
+          <span class="ch11-tab">图谱</span>
+          <span class="ch11-tab">监控</span>
+          <span class="ch11-tab">游戏</span>
+          <span class="ch11-tab">媒体</span>
+          <span class="ch11-tab">历史</span>
+          <span class="ch11-tab">设置</span>
+          <span class="ch11-tab">SQL</span>
+          <span class="ch11-tab">模型</span>
+        </div>
+        <div class="ch11-content">12 个常驻页面 · KeepAlive 保活</div>
+      </div>
+      <div class="ch11-features">
+        <div class="ch11-feature"><span class="ch11-feature-icon">⚡</span>apiClient 统一 15 页 52 处调用</div>
+        <div class="ch11-feature"><span class="ch11-feature-icon">📱</span>移动端完整适配</div>
+        <div class="ch11-feature"><span class="ch11-feature-icon">🎨</span>stripMarkdown 清洗 AI 回答</div>
+        <div class="ch11-feature"><span class="ch11-feature-icon">🔄</span>5min 无操作断开 + 恢复重连</div>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>Vite 构建 content hash，静态资源长期缓存</p>
+      <p><span class="dot">●</span>ErrorBoundary + 全局异常监听上报后端</p>
+      <p><span class="dot">●</span>环境变量驱动 API 地址，开发 / 生产无缝切换</p>
+    </div>
+  </div>
+
+  <!-- ========== Chapter 12 ========== -->
+  <div class="card ch12">
+    <div class="card-header">
+      <div class="badge" style="color:#fde047">12</div>
+      <div class="card-title">总结与展望</div>
+    </div>
+    <div class="ch12-stats">
+      <div class="ch12-stat"><div class="ch12-stat-num">9</div><div class="ch12-stat-label">架构层</div></div>
+      <div class="ch12-stat"><div class="ch12-stat-num">6</div><div class="ch12-stat-label">微服务</div></div>
+      <div class="ch12-stat"><div class="ch12-stat-num">95%+</div><div class="ch12-stat-label">意图命中</div></div>
+      <div class="ch12-stat"><div class="ch12-stat-num">500</div><div class="ch12-stat-label">并发 P50=154ms</div></div>
+    </div>
+    <div class="ch12-timeline">
+      <div class="ch12-milestone">
+        <div class="ch12-milestone-dot" style="background:rgba(34,197,94,0.4);border:2px solid rgba(34,197,94,0.6)">✓</div>
+        <div class="ch12-milestone-year">v1.0</div>
+        <div class="ch12-milestone-label">基础对话</div>
+      </div>
+      <div class="ch12-connector"></div>
+      <div class="ch12-milestone">
+        <div class="ch12-milestone-dot" style="background:rgba(34,197,94,0.4);border:2px solid rgba(34,197,94,0.6)">✓</div>
+        <div class="ch12-milestone-year">v2.0</div>
+        <div class="ch12-milestone-label">多模型辩论</div>
+      </div>
+      <div class="ch12-connector"></div>
+      <div class="ch12-milestone">
+        <div class="ch12-milestone-dot" style="background:rgba(34,197,94,0.4);border:2px solid rgba(34,197,94,0.6)">✓</div>
+        <div class="ch12-milestone-year">v3.0</div>
+        <div class="ch12-milestone-label">分布式架构</div>
+      </div>
+      <div class="ch12-connector"></div>
+      <div class="ch12-milestone">
+        <div class="ch12-milestone-dot" style="background:rgba(255,255,255,0.15);border:2px solid rgba(255,255,255,0.3)">○</div>
+        <div class="ch12-milestone-year">未来</div>
+        <div class="ch12-milestone-label">千并发 · KMS</div>
+      </div>
+    </div>
+    <div class="takeaways">
+      <p><span class="dot">●</span>核心理念：构建完整智能协作系统，而非简单调用 API</p>
+      <p><span class="dot">●</span>可复用资产：意图漏斗 / LangGraph 混合 / Provider 策略 / Multi-Agent</p>
+      <p><span class="dot">●</span>演进方向：内存扩容 · KMS · CDN · 1000 并发</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  制作者：杨思义 · 博思AI团队 · 2026年8月
+</div>
+
+</body>
+</html>

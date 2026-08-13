@@ -1,0 +1,394 @@
+/* ===== 知识脉络图 ===== */
+
+.graph-page {
+    flex: 1;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow-y: auto;
+    min-height: 0;
+    gap: 16px;
+}
+
+/* 返回按钮 — 同辩论场风格 */
+.graph-back-btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(99,102,241,0.25);
+    background: rgba(99,102,241,0.08);
+    color: #a5b4fc;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+.graph-back-btn:hover {
+    background: rgba(99,102,241,0.18);
+    border-color: rgba(99,102,241,0.4);
+    color: #c7d2fe;
+}
+
+/* 欢迎/说明区域 — 同辩论场 chat-welcome 风格 */
+.graph-welcome {
+    text-align: center;
+    padding: 28px 20px 20px;
+}
+.graph-welcome-title {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #c7d2fe, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0 0 12px;
+    letter-spacing: -0.5px;
+}
+.graph-welcome-desc {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.7;
+    margin: 0 auto 16px;
+    max-width: 500px;
+}
+.graph-stats {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.stat-badge {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.25);
+    color: #a5b4fc;
+}
+
+/* 画布区 */
+.graph-container {
+    position: relative;
+    width: 100%;
+    height: 550px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: radial-gradient(ellipse at center, #1e1b4b 0%, #0f0f23 100%);
+    border: 1px solid rgba(99,102,241,0.2);
+    flex-shrink: 0;
+    touch-action: none;             /* 防止移动端页面滚动 */
+}
+.graph-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+}
+.graph-canvas:active {
+    cursor: grabbing;
+}
+
+/* 加载 / 空状态遮罩 */
+.graph-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15,15,35,0.7);
+    color: #a5b4fc;
+    font-size: 14px;
+    backdrop-filter: blur(2px);
+}
+.graph-empty-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+/* 底部操作区 */
+.graph-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.graph-search-form {
+    display: flex;
+    gap: 8px;
+}
+.graph-search-input {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.graph-search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+.graph-search-input::placeholder { color: var(--text-secondary); }
+
+.graph-weight-filters {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.graph-weight-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+}
+.graph-weight-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+.graph-weight-help:hover,
+.graph-weight-help.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+.graph-help-popup {
+    position: absolute;
+    top: 28px;
+    left: 0;
+    width: 260px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: rgba(30,27,75,0.98);
+    border: 1px solid rgba(99,102,241,0.35);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    color: #c7d2fe;
+    font-size: 12px;
+    line-height: 1.7;
+    z-index: 20;
+    backdrop-filter: blur(8px);
+    animation: helpFadeIn 0.2s ease-out;
+}
+@keyframes helpFadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.graph-weight-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    cursor: default;
+}
+.graph-weight-input {
+    width: 56px;
+    padding: 5px 8px;
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.06);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -moz-appearance: textfield;
+}
+.graph-weight-input::-webkit-inner-spin-button,
+.graph-weight-input::-webkit-outer-spin-button {
+    opacity: 1;
+    height: 24px;
+}
+.graph-weight-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+
+/* 按钮 */
+.graph-btn {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    color: white;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+}
+.graph-btn:hover { opacity: 0.85; }
+.graph-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.graph-btn-secondary {
+    background: transparent;
+    border: 1.5px solid rgba(255,255,255,0.35);
+    color: #e2e8f0;
+}
+.graph-btn-secondary:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.55); }
+
+/* 详情面板 */
+.graph-detail-panel {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 280px;
+    max-height: calc(100% - 24px);
+    background: rgba(30,27,75,0.95);
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 14px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+}
+.graph-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.graph-detail-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #c7d2fe;
+}
+.graph-detail-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+}
+.graph-detail-close:hover { color: var(--text-primary); }
+.graph-detail-body {
+    padding: 12px 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+.graph-detail-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin: 0 0 10px;
+}
+.graph-detail-relations h4 {
+    color: #a5b4fc;
+    font-size: 13px;
+    margin: 0 0 8px;
+}
+.graph-relation-item {
+    padding: 8px 10px;
+    margin: 5px 0;
+    border-radius: 8px;
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.15);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.graph-relation-item:hover {
+    background: rgba(99,102,241,0.15);
+    border-color: rgba(99,102,241,0.3);
+}
+.relation-arrow { color: #818cf8; font-weight: 600; }
+.relation-type {
+    color: #c7d2fe;
+    font-size: 12px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(99,102,241,0.2);
+}
+.relation-node { color: #e0e7ff; font-weight: 500; }
+.relation-source {
+    width: 100%;
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-top: 4px;
+    opacity: 0.7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 悬停提示 */
+.graph-tooltip {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    background: rgba(30,27,75,0.95);
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 10px;
+    padding: 8px 14px;
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+    z-index: 5;
+}
+.graph-tooltip strong { color: #c7d2fe; font-size: 13px; }
+.graph-tooltip span { color: var(--text-secondary); font-size: 12px; }
+
+/* ===== 移动端 ===== */
+@media (max-width: 768px) {
+    .graph-page {
+        padding: 10px 8px 16px;
+        gap: 12px;
+    }
+    .graph-welcome {
+        padding: 16px 8px 12px;
+    }
+    .graph-welcome-title { font-size: 24px; }
+    .graph-welcome-desc { font-size: 13px; }
+    .graph-container {
+        height: 420px;
+        border-radius: 12px;
+    }
+    .graph-detail-panel {
+        top: 8px;
+        right: 8px;
+        width: 240px;
+        max-height: calc(100% - 16px);
+    }
+    .graph-search-input { font-size: 13px; padding: 10px 14px; }
+    .graph-search-form { flex-wrap: wrap; }
+    .graph-weight-filters { gap: 8px; }
+}

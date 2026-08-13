@@ -1,0 +1,12 @@
+**/target/**
+**/node_modules/**
+**/dist/**
+**/.git/**
+**/.idea/**
+**/*.iml
+**/logs/**
+**/docs/**
+frontend/
+.flink/
+*.log
+.DS_Store

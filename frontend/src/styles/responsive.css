@@ -1,0 +1,332 @@
+/* ─── Responsive: Tablet (≤768px) ─── */
+@media (max-width: 768px) {
+    .navbar {
+        padding: 0 12px;
+        height: 50px;
+    }
+
+    .navbar-brand {
+        font-size: 16px;
+    }
+
+    .navbar-links,
+    .navbar-auth,
+    .navbar-credit {
+        display: none !important;
+    }
+
+    .navbar-hamburger {
+        display: flex !important;
+    }
+
+    .navbar-links a {
+        padding: 5px 10px;
+        font-size: 13px;
+    }
+
+    .hero-title {
+        font-size: 28px !important;
+    }
+
+    .hero-desc {
+        font-size: 14px !important;
+        padding: 0 12px;
+    }
+
+    .hero-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .btn-glow, .btn-outline {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+
+    .hero-visual {
+        width: 360px;
+        height: 360px;
+    }
+
+    .orbit-core {
+        width: 72px;
+        height: 72px;
+        font-size: 28px;
+        border-radius: 20px;
+    }
+
+    .features {
+        padding: 40px 16px;
+    }
+
+    .feature-grid {
+        display: flex !important;
+        overflow-x: auto !important;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 14px;
+        padding: 0 16px 16px;
+        margin: 0 -16px;
+        scrollbar-width: none;
+        flex-wrap: nowrap !important;
+    }
+
+    .feature-grid::-webkit-scrollbar {
+        display: none;
+    }
+
+    .feature-card {
+        flex: 0 0 260px !important;
+        scroll-snap-align: start;
+        width: 260px !important;
+        min-width: 260px !important;
+    }
+
+    .section-title {
+        font-size: 22px;
+        margin-bottom: 28px;
+    }
+
+    .arch {
+        padding: 40px 12px 60px;
+    }
+
+    .arch-layer {
+        padding: 16px 18px;
+        border-radius: 14px;
+    }
+
+    .arch-label {
+        font-size: 11px;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+    }
+
+    .arch-boxes {
+        gap: 8px;
+    }
+
+    .arch-box {
+        padding: 8px 14px;
+        font-size: 13px;
+    }
+
+    .box-title {
+        font-size: 14px;
+    }
+
+    .box-sub {
+        font-size: 12px;
+    }
+
+    .arch-arrow {
+        gap: 28px;
+        height: 44px;
+    }
+
+    .arch-connector {
+        padding: 0 10px;
+    }
+
+    .connector-line {
+        width: 36px;
+    }
+
+    .connector-label {
+        font-size: 10px;
+    }
+
+    .kg-canvas svg {
+        width: 100%;
+        height: auto;
+    }
+
+    .chat-container {
+        padding: 0 10px;
+    }
+
+    .msg {
+        max-width: 85%;
+        font-size: 14px;
+    }
+
+    .history-page {
+        padding: 20px 12px;
+    }
+
+    .history-q {
+        max-width: 100%;
+    }
+
+    .history-row {
+        flex-direction: column;
+        gap: 6px;
+    }
+}
+
+/* ─── Responsive: Phone (≤480px) ─── */
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 22px !important;
+    }
+
+    .hero-desc {
+        font-size: 13px !important;
+        padding: 0 8px;
+        line-height: 1.7;
+    }
+
+    .hero-actions {
+        gap: 8px;
+    }
+
+    .btn-glow, .btn-outline {
+        padding: 8px 16px;
+        font-size: 13px;
+        border-radius: 10px;
+    }
+
+    .hero-visual {
+        width: 280px;
+        height: 280px;
+    }
+
+    .orbit-core {
+        width: 56px;
+        height: 56px;
+        font-size: 22px;
+        border-radius: 16px;
+    }
+
+    .features {
+        padding: 30px 12px;
+    }
+
+    .feature-grid {
+        gap: 12px !important;
+        padding: 0 12px 14px !important;
+        margin: 0 -12px !important;
+    }
+
+    .feature-card {
+        flex: 0 0 240px !important;
+        width: 240px !important;
+        min-width: 240px !important;
+        padding: 18px;
+    }
+
+    .feature-icon {
+        width: 44px;
+        height: 44px;
+        font-size: 26px;
+        margin-bottom: 10px;
+    }
+
+    .feature-card h3 {
+        font-size: 15px;
+    }
+
+    .feature-card p {
+        font-size: 12px;
+    }
+
+    .arch {
+        padding: 30px 8px 40px;
+    }
+
+    .arch-layer {
+        padding: 12px 14px;
+        border-radius: 12px;
+    }
+
+    .arch-label {
+        font-size: 10px;
+        margin-bottom: 8px;
+    }
+
+    .arch-boxes {
+        gap: 6px;
+    }
+
+    .arch-box {
+        padding: 6px 10px;
+        font-size: 12px;
+        border-radius: 8px;
+    }
+
+    .box-title {
+        font-size: 13px;
+        margin-bottom: 3px;
+    }
+
+    .box-sub {
+        font-size: 11px;
+    }
+
+    .arch-arrow {
+        gap: 20px;
+        height: 38px;
+    }
+
+    .arch-connector {
+        padding: 0 6px;
+        gap: 4px;
+    }
+
+    .connector-line {
+        width: 24px;
+    }
+
+    .connector-label {
+        font-size: 9px;
+    }
+
+    .box-java, .box-python {
+        padding: 12px 14px;
+    }
+
+    .section-title {
+        font-size: 20px;
+        margin-bottom: 24px;
+    }
+
+    .chat-welcome h1 {
+        font-size: 22px;
+    }
+
+    .chat-welcome p {
+        font-size: 13px;
+    }
+
+    .msg {
+        max-width: 90%;
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+
+    .history-title {
+        font-size: 17px;
+    }
+
+    .history-item {
+        padding: 12px;
+    }
+
+    .history-a {
+        font-size: 13px;
+    }
+
+    .kg-title {
+        font-size: 20px;
+    }
+
+    .kg-subtitle {
+        font-size: 12px;
+    }
+
+    .landing-footer {
+        font-size: 11px;
+        padding: 18px 12px;
+    }
+}

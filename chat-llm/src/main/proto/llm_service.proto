@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package com.example.chat.llm.grpc;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.example.chat.llm.grpc";
+
+// ---- LangChain 风格 LLM 调用 ----
+
+service LlmLangChain {
+  // 非流式同步调用
+  rpc Invoke (InvokeRequest) returns (InvokeResponse);
+
+  // 流式调用 — 服务端流式返回逐 token 输出
+  rpc StreamInvoke (InvokeRequest) returns (stream StreamChunk);
+}
+
+// ---- 请求 ----
+
+message InvokeRequest {
+  string provider = 1;                   // 必填：提供商名称
+  string model = 2;                      // 模型名称，不填用默认
+  repeated Message messages = 3;         // 对话消息列表
+  double temperature = 4;                // 温度 0~2
+  int32 max_tokens = 5;                  // 最大生成 token 数
+  double top_p = 6;                      // 顶层 p 采样
+  repeated string stop = 7;              // 停止词列表
+  string system_prompt = 8;              // 系统提示词 (自动前置插入)
+  map<string, string> extra = 9;         // 扩展透传参数
+  BizType biz_type = 10;                 // 业务域 (缺省 CHAT) — 用于网关路由 & 流控/计费
+}
+
+// ---- 非流式响应 ----
+
+message InvokeResponse {
+  bool success = 1;
+  string content = 2;           // AI 回复文本
+  string provider = 3;
+  string model = 4;
+  int32 total_tokens = 5;
+  int32 prompt_tokens = 6;
+  int32 completion_tokens = 7;
+  int64 elapsed_ms = 8;
+  string error = 9;             // 失败时的错误信息
+  BizType biz_type = 10;        // 回显业务域
+}
+
+// ---- 流式响应 ----
+
+message StreamChunk {
+  oneof payload {
+    string delta = 1;           // 逐 token 文本
+    string error = 2;           // 错误信息
+    bool done = 3;              // 流结束标志
+  }
+}
+
+// ---- 工具/健康检查 ----
+
+message ProviderListResponse {
+  repeated string providers = 1;
+}
+
+service LlmAdmin {
+  rpc ListProviders (ProviderListRequest) returns (ProviderListResponse);
+}
+
+message ProviderListRequest {}

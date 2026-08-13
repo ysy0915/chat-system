@@ -1,0 +1,407 @@
+[
+  {
+    "id": 1,
+    "matchType": "KEYWORD",
+    "pattern": "怎么写代码",
+    "intentCategory": "CODE_GENERATION",
+    "priority": 8,
+    "enabled": true,
+    "description": "coding keyword",
+    "source": "MANUAL"
+  },
+  {
+    "id": 2,
+    "matchType": "KEYWORD",
+    "pattern": "帮我写",
+    "intentCategory": "CODE_GENERATION",
+    "priority": 7,
+    "enabled": true,
+    "description": "write code request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 3,
+    "matchType": "KEYWORD",
+    "pattern": "翻译",
+    "intentCategory": "TRANSLATION",
+    "priority": 10,
+    "enabled": true,
+    "description": "translation request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 4,
+    "matchType": "KEYWORD",
+    "pattern": "总结一下",
+    "intentCategory": "SUMMARIZATION",
+    "priority": 10,
+    "enabled": true,
+    "description": "summarization request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 5,
+    "matchType": "KEYWORD",
+    "pattern": "帮我总结",
+    "intentCategory": "SUMMARIZATION",
+    "priority": 9,
+    "enabled": true,
+    "description": "summarize request",
+    "source": "MANUAL"
+  },
+  {
+    "id": 10,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(写|生成|帮我|写个|做个)(代码|程序|脚本|函数|算法|接口|方法|类|模块|组件).*",
+    "intentCategory": "CODE_GENERATION",
+    "priority": 5,
+    "enabled": true,
+    "description": "code generation regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 11,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(翻译|translate|翻成|译成|翻一下|译一下).*",
+    "intentCategory": "TRANSLATION",
+    "priority": 5,
+    "enabled": true,
+    "description": "translation regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 12,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(总结|概括|归纳|摘要|提炼|汇总).*",
+    "intentCategory": "SUMMARIZATION",
+    "priority": 5,
+    "enabled": true,
+    "description": "summarization regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 13,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(你好|早上好|下午好|晚上好|再见|拜拜|谢谢|hi|hello|hey|在吗|在不在|聊聊天).*",
+    "intentCategory": "GENERAL_CHAT",
+    "priority": 3,
+    "enabled": true,
+    "description": "greeting regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 14,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(分析|推理|证明|计算|为什么|原因|逻辑|论证|推导|辩证).*",
+    "intentCategory": "REASONING",
+    "priority": 4,
+    "enabled": true,
+    "description": "reasoning regex",
+    "source": "MANUAL"
+  },
+
+  {
+    "id": 20,
+    "matchType": "KEYWORD",
+    "pattern": "写故事",
+    "intentCategory": "CREATIVE_WRITING",
+    "priority": 10,
+    "enabled": true,
+    "description": "write story",
+    "source": "MANUAL"
+  },
+  {
+    "id": 21,
+    "matchType": "KEYWORD",
+    "pattern": "写小说",
+    "intentCategory": "CREATIVE_WRITING",
+    "priority": 10,
+    "enabled": true,
+    "description": "write novel",
+    "source": "MANUAL"
+  },
+  {
+    "id": 22,
+    "matchType": "KEYWORD",
+    "pattern": "写诗",
+    "intentCategory": "CREATIVE_WRITING",
+    "priority": 9,
+    "enabled": true,
+    "description": "write poem",
+    "source": "MANUAL"
+  },
+  {
+    "id": 23,
+    "matchType": "KEYWORD",
+    "pattern": "写文案",
+    "intentCategory": "CREATIVE_WRITING",
+    "priority": 9,
+    "enabled": true,
+    "description": "write copy",
+    "source": "MANUAL"
+  },
+  {
+    "id": 24,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(写|创作|编|生成)(故事|小说|诗|诗歌|文案|段子|剧本|文章|散文|童话).*",
+    "intentCategory": "CREATIVE_WRITING",
+    "priority": 5,
+    "enabled": true,
+    "description": "creative writing regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 25,
+    "matchType": "KEYWORD",
+    "pattern": "润色",
+    "intentCategory": "CREATIVE_WRITING",
+    "priority": 8,
+    "enabled": true,
+    "description": "polish text",
+    "source": "MANUAL"
+  },
+
+  {
+    "id": 30,
+    "matchType": "KEYWORD",
+    "pattern": "是什么",
+    "intentCategory": "KNOWLEDGE_QA",
+    "priority": 6,
+    "enabled": true,
+    "description": "what is",
+    "source": "MANUAL"
+  },
+  {
+    "id": 31,
+    "matchType": "KEYWORD",
+    "pattern": "什么意思",
+    "intentCategory": "KNOWLEDGE_QA",
+    "priority": 8,
+    "enabled": true,
+    "description": "what means",
+    "source": "MANUAL"
+  },
+  {
+    "id": 32,
+    "matchType": "KEYWORD",
+    "pattern": "定义",
+    "intentCategory": "KNOWLEDGE_QA",
+    "priority": 6,
+    "enabled": true,
+    "description": "definition",
+    "source": "MANUAL"
+  },
+  {
+    "id": 33,
+    "matchType": "KEYWORD",
+    "pattern": "科普",
+    "intentCategory": "KNOWLEDGE_QA",
+    "priority": 8,
+    "enabled": true,
+    "description": "science explain",
+    "source": "MANUAL"
+  },
+  {
+    "id": 34,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(什么是|什么叫|是谁|介绍一下|科普|解释一下|怎么理解|如何理解|百科|介绍一下).*",
+    "intentCategory": "KNOWLEDGE_QA",
+    "priority": 4,
+    "enabled": true,
+    "description": "knowledge QA regex",
+    "source": "MANUAL"
+  },
+
+  {
+    "id": 40,
+    "matchType": "KEYWORD",
+    "pattern": "帮我查",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 9,
+    "enabled": true,
+    "description": "search for me",
+    "source": "MANUAL"
+  },
+  {
+    "id": 41,
+    "matchType": "KEYWORD",
+    "pattern": "搜索",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 6,
+    "enabled": true,
+    "description": "search",
+    "source": "MANUAL"
+  },
+  {
+    "id": 42,
+    "matchType": "KEYWORD",
+    "pattern": "计算",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 6,
+    "enabled": true,
+    "description": "calculate",
+    "source": "MANUAL"
+  },
+  {
+    "id": 43,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(帮我|帮忙)(查|搜|搜索|找|计算|设置|安排|添加|删除|创建|生成报告).*",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 4,
+    "enabled": true,
+    "description": "task execution regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 44,
+    "matchType": "KEYWORD",
+    "pattern": "天气",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 8,
+    "enabled": true,
+    "description": "weather query (实时天气走工具，知识库不检索)",
+    "source": "MANUAL"
+  },
+  {
+    "id": 45,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(天气|气温|温度|多少度|天气预报).*",
+    "intentCategory": "TASK_EXECUTION",
+    "priority": 5,
+    "enabled": true,
+    "description": "weather/temperature query",
+    "source": "MANUAL"
+  },
+
+  {
+    "id": 50,
+    "matchType": "KEYWORD",
+    "pattern": "难过",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 9,
+    "enabled": true,
+    "description": "feeling sad",
+    "source": "MANUAL"
+  },
+  {
+    "id": 51,
+    "matchType": "KEYWORD",
+    "pattern": "压力大",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 10,
+    "enabled": true,
+    "description": "under pressure",
+    "source": "MANUAL"
+  },
+  {
+    "id": 52,
+    "matchType": "KEYWORD",
+    "pattern": "焦虑",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 9,
+    "enabled": true,
+    "description": "anxious",
+    "source": "MANUAL"
+  },
+  {
+    "id": 53,
+    "matchType": "KEYWORD",
+    "pattern": "抑郁",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 9,
+    "enabled": true,
+    "description": "depressed",
+    "source": "MANUAL"
+  },
+  {
+    "id": 54,
+    "matchType": "KEYWORD",
+    "pattern": "崩溃",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 8,
+    "enabled": true,
+    "description": "breakdown",
+    "source": "MANUAL"
+  },
+  {
+    "id": 55,
+    "matchType": "KEYWORD",
+    "pattern": "好累",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 8,
+    "enabled": true,
+    "description": "so tired",
+    "source": "MANUAL"
+  },
+  {
+    "id": 56,
+    "matchType": "KEYWORD",
+    "pattern": "好烦",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 8,
+    "enabled": true,
+    "description": "annoyed",
+    "source": "MANUAL"
+  },
+  {
+    "id": 57,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(难过|伤心|压力|焦虑|抑郁|崩溃|崩溃了|心累|好累|好烦|烦躁|绝望|无助|孤独|委屈|生气|愤怒).*",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 4,
+    "enabled": true,
+    "description": "emotional support regex",
+    "source": "MANUAL"
+  },
+  {
+    "id": 58,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(安慰|鼓励|抱抱|陪我|听我说|倾诉).*",
+    "intentCategory": "EMOTIONAL_SUPPORT",
+    "priority": 4,
+    "enabled": true,
+    "description": "comfort request regex",
+    "source": "MANUAL"
+  },
+
+  {
+    "id": 60,
+    "matchType": "KEYWORD",
+    "pattern": "逻辑推理",
+    "intentCategory": "REASONING",
+    "priority": 9,
+    "enabled": true,
+    "description": "logical reasoning",
+    "source": "MANUAL"
+  },
+  {
+    "id": 61,
+    "matchType": "KEYWORD",
+    "pattern": "演绎",
+    "intentCategory": "REASONING",
+    "priority": 7,
+    "enabled": true,
+    "description": "deductive",
+    "source": "MANUAL"
+  },
+  {
+    "id": 62,
+    "matchType": "KEYWORD",
+    "pattern": "归纳",
+    "intentCategory": "REASONING",
+    "priority": 7,
+    "enabled": true,
+    "description": "inductive",
+    "source": "MANUAL"
+  },
+  {
+    "id": 63,
+    "matchType": "REGEX",
+    "pattern": "(?i).*(数学|解方程|求解|概率|统计学|排列组合|微积分|几何|代数).*",
+    "intentCategory": "REASONING",
+    "priority": 4,
+    "enabled": true,
+    "description": "math reasoning regex",
+    "source": "MANUAL"
+  }
+]

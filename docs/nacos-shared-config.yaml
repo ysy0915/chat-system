@@ -1,0 +1,75 @@
+# ============================================================
+# Nacos 共享配置 — LLM Client 动态参数
+# ============================================================
+# Data ID: chat-core.yaml
+# Group: DEFAULT_GROUP
+#
+# 用途：运行时调整 LLM 调用参数，无需重启服务即可生效
+#
+# ============================================================
+
+# LLM 客户端运行时配置
+app:
+  llm:
+    client:
+      # --- 重试策略 ---
+      retry:
+        # 最大重试次数（初始调用 + maxAttempts 次重试）
+        max-attempts: 3
+        # 重试间隔（毫秒），指数退避: backoffMs * 2^(attempt-1)
+        backoff-ms: 500
+
+      # --- 超时配置 ---
+      timeout:
+        # HTTP 连接超时（秒）
+        connect-seconds: 10
+        # HTTP 读取超时（秒），流式调用建议 ≥120s
+        read-seconds: 60
+
+      # --- 场景参数（按场景独立调优）---
+      scenes:
+        # 通用对话
+        chat:
+          max-tokens: 4096
+          temperature: 0.7
+          top-p: 1.0
+          enable-tools: true      # 是否启用工具调用
+
+        # 多模型辩论
+        debate:
+          max-tokens: 2048
+          temperature: 0.9        # 辩论使用高温度增加多样性
+          top-p: 1.0
+          enable-tools: false
+
+        # 对话摘要
+        summary:
+          max-tokens: 1024
+          temperature: 0.3        # 摘要使用低温度保证准确性
+          top-p: 1.0
+          enable-tools: false
+
+        # 树洞匿名对话
+        treehole:
+          max-tokens: 2048
+          temperature: 0.8
+          top-p: 1.0
+          enable-tools: false
+
+        # 自动对话
+        auto:
+          max-tokens: 4096
+          temperature: 0.7
+          top-p: 1.0
+          enable-tools: false
+
+# ============================================================
+# 多实例共享 Session 状态说明
+# ============================================================
+# 以下 Redis Key 用于 WebSocket Session 追踪（多实例安全）：
+#
+# ws:session:page      Hash   sessionId → page          30min TTL
+# ws:page:{page}       Set    page 下 sessionId 集合
+# ws:heartbeat:{sid}   String session 最后心跳时间       10min TTL
+# ws:known:pages       Set    所有已知页面标识
+# health:readiness      String 就绪探针测试值             10s TTL

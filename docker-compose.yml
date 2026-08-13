@@ -1,0 +1,219 @@
+version: "3.9"
+
+# =============================================================================
+# Chat System - 全栈容器化编排
+# 
+# 使用方式:
+#   本地开发: docker compose --profile dev up -d
+#   生产部署: docker compose --profile prod up -d (仅运行中间件)
+#   完整部署: docker compose --profile all up -d
+#
+# 注意: 生产环境 MySQL / Redis / RabbitMQ / Nacos 已使用远程服务，
+#       中间件 profile 主要用于本地开发和 CI 环境。
+# =============================================================================
+
+services:
+  # ===== Java 后端服务 =====
+
+  chat-core:
+    build:
+      context: .
+      dockerfile: Dockerfile-core
+    image: chat-core:latest
+    container_name: chat-core
+    ports:
+      - "9090:9090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    restart: unless-stopped
+    networks:
+      - chat-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    profiles: ["all"]
+
+  chat-web:
+    build:
+      context: .
+      dockerfile: Dockerfile-web
+    image: chat-web:latest
+    container_name: chat-web
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - APP_CORE_BASE_URL=http://chat-core:9090
+    depends_on:
+      chat-core:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["all"]
+
+  chat-games:
+    build:
+      context: .
+      dockerfile: Dockerfile-games
+    image: chat-games:latest
+    container_name: chat-games
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["all"]
+
+  chat-media:
+    build:
+      context: .
+      dockerfile: Dockerfile-media
+    image: chat-media:latest
+    container_name: chat-media
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["all"]
+
+  chat-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile-llm
+    image: chat-llm:latest
+    container_name: chat-llm
+    ports:
+      - "9095:9095"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["all"]
+
+  # ===== 前端 Nginx =====
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: chat-frontend:latest
+    container_name: chat-frontend
+    ports:
+      - "80:80"
+    environment:
+      - API_PROXY_TARGET=http://chat-web:8081
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["all"]
+
+  # ===== 中间件（本地开发 / CI 环境，生产环境使用远程） =====
+
+  mysql:
+    image: mysql:8.0
+    container_name: chat-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: chat123
+      MYSQL_DATABASE: chat_system
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "all"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: chat-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "all"]
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: chat-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "all"]
+
+  # Nacos 注册中心
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    container_name: chat-nacos
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+    ports:
+      - "8848:8848"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "all"]
+
+  volumes:
+  mysql-data:
+
+  # ===== 可观测性（开发环境） =====
+
+  prometheus:
+    image: prom/prometheus:v2.47.2
+    container_name: chat-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "monitoring", "prod"]
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: chat-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./docs/grafana/provisioning:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "monitoring", "prod"]
+
+  zipkin:
+    image: openzipkin/zipkin:3.1
+    container_name: chat-zipkin
+    ports:
+      - "9411:9411"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    profiles: ["dev", "monitoring", "prod"]
+
+networks:
+  chat-network:
+    driver: bridge

@@ -1,0 +1,214 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '部署目标'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - frontend
+          - core
+          - web
+          - games
+          - media
+      skip_tests:
+        description: '跳过测试 (加快部署)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  # ===================== 构建 =====================
+  build:
+    name: Build Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- 前端 ----
+      - name: Setup Node.js
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Upload frontend dist
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      # ---- 后端 ----
+      - name: Set up JDK 17
+        if: ${{ github.event.inputs.target != 'frontend' }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build Backend (Maven)
+        if: ${{ github.event.inputs.target != 'frontend' }}
+        run: |
+          if [ "${{ github.event.inputs.skip_tests }}" = "true" ]; then
+            mvn clean install -DskipTests -B -q
+          else
+            mvn clean install -B -Pci
+          fi
+
+      - name: Upload chat-core jar
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'core' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-core
+          path: chat-core/target/chat-core-0.0.1-SNAPSHOT.jar
+
+      - name: Upload chat-web jar
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'web' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-web
+          path: chat-web/target/chat-web-0.0.1-SNAPSHOT.jar
+
+      - name: Upload chat-games jar
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'games' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-games
+          path: chat-games/target/chat-games-0.0.1-SNAPSHOT.jar
+
+      - name: Upload chat-media jar
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'media' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-media
+          path: chat-media/target/chat-media-0.0.1-SNAPSHOT.jar
+
+  # ===================== 部署 =====================
+  deploy:
+    name: Deploy to Servers
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- 前端部署到主服务器 Nginx ----
+      - name: Download frontend dist
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      - name: Deploy Frontend to Nginx
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
+        uses: easingthemes/ssh-deploy@v5.1.0
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.MAIN_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.MAIN_HOST }}
+          REMOTE_USER: root
+          SOURCE: 'frontend/dist/'
+          TARGET: '/opt/app/static/chat/'
+          ARGS: '-rlgoDz --delete'
+
+      # ---- 后端 jar 上传 & 重启 ----
+      - name: Download backend jars
+        id: download_jars
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jar-*
+          merge-multiple: true
+          path: /tmp/jars
+
+      - name: Setup SSH
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.MILVUS_SSH_KEY }}
+          known_hosts: ${{ secrets.MILVUS_KNOWN_HOSTS }}
+          name: milvus-server
+
+      - name: Setup Main Server SSH
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.MAIN_SSH_KEY }}
+          known_hosts: ${{ secrets.MAIN_KNOWN_HOSTS }}
+          name: main-server
+
+      # ---- 按模块部署 ----
+      - name: Deploy chat-core
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'core' }}
+        run: |
+          scp /tmp/jars/chat-core-0.0.1-SNAPSHOT.jar root@${{ secrets.MILVUS_HOST }}:/opt/app/core/
+          ssh root@${{ secrets.MILVUS_HOST }} "bash /opt/app/restart-core.sh"
+
+      - name: Deploy chat-web
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'web' }}
+        run: |
+          scp /tmp/jars/chat-web-0.0.1-SNAPSHOT.jar root@${{ secrets.MILVUS_HOST }}:/opt/app/web/
+          ssh root@${{ secrets.MILVUS_HOST }} "bash /opt/app/restart-web.sh"
+
+      - name: Deploy chat-games
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'games' }}
+        run: |
+          scp /tmp/jars/chat-games-0.0.1-SNAPSHOT.jar root@${{ secrets.MILVUS_HOST }}:/opt/app/games/
+          ssh root@${{ secrets.MILVUS_HOST }} "bash /opt/app/restart-games.sh"
+
+      - name: Deploy chat-media
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'media' }}
+        run: |
+          scp /tmp/jars/chat-media-0.0.1-SNAPSHOT.jar root@${{ secrets.MILVUS_HOST }}:/opt/app/media/
+          ssh root@${{ secrets.MILVUS_HOST }} "bash /opt/app/restart-media.sh"
+
+      # ---- 部署后健康检查 ----
+      - name: Health Check - core (:9090)
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'core' }}
+        run: |
+          for i in $(seq 1 30); do
+            status=$(ssh root@${{ secrets.MILVUS_HOST }} "curl -s -o /dev/null -w '%{http_code}' http://localhost:9090/actuator/health 2>/dev/null" || echo "000")
+            if [ "$status" = "200" ]; then echo "✅ core:9090 OK"; exit 0; fi
+            sleep 2
+          done
+          echo "❌ core:9090 FAIL"; exit 1
+
+      - name: Health Check - web (:8081)
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'web' }}
+        run: |
+          for i in $(seq 1 30); do
+            status=$(ssh root@${{ secrets.MILVUS_HOST }} "curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/actuator/health 2>/dev/null" || echo "000")
+            if [ "$status" = "200" ]; then echo "✅ web:8081 OK"; exit 0; fi
+            sleep 2
+          done
+          echo "❌ web:8081 FAIL"; exit 1
+
+      - name: Health Check - frontend
+        if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
+        run: |
+          sleep 3
+          status=$(ssh root@${{ secrets.MAIN_HOST }} "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/chat/" 2>/dev/null || echo "000")
+          if [ "$status" = "200" ]; then echo "✅ frontend OK"; else echo "❌ frontend FAIL($status)"; exit 1; fi
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "  部署完成 - ${{ github.event.inputs.target }}"
+          echo "  触发者: ${{ github.actor }}"
+          echo "  分支: ${{ github.ref_name }}"
+          echo "  时间: $(date -u)"
+          echo "============================================"

@@ -1,0 +1,81 @@
+# chat-web 配置（Web 接入层）
+server:
+  port: 8080
+
+spring:
+  application:
+    name: chat-web
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:chat-common-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+      - optional:nacos:chat-web-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        ip: ${NACOS_IP:}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yml
+        group: CHAT
+  datasource:
+    url: ${DB_URL:jdbc:mysql://your-rds-host:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# 内部服务地址
+app:
+  core:
+    base-url: ${CORE_BASE_URL:http://127.0.0.1:9090}
+  # chat-llm 服务地址（RAG 知识库 /api/v1/rag/* 已迁移至 chat-llm）
+  llm-service:
+    base-url: ${LLM_SERVICE_BASE_URL:http://127.0.0.1:9095}
+  # web 层需要内容安全检查，但不需 LLM 调用
+  module:
+    core: false
+  # web 层启用内容安全和限流
+  safety:
+    enabled: true
+  rag:
+    enabled: false
+    milvus:
+      enabled: false
+  langchain4j:
+    enabled: false
+  langgraph4j:
+    enabled: false
+  observability:
+    enabled: false
+  router:
+    enabled: false
+
+springdoc:
+  api-docs:
+    path: /api/v3/api-docs
+  swagger-ui:
+    path: /api/swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true

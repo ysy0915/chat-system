@@ -1,0 +1,65 @@
+# Gitleaks 密钥泄露扫描配置
+# 项目: chat-system-project
+
+# 允许检测到（白名单规则）—— 用于排除误报
+[allowlist]
+  description = "全局白名单"
+
+  # 排除文件路径
+  paths = [
+    # 文档中的示例密钥
+    '''docs/.*\.md''',
+    '''docs/nginx\.conf''',
+    # 测试数据
+    '''src/test/.*\.java''',
+    '''src/test/.*\.json''',
+    # 前端开发配置（不含真实密钥）
+    '''frontend/.env\.development''',
+    # 构建产物
+    '''target/.*''',
+    '''node_modules/.*''',
+    '''frontend/dist/.*''',
+    # IDE 配置
+    '''.idea/.*''',
+    # 规则配置文件本身
+    '''\.gitleaks\.toml''',
+    # Docker 构建上下文（本地开发密钥占位符）
+    '''docker-compose\.yml''',
+  ]
+
+  # 排除特定 commit
+  commits = []
+
+  # 排除已知误报的匹配行
+  regexes = []
+
+# 自定义检测规则（仅启用通用规则）
+[[rules]]
+  id = "generic-api-key"
+  description = "通用 API Key / Token / Secret 检测"
+  regex = '''(?i)(api[_-]?key|api[_-]?secret|secret[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key|password)[''\"]?\s*[:=]\s*[''\"][a-zA-Z0-9+/=_-]{20,}[''\"]'''
+  tags = ["key", "secret"]
+
+[[rules]]
+  id = "jwt-secret"
+  description = "JWT 签名密钥"
+  regex = '''(?i)(jwt[_-]?secret|jwt[_-]?key|token[_-]?secret)[''\"]?\s*[:=]\s*[''\"][a-zA-Z0-9+/=_-]{16,}[''\"]'''
+  tags = ["jwt"]
+
+[[rules]]
+  id = "database-password"
+  description = "数据库密码连接字符串"
+  regex = '''(?i)(jdbc|mysql|postgresql|mongodb|redis):\/\/[^@\s]+:[^@\s]+@'''
+  tags = ["database"]
+
+[[rules]]
+  id = "private-key-header"
+  description = "PEM 私钥文件头"
+  regex = '''-----BEGIN\s(RSA\s|EC\s|OPENSSH\s|DSA\s)?PRIVATE\sKEY-----'''
+  tags = ["key", "pem"]
+
+[[rules]]
+  id = "gitlab-pipeline-trigger"
+  description = "GitLab Pipeline Trigger Token"
+  regex = '''glptt-[a-zA-Z0-9\-_]+'''
+  tags = ["gitlab"]

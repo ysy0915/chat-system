@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package com.example.chat.llm.grpc;
+
+option java_multiple_files = true;
+option java_package = "com.example.chat.llm.grpc";
+
+// 业务域类型 — 用于网关路由 & 流控/计费维度
+enum BizType {
+  CHAT   = 0;  // 对话 (默认)
+  MEDIA  = 1;  // 多模态 (图片/视频/音频)
+  GAMES  = 2;  // 游戏场景
+  RAG    = 3;  // 检索增强生成
+  GRAPH  = 4;  // LangGraph 图编排
+}
+
+// 通用消息类型 — 由 llm_service.proto 和 rag_service.proto 共享
+message Message {
+  string role = 1;       // system / user / assistant / tool
+  string content = 2;    // 消息内容
+}

@@ -1,0 +1,160 @@
+# chat-core 独立配置（端口 9090）
+server:
+  port: 9090
+
+spring:
+  application:
+    name: chat-core
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:chat-common-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+      - optional:nacos:chat-core-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        ip: ${NACOS_IP:}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yml
+        group: CHAT
+  datasource:
+    url: ${DB_URL:jdbc:mysql://your-rds-host:3306/test_data?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# AI 配置
+app:
+  module:
+    core: true
+  llm:
+    api-key: ${LLM_API_KEY:}
+    # LLM Bundle (chat-llm 统一网关) 接入：模型调用优先走 chat-llm，失败自动回退直连
+    bundle:
+      enabled: ${LLM_BUNDLE_ENABLED:false}
+      base-url: ${LLM_BUNDLE_BASE_URL:http://127.0.0.1:9095}
+      timeout: ${LLM_BUNDLE_TIMEOUT:120s}
+    # ========== LLM Client 运行时配置（支持 Nacos 动态刷新） ==========
+    client:
+      retry:
+        max-attempts: 3
+        backoff-ms: 500
+      timeout:
+        connect-seconds: 10
+        read-seconds: 60
+      scenes:
+        chat:
+          max-tokens: 4096
+          temperature: 0.7
+          top-p: 1.0
+          enable-tools: false
+        debate:
+          max-tokens: 2048
+          temperature: 0.9
+          top-p: 1.0
+          enable-tools: false
+        summary:
+          max-tokens: 1024
+          temperature: 0.3
+          top-p: 1.0
+          enable-tools: false
+        treehole:
+          max-tokens: 2048
+          temperature: 0.8
+          top-p: 1.0
+          enable-tools: false
+        auto:
+          max-tokens: 4096
+          temperature: 0.7
+          top-p: 1.0
+          enable-tools: false
+  # chat-llm 服务地址（RAG / 知识图谱运行时已迁移至 chat-llm，chat-core 经内部 API 调用）
+  llm-service:
+    base-url: ${LLM_SERVICE_BASE_URL:http://127.0.0.1:9095}
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    embedding:
+      mode: ${EMBEDDING_MODE:dashscope}
+      base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/api/v1}
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${EMBEDDING_MODEL:text-embedding-v3}
+      dimension: ${EMBEDDING_DIMENSION:1024}
+    milvus:
+      enabled: ${MILVUS_ENABLED:false}
+      host: ${MILVUS_HOST:your-milvus-ip}
+      port: 19530
+    # 对话自动 RAG 增强：知识问答/任务类问题（如天气、资料性查询）自动检索知识库增强生成
+    chat:
+      enabled: ${CHAT_RAG_ENABLED:true}
+      kb-id: ${CHAT_RAG_KB_ID:0}      # 默认检索的知识库 ID，<=0 表示未配置（不增强）
+      top-k: 3
+      score-threshold: 0.3
+      max-chars: 2000
+  langchain4j:
+    enabled: ${LANGCHAIN4J_ENABLED:false}
+    treehole:
+      enabled: ${LANGCHAIN4J_TREEHOLE_ENABLED:false}
+    personal:
+      enabled: ${LANGCHAIN4J_PERSONAL_ENABLED:false}
+  langgraph4j:
+    enabled: ${LANGGRAPH4J_ENABLED:true}
+    debate:
+      enabled: ${LANGGRAPH4J_DEBATE_ENABLED:true}
+      rounds: 3
+  observability:
+    enabled: ${OBSERVABILITY_ENABLED:true}
+  # ═══ 意图识别 — 三层漏斗架构 ═══
+  #   L1 规则层：关键词 Trie / 正则 / 状态机     — 0-1ms，命中率 5-15%
+  #   L2 上下文层：Embedding + Milvus 语义匹配   — 30-80ms，命中率 70-85%
+  #   L3 工具层：LLM 分类 + MCP 执行            — 200-1000ms，命中率 < 10%
+  intent:
+    enabled: ${INTENT_ENABLED:true}
+    model: ${INTENT_MODEL:qwen-turbo}          # L3 LLM 分类模型（轻量快速）
+    min-confidence: 0.5                          # LLM 分类置信度阈值
+    timeout-seconds: 3                           # LLM 调用超时
+    temperature: 0.1                             # 低温度保证分类稳定
+    funnel:
+      # L2 上下文层配置
+      context:
+        match-threshold: ${INTENT_CTX_THRESHOLD:0.75}   # 语义相似度阈值
+        top-k: ${INTENT_CTX_TOPK:5}                      # k-NN 检索数量
+      # 数据挖掘（从历史对话自动提取规则+示例）
+      auto-extract:
+        enabled: ${INTENT_AUTO_EXTRACT:false}             # 是否启用自动挖掘
+        batch-size: 200                                   # 每次处理的消息数
+        schedule-cron: ${INTENT_EXTRACT_CRON:0 0 3 * * ?} # 每天凌晨 3 点执行
+
+# 内部 API 不需要 Security
+security:
+  internal:
+    enabled: false
+
+springdoc:
+  api-docs:
+    path: /internal/v3/api-docs
+  swagger-ui:
+    path: /internal/swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha

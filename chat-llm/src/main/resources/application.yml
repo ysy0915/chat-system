@@ -1,0 +1,158 @@
+# chat-llm 本地开发配置
+# 生产环境配置由 Nacos 提供: chat-llm-prod.yml + chat-common-prod.yml
+server:
+  port: 9095
+
+spring:
+  application:
+    name: chat-llm
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:chat-common-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+      - optional:nacos:chat-llm-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        ip: ${NACOS_IP:}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yml
+        group: CHAT
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:chat_system}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 10000
+
+  neo4j:
+    uri: ${NEO4J_URI:bolt://127.0.0.1:7687}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+# gRPC
+grpc:
+  server:
+    port: 9195
+
+# RAG（本地开发默认关闭）
+app:
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    embedding:
+      provider: dashscope
+      mode: ${EMBEDDING_MODE:dashscope}
+      base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/api/v1}
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${EMBEDDING_MODEL:text-embedding-v3}
+      dimension: ${EMBEDDING_DIMENSION:1024}
+    milvus:
+      host: ${MILVUS_HOST:127.0.0.1}
+      port: ${MILVUS_PORT:19530}
+      dimension: 1024
+      collection-prefix: kb_
+    memory:
+      short-term-rounds: 5
+      long-term-top-k: 3
+      long-term-threshold: 0.5
+      redis-ttl-hours: 24
+      profile-ttl-days: 30
+      profile-provider: qwen
+      profile-model: qwen-plus
+    search:
+      top-k: 5
+      score-threshold: 0.3
+    context:
+      max-chars: 3000
+  knowledge-graph:
+    enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
+
+# LLM 配置（本地开发）
+llm:
+  invoke-timeout-seconds: 120
+  max-retries: 2
+  retry-backoff-millis: 1000
+  providers:
+    - name: deepseek
+      type: rest
+      base-url: https://api.deepseek.com
+      path: /chat/completions
+      api-key: ${DEEPSEEK_API_KEY:}
+      models:
+        - deepseek-chat
+        - deepseek-reasoner
+    - name: qwen
+      type: rest
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      path: /v1/chat/completions
+      api-key: ${QWEN_API_KEY:}
+      models:
+        - qwen-plus
+        - qwen-max
+        - qwen-turbo
+    - name: doubao
+      type: rest
+      base-url: https://ark.cn-beijing.volces.com/api/v3
+      path: /chat/completions
+      api-key: ${DOUBAO_API_KEY:}
+      models:
+        - doubao-seed-2-0-pro-260215
+        - doubao-seed-2-0-lite-260215
+
+# Resilience4j（本地开发简化配置）
+resilience4j:
+  circuitbreaker:
+    instances:
+      llm-cb-default:
+        failure-rate-threshold: 50
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+  retry:
+    instances:
+      llm-retry-default:
+        max-attempts: 3
+        wait-duration: 500ms
+  ratelimiter:
+    instances:
+      llm-rate-default:
+        limit-for-period: 10
+        limit-refresh-period: 1s
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers,retries,ratelimiters
+  endpoint:
+    health:
+      show-details: always
+
+# Logging
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
+  level:
+    com.example.chat.llm: DEBUG

@@ -1,0 +1,165 @@
+name: CI - Build & Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ===================== 前端构建 =====================
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install & Build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  # ===================== 后端构建 & 代码质量检查 =====================
+  backend:
+    name: Backend Build & Analyze (Java 17)
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      # ---- 阶段1: 代码规范检查 (快速失败) ----
+      - name: Checkstyle (code style)
+        run: mvn checkstyle:check -B
+        continue-on-error: false
+
+      - name: PMD (code quality)
+        run: mvn pmd:check -B
+        continue-on-error: false
+
+      # ---- 阶段2: 编译 & 测试 ----
+      - name: Compile & Unit Test
+        run: mvn test -B -Pci
+
+      - name: Publish Test Results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: JUnit Tests
+          path: '**/target/surefire-reports/TEST-*.xml'
+          reporter: java-junit
+
+      # ---- 阶段3: 静态安全分析 ----
+      - name: SpotBugs + FindSecBugs
+        run: mvn spotbugs:check -B
+        continue-on-error: true
+
+      # ---- 阶段3.5: 依赖漏洞扫描 ----
+      - name: OWASP Dependency-Check
+        run: mvn dependency-check:aggregate -B
+        continue-on-error: true
+
+      # ---- 上传报告 ----
+      - name: Upload JaCoCo Coverage Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-coverage
+          path: |
+            chat-common/target/site/jacoco/
+            chat-core/target/site/jacoco/
+            chat-web/target/site/jacoco/
+            chat-games/target/site/jacoco/
+            chat-media/target/site/jacoco/
+          retention-days: 14
+
+      - name: Upload SpotBugs Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spotbugs-report
+          path: '**/target/spotbugsXml.xml'
+          retention-days: 14
+
+      - name: Upload Checkstyle Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkstyle-report
+          path: '**/target/checkstyle-result.xml'
+          retention-days: 14
+
+      - name: Upload PMD Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pmd-report
+          path: '**/target/pmd.xml'
+          retention-days: 14
+
+      - name: Upload Dependency-Check Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
+          retention-days: 14
+
+  # ===================== 汇总 =====================
+  summary:
+    name: CI Summary
+    needs: [frontend, backend]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check build status
+        run: |
+          echo "前端: ${{ needs.frontend.result }}"
+          echo "后端: ${{ needs.backend.result }}"
+          if [ "${{ needs.frontend.result }}" = "success" ] && [ "${{ needs.backend.result }}" = "success" ]; then
+            echo "✅ All checks passed!"
+          else
+            echo "❌ Build failed. Check the job artifacts for details."
+            exit 1
+          fi

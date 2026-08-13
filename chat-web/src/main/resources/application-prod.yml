@@ -1,0 +1,3 @@
+# chat-web 生产配置已迁移至 Nacos 配置中心
+# dataId: chat-web-prod.yml (group: CHAT) + chat-common-prod.yml (公共)
+# 本文件保留空壳，配置由 Nacos 统一管理

@@ -1,6 +1,9 @@
 package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
+import com.example.chat.common.ApiResponse;
+import com.example.chat.common.ErrorCode;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.service.ContentSafetyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,7 +34,10 @@ public class DebateController {
     public ResponseEntity<?> startDebate(@RequestBody Map<String, Object> body) {
         String reqId = body.get("req_id") != null ? body.get("req_id").toString() : UUID.randomUUID().toString();
         String question = body.get("question") != null ? body.get("question").toString() : "";
-        Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
 
         String safetyResult = contentSafetyService.detectSensitive(question);
         if (safetyResult != null) {

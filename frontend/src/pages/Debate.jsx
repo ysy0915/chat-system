@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
-import SockJS from 'sockjs-client'
-import { Client } from '@stomp/stompjs'
 import { formatText, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAutoScroll } from '../hooks/useAutoScroll'
+import { useStompConnection } from '../hooks/useStompConnection'
 import DebateTreeView, { formatFinalText } from '../components/DebateTreeView'
 
 const MODEL_COLORS = {
@@ -38,7 +37,6 @@ export default function Debate() {
   const [treeFinalAnswer, setTreeFinalAnswer] = useState(null)
   const treeEventBus = useRef({ handlers: [], onMessage(h) { this.handlers.push(h) }, offMessage(h) { this.handlers = this.handlers.filter(x => x !== h) }, emit(msg) { this.handlers.forEach(h => h(msg)) } })
 
-  const stompRef = useRef(null)
   const currentRoundRef = useRef(0)
   const modelNamesRef = useRef({})
   const scrollRef = useAutoScroll([rounds, finalAnswer, synthesizing])
@@ -47,36 +45,19 @@ export default function Debate() {
   useEffect(() => { modelNamesRef.current = modelNames }, [modelNames])
 
   const [userId] = useState(() => {
+    try {
+      const authStr = localStorage.getItem('auth_user')
+      if (authStr) {
+        const auth = JSON.parse(authStr)
+        if (auth?.id) return auth.id
+      }
+    } catch {}
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
     const id = Math.floor(Math.random() * 10000) + 1
     localStorage.setItem('chat_user_id', String(id))
     return id
   })
-
-  useEffect(() => {
-    const sock = new SockJS('/ws/chat?userId=' + userId)
-    const client = new Client({
-      webSocketFactory: () => sock,
-      debug: () => {},
-      onConnect: () => {
-        setWsStatus('connected')
-        client.subscribe('/topic/debate.' + userId, (msg) => {
-          try {
-            const p = JSON.parse(msg.body)
-            throttledEmit(p)
-          } catch (e) { console.error(e) }
-        })
-      },
-      onStompError: () => { setWsStatus('error'); setDebating(false) },
-      onWebSocketClose: () => setWsStatus('disconnected')
-    })
-    stompRef.current = client
-    client.activate()
-    return () => { try { Promise.resolve(client.deactivate()).catch(() => {}) } catch {} }
-  // STOMP 连接仅随 userId/treeMode 重建，throttledEmit 经 ref 转发取最新值
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, treeMode])
 
   // ---- 帧节流分发 ----
   // token 事件频率很高（每个 token 一条 WS 消息），直接每条 setState 会导致
@@ -191,6 +172,18 @@ export default function Debate() {
   // 帧节流循环挂载一次，事件处理器经 ref 转发取最新值
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // WebSocket 连接（useStompConnection 统一管理，随 userId/treeMode 重建）
+  useStompConnection({
+    userId: String(userId),
+    reconnectKey: String(treeMode),
+    subscriptions: {
+      [`/topic/debate.${userId}`]: (payload) => throttledEmit(payload),
+    },
+    onConnect: () => setWsStatus('connected'),
+    onStompError: () => { setWsStatus('error'); setDebating(false) },
+    onDisconnect: () => setWsStatus('disconnected'),
+  })
 
   useEffect(() => {
     if (!treeMode) scrollRef.current?.scrollIntoView({ behavior: 'smooth' })

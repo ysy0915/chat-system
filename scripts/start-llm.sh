@@ -1,6 +1,9 @@
 #!/bin/bash
 # chat-llm 启动脚本（Milvus 服务器，端口 9095/9096，gRPC 9195/9196，Nacos 注册）
 # 用法：bash /opt/app/start-llm.sh [9095|9096]
+# 注意：数据源 url/username 走 Nacos 配置中心（chat-common-prod.yml），
+# .env 无 DB_URL/DB_USERNAME 变量，切勿传 --spring.datasource.url/username 参数
+# （会展开为空字符串覆盖 Nacos 配置，导致 "Failed to determine suitable jdbc url"）
 # 加载环境变量
 [ -f /opt/app/.env ] && set -a && . /opt/app/.env && set +a
 APP_JAR=/opt/app/llm/chat-llm-0.0.1-SNAPSHOT.jar
@@ -33,8 +36,6 @@ nohup java \
     --server.port=${PORT} \
     --grpc.server.port=${GRPC_PORT} \
     --spring.application.name=chat-llm \
-    --spring.datasource.url="$DB_URL" \
-    --spring.datasource.username="$DB_USERNAME" \
     --spring.datasource.password="$DB_PASSWORD" \
     --spring.data.redis.host=your-intra-ip-3 \
     --spring.data.redis.port=6379 \

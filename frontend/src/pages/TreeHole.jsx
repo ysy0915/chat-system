@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import apiClient from '../config/http'
-import SockJS from 'sockjs-client'
-import { Client } from '@stomp/stompjs'
 import '../styles/treehole.css'
 import { formatAnswer, extractAnswer, stripMarkdownSymbols } from '../utils/format'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
+import { useStompConnection } from '../hooks/useStompConnection'
 
 const MOODS = [
     { label: '😢 难过', value: '难过' },
@@ -124,24 +123,13 @@ export default function TreeHole() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages, typing])
 
-    // WebSocket 流式订阅
-    const stompRef = useRef(null)
-    useEffect(() => {
-        if (!authUser) return
-        const userId = authUser.id
-        const sock = new SockJS('/ws/chat?userId=' + userId)
-        let manualClose = false
-        let reconnectTimer = null
-        const client = new Client({
-            webSocketFactory: () => sock,
-            debug: (str) => console.log('[TreeHole WS]', str),
-            reconnectDelay: 0,
-            onConnect: () => {
-                console.log('[TreeHole WS] 已连接, 订阅 /topic/treehole.' + userId)
-                client.subscribe(`/topic/treehole.${userId}`, (msg) => {
-                    try {
-                        const payload = JSON.parse(msg.body)
-                        if (payload.type === 'stream_start') {
+    // WebSocket 流式订阅（useStompConnection 统一管理，意外断开 3 秒自动重连）
+    useStompConnection({
+        userId: authUser ? String(authUser.id) : '',
+        autoReconnect: true,
+        subscriptions: authUser ? {
+            [`/topic/treehole.${authUser.id}`]: (payload) => {
+                    if (payload.type === 'stream_start') {
                             setTyping(false)
                             streamingReqIdRef.current = payload.req_id
                             setMessages(prev => [...prev, { role: 'ai', text: '', thinking: '', streaming: true, reqId: payload.req_id, time: new Date().toISOString() }])
@@ -219,31 +207,15 @@ export default function TreeHole() {
                                 return [...prev, { role: 'ai', text: payload.message || '生成失败', time: new Date().toISOString() }]
                             })
                         }
-                    } catch (e) { console.error(e) }
-                })
             },
-            onWebSocketClose: () => {
-                console.warn('[TreeHole WS] 连接关闭')
-                if (!manualClose) {
-                    reconnectTimer = setTimeout(() => {
-                        if (!manualClose && stompRef.current === client) {
-                            try { Promise.resolve(client.activate()).catch(() => {}) } catch {}
-                        }
-                    }, 3000)
-                }
-            },
-            onStompError: (frame) => {
-                console.error('[TreeHole WS] STOMP错误', frame)
-            }
-        })
-        stompRef.current = client
-        client.activate()
-        return () => {
-            manualClose = true
-            if (reconnectTimer) clearTimeout(reconnectTimer)
-            try { Promise.resolve(client.deactivate()).catch(() => {}) } catch {}
-        }
-    }, [authUser])
+        } : undefined,
+        onConnect: () => {
+            console.log('[TreeHole WS] 已连接, 订阅 /topic/treehole.' + (authUser ? authUser.id : ''))
+        },
+        onStompError: (frame) => {
+            console.error('[TreeHole WS] STOMP错误', frame)
+        },
+    })
 
     // 自适应输入框高度
     useEffect(() => {

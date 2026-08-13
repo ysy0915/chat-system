@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
+import { useAuthUser } from '../hooks/useAuthUser'
 
 export default function History(){
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
-  const [userId] = useState(() => {
-    const stored = localStorage.getItem('chat_user_id')
-    return stored ? parseInt(stored) : 0
-  })
+  const authUser = useAuthUser()
+  const userId = authUser?.id || 0
 
   // 仅挂载时加载一次历史列表
   // eslint-disable-next-line react-hooks/exhaustive-deps

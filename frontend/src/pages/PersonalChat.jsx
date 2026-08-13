@@ -1,16 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
 import apiClient from '../config/http'
-import SockJS from 'sockjs-client'
-import { Client } from '@stomp/stompjs'
-import { Link } from 'react-router-dom'
-import { formatAnswer, extractAnswer, stripMarkdownSymbols } from '../utils/format'
+import { Link, useLocation } from 'react-router-dom'
+import { extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useAutoScroll } from '../hooks/useAutoScroll'
 import { useVoiceInput } from '../hooks/useVoiceInput'
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
+import { useStompConnection } from '../hooks/useStompConnection'
+import AiMessageBubble from '../components/chat/AiMessageBubble'
+import TypingIndicator from '../components/chat/TypingIndicator'
+import ChatInputBar from '../components/chat/ChatInputBar'
 
 export default function PersonalChat() {
+  // KeepAlive 会缓存本组件（离开页面也不卸载），断开跳转仅应在当前路由实际可见时执行，
+  // 否则后台断开会触发 window.location 整页刷新，造成"页面每几秒刷新"的无限循环
+  const location = useLocation()
+  const isPersonalActive = location.pathname === '/personal'
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
@@ -43,7 +49,6 @@ export default function PersonalChat() {
   const { speakingId, speak: speakMessage, stop: stopSpeak } = useSpeechSynthesis()
   const [speechSupported] = useState(() => voiceSupported ?? !!(window.SpeechRecognition || window.webkitSpeechRecognition))
   const userIdResolved = useRef(false)
-  const clientRef = useRef(null)
   const connectedRef = useRef(false)
   const [currentModel, setCurrentModel] = useState('AI')
   const [showModelMenu, setShowModelMenu] = useState(false)
@@ -112,12 +117,12 @@ export default function PersonalChat() {
   ]
 
   // 等待WebSocket连接就绪（断线重连后自动恢复）
-  const reconnectRef = useRef(null)
   const connectingRef = useRef(false)  // 防止并发重连
-  const disconnectedRef = useRef(false) // 15分钟超时断开标记
+  const disconnectedRef = useRef(false) // 断开标记（超时/异常后不自动重连）
 
-  // 断开后3秒倒计时自动返回首页
+  // 断开后3秒倒计时自动返回首页（仅当前路由可见时执行，避免 KeepAlive 后台跳转循环）
   useEffect(() => {
+    if (!isPersonalActive) { setRedirectCountdown(0); return }
     if (redirectCountdown <= 0) return
     if (redirectCountdown === 1) {
       const timer = setTimeout(() => { window.location.href = '/chat/home' }, 1000)
@@ -125,155 +130,32 @@ export default function PersonalChat() {
     }
     const timer = setTimeout(() => setRedirectCountdown(c => c - 1), 1000)
     return () => clearTimeout(timer)
-  }, [redirectCountdown])
+  }, [redirectCountdown, isPersonalActive])
+
+  // 回到页面时重置断开标记，允许重新建立连接
+  useEffect(() => {
+    if (isPersonalActive && disconnectedRef.current) {
+      disconnectedRef.current = false
+    }
+  }, [isPersonalActive])
   const ensureConnected = async () => {
-    if (connectedRef.current) return true
+    if (clientRef.current?.connected) return true
     if (disconnectedRef.current) return false  // 已断开，不自动重连
     // 如果正在连接中，等待现有连接完成
     if (connectingRef.current) {
       let waited = 0
-      while (connectingRef.current && !connectedRef.current && waited < 15000) {
+      while (connectingRef.current && !clientRef.current?.connected && waited < 15000) {
         await new Promise(r => setTimeout(r, 200))
         waited += 200
       }
-      return connectedRef.current
+      return !!clientRef.current?.connected
     }
     connectingRef.current = true
-    // 如果已有重连定时器在等待，先清掉
-    if (reconnectRef.current) {
-      clearTimeout(reconnectRef.current)
-      reconnectRef.current = null
-    }
-    // 直接新建SockJS连接（不依赖旧的client）
-    if (clientRef.current) {
-      try { clientRef.current.deactivate() } catch {}
-      clientRef.current = null
-    }
-    // 重新创建连接
-    const sock = new SockJS('/ws/chat?userId=' + userId)
-    const client = new Client({
-      webSocketFactory: () => sock,
-      debug: () => {},
-      reconnectDelay: 0,
-      heartbeatIncoming: 25000,
-      heartbeatOutgoing: 25000,
-      onConnect: () => {
-        connectedRef.current = true
-        connectingRef.current = false
-        client.subscribe(`/topic/user.${userId}`, (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            if (payload.type === 'stream_start') {
-              setTyping(false)
-              failCountRef.current = 0
-              streamingReqIdRef.current = payload.req_id
-              setMessages(prev => [...prev, { role: 'ai', content: '', thinking: '', streaming: true, reqId: payload.req_id }])
-            } else if (payload.type === 'thinking_token') {
-              setMessages(prev => {
-                const updated = [...prev]
-                for (let i = updated.length - 1; i >= 0; i--) {
-                  if (updated[i].role === 'ai' && updated[i].streaming) {
-                    updated[i] = { ...updated[i], thinking: (updated[i].thinking || '') + payload.token }
-                    break
-                  }
-                }
-                return updated
-              })
-            } else if (payload.type === 'stream_token') {
-              setMessages(prev => {
-                const updated = [...prev]
-                for (let i = updated.length - 1; i >= 0; i--) {
-                  if (updated[i].role === 'ai' && updated[i].streaming) {
-                    updated[i] = { ...updated[i], content: (updated[i].content || '') + payload.token }
-                    break
-                  }
-                }
-                return updated
-              })
-            } else if (payload.type === 'done' || payload.answer) {
-              setTyping(false)
-              failCountRef.current = 0
-              streamingReqIdRef.current = null
-              setMessages(prev => {
-                const last = prev[prev.length - 1]
-                if (last && last.role === 'ai' && last.streaming) {
-                  const answer = extractAnswer(payload.answer || '')
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: 'ai', content: answer || last.content, streaming: false,
-                    thinking: last.thinking,
-                    latency: payload.latency, tokens: payload.tokens, model: payload.model,
-                    reqId: last.reqId
-                  }
-                  return updated
-                }
-                const answer = extractAnswer(payload.answer || '')
-                return [...prev, {
-                  role: 'ai', content: answer,
-                  latency: payload.latency, tokens: payload.tokens, model: payload.model
-                }]
-              })
-            } else if (payload.type === 'stopped') {
-              setTyping(false)
-              streamingReqIdRef.current = null
-              setMessages(prev => {
-                const last = prev[prev.length - 1]
-                if (last && last.role === 'ai' && last.streaming) {
-                  const answer = extractAnswer(payload.answer || '')
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: 'ai', content: answer || last.content, streaming: false, stopped: true,
-                    thinking: last.thinking,
-                    reqId: last.reqId
-                  }
-                  return updated
-                }
-                return prev
-              })
-            } else if (payload.type === 'error') {
-              setTyping(false)
-              streamingReqIdRef.current = null
-              triggerFailure()
-              const errMsg = payload.message || '处理失败，请稍后重试'
-              setMessages(prev => {
-                const last = prev[prev.length - 1]
-                if (last && last.role === 'ai' && last.streaming) {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = { role: 'system', content: '❌ ' + errMsg }
-                  return updated
-                }
-                return [...prev, { role: 'system', content: '❌ ' + errMsg }]
-              })
-            }
-          } catch (e) { console.error(e) }
-        })
-        client.subscribe('/topic/online-count/personal', (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count || 0)
-          } catch (e) { console.error(e) }
-        })
-      },
-      onStompError: () => { setTyping(false) },
-      onWebSocketClose: () => {
-        connectedRef.current = false
-        connectingRef.current = false
-        // 不自动重连，标记断开状态，启动倒计时返回首页
-        disconnectedRef.current = true
-        setTyping(false)
-        showDisconnectMsg()
-      }
-    })
-    clientRef.current = client
-    client.activate()
-    // 等待连接建立
-    let waited = 0
-    while (!connectedRef.current && waited < 15000) {
-      await new Promise(r => setTimeout(r, 200))
-      waited += 200
-    }
+    // 重新建立连接（hook 内部会清理旧连接并创建新连接）
+    connect()
+    const ok = await waitUntilConnected(15000)
     connectingRef.current = false
-    return connectedRef.current
+    return ok
   }
 
   const switchModel = async (model) => {
@@ -336,21 +218,10 @@ export default function PersonalChat() {
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
 
-    // 初始连接
-    ensureConnected()
-
     return () => {
-      if (reconnectRef.current) {
-        clearTimeout(reconnectRef.current)
-        reconnectRef.current = null
-      }
       connectedRef.current = false
-      if (clientRef.current) {
-        try { Promise.resolve(clientRef.current.deactivate()).catch(() => {}) } catch {}
-        clientRef.current = null
-      }
     }
-  // STOMP 仅随 userId 重连，回调经 ref 转发取最新值
+  // STOMP 连接由 useStompConnection 统一管理（随 userId 重建），此处仅重置本地状态
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
@@ -448,8 +319,13 @@ export default function PersonalChat() {
     }
   }
 
-  // 显示断开提示并启动倒计时
+  // 显示断开提示并启动倒计时（仅当前路由可见时触发跳转倒计时）
   const showDisconnectMsg = () => {
+    if (!isPersonalActive) {
+      // 后台断开：不跳转、不弹倒计时，仅记录状态，回到页面后可恢复
+      disconnectedRef.current = true
+      return
+    }
     setMessages(prev => {
       const last = prev[prev.length - 1]
       if (last && last.role === 'system' && last.content.includes('连接已断开')) return prev
@@ -457,6 +333,113 @@ export default function PersonalChat() {
     })
     setRedirectCountdown(3)
   }
+
+  // WebSocket 连接（useStompConnection 统一管理，不自动重连，断开后走倒计时跳转）
+  const { clientRef, connect, waitUntilConnected } = useStompConnection({
+    userId: String(userId),
+    subscriptions: {
+      [`/topic/user.${userId}`]: (payload) => {
+        if (payload.type === 'stream_start') {
+          setTyping(false)
+          failCountRef.current = 0
+          streamingReqIdRef.current = payload.req_id
+          setMessages(prev => [...prev, { role: 'ai', content: '', thinking: '', streaming: true, reqId: payload.req_id }])
+        } else if (payload.type === 'thinking_token') {
+          setMessages(prev => {
+            const updated = [...prev]
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'ai' && updated[i].streaming) {
+                updated[i] = { ...updated[i], thinking: (updated[i].thinking || '') + payload.token }
+                break
+              }
+            }
+            return updated
+          })
+        } else if (payload.type === 'stream_token') {
+          setMessages(prev => {
+            const updated = [...prev]
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'ai' && updated[i].streaming) {
+                updated[i] = { ...updated[i], content: (updated[i].content || '') + payload.token }
+                break
+              }
+            }
+            return updated
+          })
+        } else if (payload.type === 'done' || payload.answer) {
+          setTyping(false)
+          failCountRef.current = 0
+          streamingReqIdRef.current = null
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last && last.role === 'ai' && last.streaming) {
+              const answer = extractAnswer(payload.answer || '')
+              const updated = [...prev]
+              updated[updated.length - 1] = {
+                role: 'ai', content: answer || last.content, streaming: false,
+                thinking: last.thinking,
+                latency: payload.latency, tokens: payload.tokens, model: payload.model,
+                reqId: last.reqId
+              }
+              return updated
+            }
+            const answer = extractAnswer(payload.answer || '')
+            return [...prev, {
+              role: 'ai', content: answer,
+              latency: payload.latency, tokens: payload.tokens, model: payload.model
+            }]
+          })
+        } else if (payload.type === 'stopped') {
+          setTyping(false)
+          streamingReqIdRef.current = null
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last && last.role === 'ai' && last.streaming) {
+              const answer = extractAnswer(payload.answer || '')
+              const updated = [...prev]
+              updated[updated.length - 1] = {
+                role: 'ai', content: answer || last.content, streaming: false, stopped: true,
+                thinking: last.thinking,
+                reqId: last.reqId
+              }
+              return updated
+            }
+            return prev
+          })
+        } else if (payload.type === 'error') {
+          setTyping(false)
+          streamingReqIdRef.current = null
+          triggerFailure()
+          const errMsg = payload.message || '处理失败，请稍后重试'
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (last && last.role === 'ai' && last.streaming) {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'system', content: '❌ ' + errMsg }
+              return updated
+            }
+            return [...prev, { role: 'system', content: '❌ ' + errMsg }]
+          })
+        }
+      },
+      '/topic/online-count/personal': (payload) => {
+        setOnlineCount(payload.count || 0)
+      },
+    },
+    onConnect: () => {
+      connectedRef.current = true
+      connectingRef.current = false
+    },
+    onStompError: () => { setTyping(false) },
+    onDisconnect: () => {
+      connectedRef.current = false
+      connectingRef.current = false
+      // 不自动重连，标记断开状态，启动倒计时返回首页
+      disconnectedRef.current = true
+      setTyping(false)
+      showDisconnectMsg()
+    },
+  })
 
   // 输入框聚焦时检查连接状态
   const handleFocus = () => {
@@ -674,56 +657,12 @@ export default function PersonalChat() {
               <div className="msg-avatar ai-avatar">
                 <img src="/chat/logo.png" alt="AI" className="avatar-img" />
               </div>
-              <div className="msg ai">
-                {m.thinking && (
-                  <div className="thinking-block">
-                    {stripMarkdownSymbols(m.thinking)}
-                    {m.streaming && m.thinking && !m.content && (
-                      <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'#6b7280'}}>▋</span>
-                    )}
-                  </div>
-                )}
-                {formatAnswer(m.content).map((sentence, i) => (
-                  <span key={i} style={{display:'block'}}>{sentence}</span>
-                ))}
-                {m.streaming && (
-                  <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'var(--accent, #818cf8)'}}>▋</span>
-                )}
-                <span className="ai-generated-tag">
-                  AI生成{m.latency != null ? ` · ${(m.latency / 1000).toFixed(1)}s` : ''}{m.tokens != null ? ` · ${m.tokens} tokens` : ''}{m.model ? ` · ${m.model}` : ''}{m.stopped ? ' · 已停止' : ''}
-                </span>
-                {!m.streaming && m.content && (
-                  <button
-                    type="button"
-                    className="speak-btn"
-                    onClick={() => speakMessage(idx, m.content)}
-                    title={speakingId === idx ? '停止朗读' : '朗读'}
-                  >
-                    {speakingId === idx ? '⏸' : '🔊'}
-                  </button>
-                )}
-                {!m.streaming && (
-                  <button
-                    type="button"
-                    onClick={() => regenerateAnswer(m)}
-                    style={{
-                      display: 'block',
-                      marginTop: 6,
-                      background: 'rgba(255,255,255,0.06)',
-                      color: 'var(--text-secondary, #94a3b8)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 6,
-                      padding: '3px 10px',
-                      cursor: 'pointer',
-                      fontSize: 11,
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                  >
-                    ↻ 重新生成
-                  </button>
-                )}
-              </div>
+              <AiMessageBubble
+                m={m}
+                speaking={speakingId === idx}
+                onSpeak={() => speakMessage(idx, m.content)}
+                onRegenerate={() => regenerateAnswer(m)}
+              />
             </div>
           ) : (
             <div
@@ -740,105 +679,109 @@ export default function PersonalChat() {
             </div>
           )
         ))}
-        {typing && (
-          <div className="msg-row msg-ai-row">
-            <div className="msg-avatar ai-avatar">
-              <img src="/chat/logo.png" alt="AI" className="avatar-img" />
-            </div>
-            <div className="typing-indicator">
-              <span></span><span></span><span></span>
-            </div>
-          </div>
-        )}
+        {typing && <TypingIndicator />}
         <div ref={scrollRef} />
       </div>
 
-      <div className="chat-input-area">
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', marginBottom: 8, paddingRight: 4, gap: 8 }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', gap: 4, flex: 1 }}>
-            <input
-              type="text"
-              placeholder="搜索历史对话..."
-              value={searchKeyword}
-              onChange={e => setSearchKeyword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              style={{
-                flex: 1, maxWidth: 200,
-                background: 'rgba(255,255,255,0.08)',
-                color: 'var(--text-primary, #e2e8f0)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 16, padding: '5px 12px', fontSize: 12, outline: 'none',
-              }}
-            />
-            <button onClick={() => handleSearch()} disabled={searching}
-              style={{
-                background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary, #94a3b8)',
-                border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16,
-                padding: '5px 10px', cursor: 'pointer', fontSize: 12,
-              }}>🔍</button>
-          </div>
-          <button
-            onClick={() => setShowModelMenu(v => !v)}
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              color: 'var(--text-secondary, #94a3b8)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 16,
-              padding: '5px 12px',
-              cursor: 'pointer',
-              fontSize: 12,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              backdropFilter: 'blur(8px)',
-            }}
-          >
-            <span style={{ fontSize: 11 }}>⚡</span>
-            {currentModel}
-            <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
-          </button>
-          {showModelMenu && (
-            <div style={{
-              position: 'absolute',
-              bottom: '110%',
-              right: 0,
-              background: 'var(--bg-card, rgba(30,30,46,0.95))',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10,
-              overflow: 'hidden',
-              boxShadow: '0 -4px 20px rgba(0,0,0,0.25)',
-              minWidth: 130,
-              backdropFilter: 'blur(12px)',
-            }}>
-              {MODEL_LIST.map(m => (
-                <div
-                  key={m.provider}
-                  onClick={() => switchModel(m)}
-                  style={{
-                    padding: '9px 14px',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    color: currentModel === m.label ? 'var(--accent, #818cf8)' : 'var(--text-primary, #e2e8f0)',
-                    fontWeight: currentModel === m.label ? 600 : 400,
-                    background: currentModel === m.label ? 'rgba(129,140,248,0.12)' : 'transparent',
-                    transition: 'background 0.15s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
-                  onMouseLeave={e => e.currentTarget.style.background = currentModel === m.label ? 'rgba(129,140,248,0.12)' : 'transparent'}
-                >
-                  {currentModel === m.label ? '✓ ' : ''}{m.label}
-                </div>
-              ))}
+      <ChatInputBar
+        value={question}
+        onChange={e => setQuestion(e.target.value)}
+        onKeyDown={handleKey}
+        onSubmit={sendQuestion}
+        placeholder="输入你的私密问题..."
+        onInputFocus={handleFocus}
+        voiceSupported={speechSupported}
+        isRecording={isRecording}
+        onToggleVoice={toggleVoice}
+        showStop={!!(streamingReqIdRef.current || typing)}
+        onStop={stopGeneration}
+        formClassName={isDragging ? 'drag-over' : ''}
+        formProps={{
+          onDrop: handleDrop,
+          onDragOver: handleDragOver,
+          onDragLeave: handleDragLeave,
+        }}
+        topBar={
+          <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', marginBottom: 8, paddingRight: 4, gap: 8 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+              <input
+                type="text"
+                placeholder="搜索历史对话..."
+                value={searchKeyword}
+                onChange={e => setSearchKeyword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                style={{
+                  flex: 1, maxWidth: 200,
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'var(--text-primary, #e2e8f0)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 16, padding: '5px 12px', fontSize: 12, outline: 'none',
+                }}
+              />
+              <button onClick={() => handleSearch()} disabled={searching}
+                style={{
+                  background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary, #94a3b8)',
+                  border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16,
+                  padding: '5px 10px', cursor: 'pointer', fontSize: 12,
+                }}>🔍</button>
             </div>
-          )}
-        </div>
-        <form
-          className={`chat-input-wrapper${isDragging ? ' drag-over' : ''}`}
-          onSubmit={sendQuestion}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
+            <button
+              onClick={() => setShowModelMenu(v => !v)}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                color: 'var(--text-secondary, #94a3b8)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 16,
+                padding: '5px 12px',
+                cursor: 'pointer',
+                fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <span style={{ fontSize: 11 }}>⚡</span>
+              {currentModel}
+              <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
+            </button>
+            {showModelMenu && (
+              <div style={{
+                position: 'absolute',
+                bottom: '110%',
+                right: 0,
+                background: 'var(--bg-card, rgba(30,30,46,0.95))',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 10,
+                overflow: 'hidden',
+                boxShadow: '0 -4px 20px rgba(0,0,0,0.25)',
+                minWidth: 130,
+                backdropFilter: 'blur(12px)',
+              }}>
+                {MODEL_LIST.map(m => (
+                  <div
+                    key={m.provider}
+                    onClick={() => switchModel(m)}
+                    style={{
+                      padding: '9px 14px',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      color: currentModel === m.label ? 'var(--accent, #818cf8)' : 'var(--text-primary, #e2e8f0)',
+                      fontWeight: currentModel === m.label ? 600 : 400,
+                      background: currentModel === m.label ? 'rgba(129,140,248,0.12)' : 'transparent',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+                    onMouseLeave={e => e.currentTarget.style.background = currentModel === m.label ? 'rgba(129,140,248,0.12)' : 'transparent'}
+                  >
+                    {currentModel === m.label ? '✓ ' : ''}{m.label}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        }
+        beforeInput={<>
           <input
             type="file"
             ref={fileInputRef}
@@ -852,50 +795,15 @@ export default function PersonalChat() {
               <button type="button" className="file-preview-remove" onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}>✕</button>
             </div>
           )}
-          <input
-            value={question}
-            onChange={e => setQuestion(e.target.value)}
-            onKeyDown={handleKey}
-            onFocus={handleFocus}
-            placeholder="输入你的私密问题..."
-          />
+        </>}
+        afterInput={
           <button type="button" className="attach-btn" onClick={() => fileInputRef.current?.click()} title="上传文件">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
             </svg>
           </button>
-          {speechSupported && (
-            <button type="button" className={`voice-btn ${isRecording ? 'recording' : ''}`} onClick={toggleVoice}>
-              {isRecording ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="6" y="6" width="12" height="12" rx="2"/>
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/>
-                  <line x1="8" y1="23" x2="16" y2="23"/>
-                </svg>
-              )}
-            </button>
-          )}
-          {streamingReqIdRef.current || typing ? (
-            <button type="button" className="send-btn stop-btn" onClick={stopGeneration} title="停止生成">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" rx="2"/>
-              </svg>
-            </button>
-          ) : (
-            <button type="submit" className="send-btn">↑</button>
-          )}
-        </form>
-        {isRecording && (
-          <div className="voice-hint">
-            <span className="voice-dot"></span> 正在聆听，请说话...
-          </div>
-        )}
-      </div>
+        }
+      />
     </div>
   )
 }

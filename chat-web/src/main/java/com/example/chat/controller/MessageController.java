@@ -5,6 +5,7 @@ import com.example.chat.common.ApiResponse;
 import com.example.chat.common.ErrorCode;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.User;
+import com.example.chat.security.AuthUtils;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.ContentSafetyService;
 import com.example.chat.service.OnlineCountRedisService;
@@ -20,7 +21,6 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,7 +29,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -77,7 +76,11 @@ public class MessageController {
         Object questionObj = body.get("question");
         String question = questionObj == null ? "" : questionObj.toString();
 
-        Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
+        // 从 JWT 安全上下文取用户 ID，不信任客户端传入的 user_id（防伪造身份/横向越权）
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
         boolean isPrivate = "true".equals(String.valueOf(body.get("private")));
 
         if (!rateLimitService.isAllowed(userId)) {
@@ -135,8 +138,12 @@ public class MessageController {
     public ResponseEntity<?> createMessageWithFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("question") String question,
-            @RequestParam("user_id") Long userId,
             @RequestParam("req_id") String reqId) {
+
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
 
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "文件不能为空"));
@@ -195,59 +202,46 @@ public class MessageController {
         return objectMapper.convertValue(created, User.class);
     }
 
-    @Operation(summary = "消息列表（按用户）", description = "查询指定用户的消息历史")
+    @Operation(summary = "消息列表（当前用户）", description = "查询当前登录用户的消息历史")
     @GetMapping
-    public ResponseEntity<?> listMessages(@RequestParam(value = "user_id", defaultValue = "0") Long userId) {
+    public ResponseEntity<?> listMessages() {
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
         return ResponseEntity.ok(coreClient.listMessages(userId));
     }
 
     @Operation(summary = "最近私聊消息", description = "获取用户最近的私聊消息列表")
     @GetMapping("/recent")
-    public ResponseEntity<?> listRecentPrivate(@RequestParam("user_id") Long userId) {
+    public ResponseEntity<?> listRecentPrivate() {
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
         return ResponseEntity.ok(coreClient.listRecentPrivate(userId));
     }
 
     @Operation(summary = "搜索私聊消息", description = "按关键词搜索用户私聊消息，支持分页")
     @GetMapping("/search")
-    public ResponseEntity<?> searchPrivateMessages(@RequestParam("user_id") Long userId,
-                                                    @RequestParam("keyword") String keyword,
+    public ResponseEntity<?> searchPrivateMessages(@RequestParam("keyword") String keyword,
                                                     @RequestParam(value = "page", defaultValue = "1") int page,
                                                     @RequestParam(value = "size", defaultValue = "5") int size) {
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
         return ResponseEntity.ok(coreClient.searchPrivateMessages(userId, keyword, page, size));
     }
 
     @Operation(summary = "上下文消息", description = "获取某条消息的对话上下文")
     @GetMapping("/context")
-    public ResponseEntity<?> getContextMessages(@RequestParam("user_id") Long userId,
-                                                 @RequestParam("msg_id") Long msgId) {
-        return ResponseEntity.ok(coreClient.getContextMessages(userId, msgId));
-    }
-
-    @Operation(summary = "全部消息", description = "查询所有用户的全部消息")
-    @GetMapping("/all")
-    public ResponseEntity<?> listAllMessages() {
-        return ResponseEntity.ok(coreClient.listAllMessages());
-    }
-
-    @Operation(summary = "问题列表", description = "查询所有提问（不含 AI 回答）")
-    @GetMapping("/questions")
-    public ResponseEntity<?> listQuestionsOnly() {
-        return ResponseEntity.ok(coreClient.listQuestionsOnly());
-    }
-
-    @Operation(summary = "搜索问题", description = "按关键词全局搜索问题")
-    @GetMapping("/search-all")
-    public ResponseEntity<?> searchQuestions(@RequestParam("q") String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return ResponseEntity.ok(Collections.emptyList());
+    public ResponseEntity<?> getContextMessages(@RequestParam("msg_id") Long msgId) {
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         }
-        return ResponseEntity.ok(coreClient.searchQuestions(keyword.trim()));
-    }
-
-    @Operation(summary = "获取 AI 回答", description = "根据消息 ID 查询 AI 回答内容")
-    @GetMapping("/{id}/answer")
-    public ResponseEntity<?> getAnswerById(@PathVariable Long id) {
-        return ResponseEntity.ok(coreClient.getAnswerById(id));
+        return ResponseEntity.ok(coreClient.getContextMessages(userId, msgId));
     }
 
     @Operation(summary = "在线人数", description = "查询当前页面的在线用户数")
@@ -261,13 +255,13 @@ public class MessageController {
     @PostMapping("/regenerate")
     public ResponseEntity<?> regenerate(@RequestBody Map<String, Object> body) {
         String reqId = body.get("req_id") == null ? null : String.valueOf(body.get("req_id"));
-        Long userId = body.get("user_id") == null ? 0L : Long.parseLong(body.get("user_id").toString());
+        Long userId = AuthUtils.extractUserIdFromContext();
 
         if (reqId == null || reqId.isBlank()) {
             return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "req_id 不能为空"));
         }
-        if (userId == null || userId <= 0) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "user_id 不能为空"));
+        if (userId == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         }
 
         try {

@@ -232,22 +232,6 @@ public class CoreClient {
         return get(String.format("/internal/messages/context?user_id=%d&msg_id=%d", userId, msgId));
     }
 
-    public Object listAllMessages() {
-        return get("/internal/messages/all");
-    }
-
-    public Object listQuestionsOnly() {
-        return get("/internal/messages/questions");
-    }
-
-    public Object searchQuestions(String keyword) {
-        return get("/internal/messages/search-all?q=" + keyword);
-    }
-
-    public Object getAnswerById(Long id) {
-        return get("/internal/messages/" + id + "/answer");
-    }
-
     public Object getMessageByReqId(String reqId) {
         return get("/internal/messages/by-req-id/" + reqId);
     }

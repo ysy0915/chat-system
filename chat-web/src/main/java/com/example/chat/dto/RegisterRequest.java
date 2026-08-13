@@ -1,5 +1,6 @@
 package com.example.chat.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -15,6 +16,14 @@ public class RegisterRequest {
 
     @Size(max = 50, message = "昵称过长")
     private String nickname;
+
+    @NotBlank(message = "验证码不能为空")
+    @JsonProperty("captcha_token")
+    private String captchaToken;
+
+    @NotBlank(message = "验证码答案不能为空")
+    @JsonProperty("captcha_answer")
+    private String captchaAnswer;
 
     public String getUsername() {
         return username;
@@ -38,5 +47,21 @@ public class RegisterRequest {
 
     public void setNickname(String nickname) {
         this.nickname = nickname;
+    }
+
+    public String getCaptchaToken() {
+        return captchaToken;
+    }
+
+    public void setCaptchaToken(String captchaToken) {
+        this.captchaToken = captchaToken;
+    }
+
+    public String getCaptchaAnswer() {
+        return captchaAnswer;
+    }
+
+    public void setCaptchaAnswer(String captchaAnswer) {
+        this.captchaAnswer = captchaAnswer;
     }
 }

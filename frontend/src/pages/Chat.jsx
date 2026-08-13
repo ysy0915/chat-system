@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import apiClient from '../config/http'
-import SockJS from 'sockjs-client'
-import { Client } from '@stomp/stompjs'
 import { Link } from 'react-router-dom'
 import { formatAnswer, extractAnswer } from '../utils/format'
 import { generateId } from '../utils/id'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useAutoScroll } from '../hooks/useAutoScroll'
+import { useStompConnection } from '../hooks/useStompConnection'
+import TypingIndicator from '../components/chat/TypingIndicator'
+import ChatInputBar from '../components/chat/ChatInputBar'
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
@@ -15,8 +16,14 @@ export default function ChatPage(){
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
   const [, setWsStatus] = useState('connecting')
-  const stompRef = useRef(null)
   const [userId, setUserId] = useState(() => {
+    try {
+      const authStr = localStorage.getItem('auth_user')
+      if (authStr) {
+        const auth = JSON.parse(authStr)
+        if (auth?.id) return auth.id
+      }
+    } catch {}
     const stored = localStorage.getItem('chat_user_id')
     if (stored) return parseInt(stored)
     const id = Math.floor(Math.random() * 10000) + 1
@@ -50,111 +57,76 @@ export default function ChatPage(){
     apiClient.get('/api/v1/messages/online-count', { params: { page: 'chat' } })
       .then(res => setOnlineCount(res.data?.count || 0))
       .catch(() => {})
-    const sock = new SockJS('/ws/chat?userId=' + userId);
-    let reconnectTimer = null
-    let manualClose = false
-    sock.onopen = () => {}
-    sock.onclose = () => { setWsStatus('disconnected') }
-    sock.onerror = () => {}
-
-    const client = new Client({
-      webSocketFactory: () => sock,
-      debug: () => {},
-      reconnectDelay: 0,
-      onConnect: () => {
-        setWsStatus('connected')
-        client.subscribe(`/topic/user.${userId}`, (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            if (payload.type === 'done' || payload.answer) {
-              setTyping(false)
-              const ans = extractAnswer(payload.answer || '')
-              setMessages(prev => [...prev, { role: 'ai', content: ans || '暂无回复' }])
-            }
-          } catch (e) { console.error(e) }
-        })
-        client.subscribe('/topic/public-questions', (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            if (payload.auto_chat && payload.type === 'auto_question') {
-              setMessages(prev => {
-                if (prev.some(m => m.reqId === payload.req_id)) return prev
-                return [...prev, {
-                  role: 'auto-q',
-                  content: payload.question,
-                  reqId: payload.req_id,
-                  userName: payload.user_name
-                }]
-              })
-            } else if (payload.auto_chat && payload.type === 'auto_answer') {
-              setMessages(prev => {
-                return [...prev, {
-                  role: 'auto-a',
-                  content: extractAnswer(payload.answer || ''),
-                  reqId: payload.req_id,
-                  userName: payload.user_name
-                }]
-              })
-            } else if (payload.question) {
-              setMessages(prev => {
-                if (prev.some(m => m.reqId === payload.req_id)) return prev
-                return [...prev, {
-                  role: 'user',
-                  content: payload.question,
-                  fromOther: true,
-                  reqId: payload.req_id,
-                  userName: payload.user_name || ('用户' + payload.user_id)
-                }]
-              })
-            } else if (payload.type === 'answer' && payload.answer && payload.user_id !== userId) {
-              setMessages(prev => {
-                if (prev.some(m => m.reqId === payload.req_id && m.role === 'ai')) return prev
-                return [...prev, { role: 'ai', content: extractAnswer(payload.answer || ''), forOther: true, reqId: payload.req_id }]
-              })
-            }
-          } catch (e) { console.error(e) }
-        })
-        client.subscribe('/topic/online-users', (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count || 1)
-            setOnlineUsers(payload.users || [])
-          } catch (e) { console.error(e) }
-        })
-        client.subscribe('/topic/online-count/chat', (msg) => {
-          try {
-            const payload = JSON.parse(msg.body)
-            setOnlineCount(payload.count || 1)
-          } catch (e) { console.error(e) }
-        })
-      },
-      onStompError: (frame) => {
-        console.error('[STOMP] error', frame)
-        setWsStatus('error')
-        setTyping(false)
-      },
-      onWebSocketClose: () => {
-        setWsStatus('disconnected')
-        // 自动重连：非主动关闭时 3 秒后重连
-        if (!manualClose) {
-          reconnectTimer = setTimeout(() => {
-            if (!manualClose && stompRef.current === client) {
-              try { Promise.resolve(client.activate()).catch(() => {}) } catch {}
-            }
-          }, 3000)
-        }
-      }
-    })
-    stompRef.current = client
-    client.activate()
-    return () => {
-      manualClose = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      try {
-        client.deactivate()
-      } catch (e) { console.warn('deactivate failed:', e) }
-    }
   }, [userId])
+
+  // WebSocket 连接（useStompConnection 统一管理，意外断开 3 秒自动重连）
+  useStompConnection({
+    userId: String(userId),
+    autoReconnect: true,
+    subscriptions: {
+      [`/topic/user.${userId}`]: (payload) => {
+        if (payload.type === 'done' || payload.answer) {
+          setTyping(false)
+          const ans = extractAnswer(payload.answer || '')
+          setMessages(prev => [...prev, { role: 'ai', content: ans || '暂无回复' }])
+        }
+      },
+      '/topic/public-questions': (payload) => {
+        if (payload.auto_chat && payload.type === 'auto_question') {
+          setMessages(prev => {
+            if (prev.some(m => m.reqId === payload.req_id)) return prev
+            return [...prev, {
+              role: 'auto-q',
+              content: payload.question,
+              reqId: payload.req_id,
+              userName: payload.user_name
+            }]
+          })
+        } else if (payload.auto_chat && payload.type === 'auto_answer') {
+          setMessages(prev => {
+            return [...prev, {
+              role: 'auto-a',
+              content: extractAnswer(payload.answer || ''),
+              reqId: payload.req_id,
+              userName: payload.user_name
+            }]
+          })
+        } else if (payload.question) {
+          setMessages(prev => {
+            if (prev.some(m => m.reqId === payload.req_id)) return prev
+            return [...prev, {
+              role: 'user',
+              content: payload.question,
+              fromOther: true,
+              reqId: payload.req_id,
+              userName: payload.user_name || ('用户' + payload.user_id)
+            }]
+          })
+        } else if (payload.type === 'answer' && payload.answer && payload.user_id !== userId) {
+          setMessages(prev => {
+            if (prev.some(m => m.reqId === payload.req_id && m.role === 'ai')) return prev
+            return [...prev, { role: 'ai', content: extractAnswer(payload.answer || ''), forOther: true, reqId: payload.req_id }]
+          })
+        }
+      },
+      '/topic/online-users': (payload) => {
+        setOnlineCount(payload.count || 1)
+        setOnlineUsers(payload.users || [])
+      },
+      '/topic/online-count/chat': (payload) => {
+        setOnlineCount(payload.count || 1)
+      },
+    },
+    onConnect: () => setWsStatus('connected'),
+    onStompError: () => {
+      setWsStatus('error')
+      setTyping(false)
+    },
+    onDisconnect: () => {
+      setWsStatus('disconnected')
+      setTyping(false)
+    },
+  })
 
   const sendQuestion = async (e) => {
     e?.preventDefault?.()
@@ -328,72 +300,43 @@ export default function ChatPage(){
                   <div key={idx} className={`msg ${m.role}`}>{m.content}</div>
               )
           ))}
-          {typing && (
-              <div className="msg-row msg-ai-row">
-                <div className="msg-avatar ai-avatar">
-                  <img src="/chat/logo.png" alt="AI" className="avatar-img" />
-                </div>
-                <div className="typing-indicator">
-                  <span></span><span></span><span></span>
-                </div>
-              </div>
-          )}
+          {typing && <TypingIndicator />}
           <div ref={scrollRef} />
         </div>
 
-        <div className="chat-input-area">
-          <div className="chat-input-top">
-            <span className="chat-online-mini" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
-              <span className="online-dot-small"></span>
-              {onlineCount + ' 人在线'}
-              <span style={{fontSize:'9px', opacity:0.6}}>{showOnlineList ? '▲' : '▼'}</span>
-            </span>
-            <button type="button" className={`ai-toggle-btn ${aiAnswer ? 'active' : ''}`} onClick={() => setAiAnswer(!aiAnswer)}>
-              ✦ 点击此按钮-由AI回答你提的问题
-            </button>
-          </div>
-          {showOnlineList && onlineUsers.length > 0 && (
-              <div className="online-users-panel">
-                {onlineUsers.map(u => (
-                    <div key={u.id} className="online-user-item">
-                      <span className="online-user-avatar">🐰</span>
-                      <span className="online-user-name">{u.name || ('用户' + u.id)}</span>
-                      <span className="online-user-dot"></span>
+        <ChatInputBar
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            onKeyDown={handleKey}
+            onSubmit={sendQuestion}
+            placeholder="输入你的问题..."
+            voiceSupported={speechSupported}
+            isRecording={isRecording}
+            onToggleVoice={toggleVoice}
+            topBar={<>
+                <div className="chat-input-top">
+                    <span className="chat-online-mini" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
+                        <span className="online-dot-small"></span>
+                        {onlineCount + ' 人在线'}
+                        <span style={{fontSize:'9px', opacity:0.6}}>{showOnlineList ? '▲' : '▼'}</span>
+                    </span>
+                    <button type="button" className={`ai-toggle-btn ${aiAnswer ? 'active' : ''}`} onClick={() => setAiAnswer(!aiAnswer)}>
+                        ✦ 点击此按钮-由AI回答你提的问题
+                    </button>
+                </div>
+                {showOnlineList && onlineUsers.length > 0 && (
+                    <div className="online-users-panel">
+                        {onlineUsers.map(u => (
+                            <div key={u.id} className="online-user-item">
+                                <span className="online-user-avatar">🐰</span>
+                                <span className="online-user-name">{u.name || ('用户' + u.id)}</span>
+                                <span className="online-user-dot"></span>
+                            </div>
+                        ))}
                     </div>
-                ))}
-              </div>
-          )}
-          <form className="chat-input-wrapper" onSubmit={sendQuestion}>
-            <input
-                value={question}
-                onChange={e => setQuestion(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder="输入你的问题..."
-            />
-            {speechSupported && (
-                <button type="button" className={`voice-btn ${isRecording ? 'recording' : ''}`} onClick={toggleVoice}>
-                  {isRecording ? (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="6" y="6" width="12" height="12" rx="2"/>
-                      </svg>
-                  ) : (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                        <line x1="12" y1="19" x2="12" y2="23"/>
-                        <line x1="8" y1="23" x2="16" y2="23"/>
-                      </svg>
-                  )}
-                </button>
-            )}
-            <button type="submit" className="send-btn">↑</button>
-          </form>
-          {isRecording && (
-              <div className="voice-hint">
-                <span className="voice-dot"></span> 正在聆听，请说话...
-              </div>
-          )}
-        </div>
+                )}
+            </>}
+        />
       </div>
   )
 }

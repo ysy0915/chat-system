@@ -4,8 +4,8 @@ import com.example.chat.dto.LangChainRequest;
 import com.example.chat.dto.LangChainResponse;
 import com.example.chat.llm.rag.legacy.ConversationMemoryService;
 import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
-import com.example.chat.llm.rag.legacy.LegacyVectorStoreService;
-import com.example.chat.llm.rag.legacy.UserFactMemoryService;
+import com.example.chat.llm.rag.legacy.UserFactMemory;
+import com.example.chat.llm.rag.legacy.VectorStoreLegacy;
 import com.example.chat.llm.service.LLMInvokeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,11 +40,11 @@ public class LegacyRagController {
 
     private static final Logger log = LoggerFactory.getLogger(LegacyRagController.class);
 
-    private final LegacyVectorStoreService vectorStoreService;
+    private final VectorStoreLegacy vectorStoreService;
     private final ConversationMemoryService memoryService;
     private final LegacyEmbeddingService embeddingService;
     private final LLMInvokeService llmInvokeService;
-    private final UserFactMemoryService factMemoryService;
+    private final UserFactMemory factMemoryService;
 
     private final ExecutorService streamExecutor = new ThreadPoolExecutor(
             2, 8, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>(100),
@@ -59,11 +59,11 @@ public class LegacyRagController {
     @Value("${app.rag.context.max-chars:3000}")
     private int maxContextChars;
 
-    public LegacyRagController(LegacyVectorStoreService vectorStoreService,
+    public LegacyRagController(VectorStoreLegacy vectorStoreService,
                                ConversationMemoryService memoryService,
                                LegacyEmbeddingService embeddingService,
                                LLMInvokeService llmInvokeService,
-                               UserFactMemoryService factMemoryService) {
+                               UserFactMemory factMemoryService) {
         this.vectorStoreService = vectorStoreService;
         this.memoryService = memoryService;
         this.embeddingService = embeddingService;
@@ -79,7 +79,7 @@ public class LegacyRagController {
         String query = (String) req.get("query");
         int k = req.get("topK") != null ? ((Number) req.get("topK")).intValue() : topK;
 
-        List<LegacyVectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, k);
+        List<VectorStoreLegacy.SearchResult> results = vectorStoreService.search(kbId, query, k);
         List<Map<String, Object>> list = results.stream().map(r -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("text", r.text);
@@ -139,7 +139,7 @@ public class LegacyRagController {
         Long userId = ((Number) req.get("userId")).longValue();
         String question = (String) req.get("question");
         String memory = memoryService.buildMemoryContext(scene, userId, question);
-        return Map.of("success", true, "memory", memory);
+        return Map.of("success", true, "memory", memory != null ? memory : "");
     }
 
     // ──────────── 长期记忆（事实型，L2） ─────────────────
@@ -265,12 +265,12 @@ public class LegacyRagController {
     }
 
     private String retrieveContext(Long kbId, String query, int k) {
-        List<LegacyVectorStoreService.SearchResult> results = vectorStoreService.search(kbId, query, k);
+        List<VectorStoreLegacy.SearchResult> results = vectorStoreService.search(kbId, query, k);
         if (results.isEmpty()) return null;
 
         StringBuilder sb = new StringBuilder();
         int totalChars = 0;
-        for (LegacyVectorStoreService.SearchResult r : results) {
+        for (VectorStoreLegacy.SearchResult r : results) {
             if (r.score < scoreThreshold) continue;
             if (totalChars + r.text.length() > maxContextChars) break;
             sb.append("--- 来源: ").append(r.source).append(" (相似度: ")

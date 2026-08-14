@@ -12,16 +12,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -51,9 +50,10 @@ public class ConversationMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationMemoryService.class);
 
-    private StringRedisTemplate redisTemplate;
+    /** 短期记忆 + 用户画像 KV 存储（Redis 或纯内存，standalone 无 Redis 自动切换） */
+    private MemoryKVStore memoryStore;
     private LegacyEmbeddingService embeddingService;
-    private LegacyVectorStoreService vectorStoreService;
+    private VectorStoreLegacy vectorStoreService;
     private LLMInvokeService llmInvokeService;
     private final ObjectMapper objectMapper;
 
@@ -90,8 +90,8 @@ public class ConversationMemoryService {
     }
 
     @Autowired(required = false)
-    public void setRedisTemplate(StringRedisTemplate redisTemplate) {
-        this.redisTemplate = redisTemplate;
+    public void setMemoryStore(MemoryKVStore memoryStore) {
+        this.memoryStore = memoryStore;
     }
 
     @Autowired(required = false)
@@ -100,7 +100,7 @@ public class ConversationMemoryService {
     }
 
     @Autowired(required = false)
-    public void setVectorStoreService(LegacyVectorStoreService vectorStoreService) {
+    public void setVectorStoreService(VectorStoreLegacy vectorStoreService) {
         this.vectorStoreService = vectorStoreService;
     }
 
@@ -138,7 +138,7 @@ public class ConversationMemoryService {
     }
 
     private void saveToShortTerm(String scene, Long userId, String question, String answer) {
-        if (redisTemplate == null) return;
+        if (memoryStore == null) return;
         try {
             String key = getShortTermKey(scene, userId);
             String entry = objectMapper.writeValueAsString(Map.of(
@@ -146,11 +146,9 @@ public class ConversationMemoryService {
                     "answer", answer != null ? answer : "",
                     "timestamp", System.currentTimeMillis()
             ));
-            redisTemplate.opsForList().rightPush(key, entry);
-            // 只保留最近 N 轮（每轮 = 1 条 entry）
-            redisTemplate.opsForList().trim(key, -shortTermRounds, -1);
-            redisTemplate.expire(key, redisTtlHours, TimeUnit.HOURS);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException | org.springframework.data.redis.RedisSystemException e) {
+            // 追加并只保留最近 N 轮（Redis: RLPUSH+LTRIM；内存: 列表裁剪）
+            memoryStore.pushRightAndTrim(key, entry, shortTermRounds, Duration.ofHours(redisTtlHours));
+        } catch (Exception e) {
             log.warn("[Memory] 短期记忆保存失败 scene={} user={} error={}", scene, userId, e.getMessage());
         }
     }
@@ -168,8 +166,8 @@ public class ConversationMemoryService {
             List<Float> vec = new ArrayList<>();
             for (float v : vector) vec.add(v);
 
-            List<LegacyVectorStoreService.ChunkText> chunks = List.of(
-                    new LegacyVectorStoreService.ChunkText(combined, 0)
+            List<VectorStoreLegacy.ChunkText> chunks = List.of(
+                    new VectorStoreLegacy.ChunkText(combined, 0)
             );
             // 用固定 kbId=-1 表示记忆库，source 记录场景和时间
             String source = scene + "|" + userId + "|" + System.currentTimeMillis();
@@ -233,10 +231,10 @@ public class ConversationMemoryService {
     }
 
     private List<ConversationEntry> getShortTerm(String scene, Long userId) {
-        if (redisTemplate == null) return Collections.emptyList();
+        if (memoryStore == null) return Collections.emptyList();
         try {
             String key = getShortTermKey(scene, userId);
-            List<String> entries = redisTemplate.opsForList().range(key, 0, -1);
+            List<String> entries = memoryStore.range(key);
             if (entries == null || entries.isEmpty()) return Collections.emptyList();
 
             List<ConversationEntry> result = new ArrayList<>();
@@ -250,7 +248,7 @@ public class ConversationMemoryService {
                 ));
             }
             return result;
-        } catch (com.fasterxml.jackson.core.JsonProcessingException | org.springframework.data.redis.RedisSystemException e) {
+        } catch (Exception e) {
             log.warn("[Memory] 短期记忆读取失败 scene={} user={} error={}", scene, userId, e.getMessage());
             return Collections.emptyList();
         }
@@ -262,11 +260,11 @@ public class ConversationMemoryService {
         }
         try {
             ensureMemoryCollection();
-            List<LegacyVectorStoreService.SearchResult> results =
+            List<VectorStoreLegacy.SearchResult> results =
                     vectorStoreService.search(-1L, query, longTermTopK);
 
             List<ConversationEntry> result = new ArrayList<>();
-            for (LegacyVectorStoreService.SearchResult r : results) {
+            for (VectorStoreLegacy.SearchResult r : results) {
                 if (r.score < longTermThreshold) continue;
 
                 // 解析对话内容（格式: "用户: xxx\nAI: xxx"）
@@ -328,16 +326,16 @@ public class ConversationMemoryService {
      * 后续 buildMemoryContext 会把画像注入记忆上下文，让回答贴合用户偏好。</p>
      */
     public void updateUserProfile(String scene, Long userId, String question, String answer) {
-        if (llmInvokeService == null || redisTemplate == null) return;
+        if (llmInvokeService == null || memoryStore == null) return;
         if (question == null || question.isBlank()) return;
         try {
             Map<String, Object> extracted = extractUserProfile(question, answer);
             if (extracted == null || extracted.isEmpty()) return;
 
             Map<String, Object> merged = mergeProfile(readProfile(scene, userId), extracted);
-            redisTemplate.opsForValue().set(getProfileKey(scene, userId),
+            memoryStore.set(getProfileKey(scene, userId),
                     objectMapper.writeValueAsString(merged),
-                    profileTtlDays, TimeUnit.DAYS);
+                    Duration.ofDays(profileTtlDays));
             // L3: 画像持久化到 MySQL user_profiles（Redis 为主缓存，MySQL 保底不丢）
             persistProfile(scene, userId, merged);
             log.info("[Memory] 用户画像已更新 scene={} user={} emotions={} preferences={}",
@@ -409,17 +407,17 @@ public class ConversationMemoryService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> readProfile(String scene, Long userId) {
-        if (redisTemplate == null) return readProfileFromDb(scene, userId);
+        if (memoryStore == null) return readProfileFromDb(scene, userId);
         try {
-            String raw = redisTemplate.opsForValue().get(getProfileKey(scene, userId));
+            String raw = memoryStore.get(getProfileKey(scene, userId));
             if (raw == null || raw.isBlank()) {
-                // Redis 无画像（可能过期）：从 MySQL 恢复并回填 Redis
+                // 无画像（可能过期）：从 MySQL 恢复并回填 KV
                 Map<String, Object> fromDb = readProfileFromDb(scene, userId);
                 if (!fromDb.isEmpty()) {
                     try {
-                        redisTemplate.opsForValue().set(getProfileKey(scene, userId),
+                        memoryStore.set(getProfileKey(scene, userId),
                                 objectMapper.writeValueAsString(fromDb),
-                                profileTtlDays, TimeUnit.DAYS);
+                                Duration.ofDays(profileTtlDays));
                     } catch (Exception ignored) {
                     }
                 }
@@ -601,8 +599,8 @@ public class ConversationMemoryService {
      * 清除用户的短期记忆（Redis）
      */
     public void clearShortTerm(String scene, Long userId) {
-        if (redisTemplate == null) return;
-        redisTemplate.delete(getShortTermKey(scene, userId));
+        if (memoryStore == null) return;
+        memoryStore.delete(getShortTermKey(scene, userId));
     }
 
     // ==================== 数据结构 ====================

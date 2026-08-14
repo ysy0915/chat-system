@@ -20,6 +20,7 @@ import io.milvus.response.SearchResultsWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -42,8 +43,8 @@ import java.util.List;
  * 索引：HNSW + COSINE（适合语义相似度）
  */
 @Service
-@ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
-public class LegacyVectorStoreService implements VectorStore {
+@ConditionalOnExpression("'${app.rag.enabled:false}' == 'true' and '${app.rag.backend:milvus}' == 'milvus'")
+public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy {
 
     private static final Logger log = LoggerFactory.getLogger(LegacyVectorStoreService.class);
 
@@ -166,7 +167,7 @@ public class LegacyVectorStoreService implements VectorStore {
      * @param chunks 分片列表 [(text, chunkIndex), ...]
      * @param source 来源标记
      */
-    public void insertChunks(Long knowledgeBaseId, Long docId, List<ChunkText> chunks, String source) {
+    public void insertChunks(Long knowledgeBaseId, Long docId, List<VectorStoreLegacy.ChunkText> chunks, String source) {
         if (chunks == null || chunks.isEmpty()) return;
 
         String collectionName = getCollectionName(knowledgeBaseId);
@@ -213,7 +214,7 @@ public class LegacyVectorStoreService implements VectorStore {
      * 语义检索：根据 query 找最相似的 topK 个分片
      * @return 匹配的分片列表，按相似度降序
      */
-    public List<SearchResult> search(Long knowledgeBaseId, String query, int topK) {
+    public List<VectorStoreLegacy.SearchResult> search(Long knowledgeBaseId, String query, int topK) {
         String collectionName = getCollectionName(knowledgeBaseId);
         float[] queryVec = embeddingService.embed(query);
         return searchByVector(collectionName, queryVec, topK);
@@ -222,7 +223,7 @@ public class LegacyVectorStoreService implements VectorStore {
     /**
      * 按向量检索（内部复用；VectorStore SPI 适配走此路径，避免重复 embedding）。
      */
-    private List<SearchResult> searchByVector(String collectionName, float[] queryVec, int topK) {
+    private List<VectorStoreLegacy.SearchResult> searchByVector(String collectionName, float[] queryVec, int topK) {
         List<Float> vec = new ArrayList<>();
         for (float v : queryVec) vec.add(v);
 
@@ -247,7 +248,7 @@ public class LegacyVectorStoreService implements VectorStore {
                 String source = wrapper.getFieldData("source", 0).get(i).toString();
                 long docId = Long.parseLong(wrapper.getFieldData("doc_id", 0).get(i).toString());
 
-                results.add(new SearchResult(text, source, docId, score.getScore()));
+                results.add(new VectorStoreLegacy.SearchResult(text, source, docId, score.getScore()));
             }
             log.info("[VectorStore] 检索 collection={} topK={} 命中={}", collectionName, topK, results.size());
             return results;
@@ -290,19 +291,19 @@ public class LegacyVectorStoreService implements VectorStore {
         }
         Long kbId = kbIdOfCollection(collection);
         String source = records.get(0).source;
-        List<ChunkText> chunks = new ArrayList<>();
+        List<VectorStoreLegacy.ChunkText> chunks = new ArrayList<>();
         int idx = 0;
         for (VectorRecord r : records) {
-            chunks.add(new ChunkText(r.text, idx++));
+            chunks.add(new VectorStoreLegacy.ChunkText(r.text, idx++));
         }
         insertChunks(kbId, -1L, chunks, source);
     }
 
     @Override
     public List<VectorHit> search(String collection, float[] queryVector, int topK) {
-        List<SearchResult> results = searchByVector(collection, queryVector, topK);
+        List<VectorStoreLegacy.SearchResult> results = searchByVector(collection, queryVector, topK);
         List<VectorHit> hits = new ArrayList<>();
-        for (SearchResult r : results) {
+        for (VectorStoreLegacy.SearchResult r : results) {
             hits.add(new VectorHit(r.text, r.source, r.score));
         }
         return hits;
@@ -345,29 +346,5 @@ public class LegacyVectorStoreService implements VectorStore {
             return "conversation_memory";
         }
         return collectionPrefix + knowledgeBaseId;
-    }
-
-    /** 文档分片（入库前） */
-    public static class ChunkText {
-        public final String text;
-        public final int chunkIndex;
-        public ChunkText(String text, int chunkIndex) {
-            this.text = text;
-            this.chunkIndex = chunkIndex;
-        }
-    }
-
-    /** 检索结果 */
-    public static class SearchResult {
-        public final String text;
-        public final String source;
-        public final long docId;
-        public final float score;
-        public SearchResult(String text, String source, long docId, float score) {
-            this.text = text;
-            this.source = source;
-            this.docId = docId;
-            this.score = score;
-        }
     }
 }

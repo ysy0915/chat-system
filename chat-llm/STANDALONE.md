@@ -2,6 +2,7 @@
 
 > chat-llm 可脱离完整项目独立运行，作为通用 LLM 网关使用。
 > 只需配置 API Key，无需 MySQL/Redis/RabbitMQ/Neo4j/Milvus。
+> 模型管理面 / RAG 检索 / 对话记忆 / 知识图谱 均内置**纯内存实现**（零外部依赖），开箱即用。
 
 ## 快速启动
 
@@ -163,10 +164,95 @@ public class MyProviderFactory implements LLMProviderFactory {
 | 熔断/重试/限流（Resilience4j） | ✅ | ✅ |
 | gRPC 接口 | ✅ | ✅ |
 | Prometheus 指标 | ✅ | ✅ |
-| 模型管理面（DB CRUD） | ❌ | ✅ |
-| RAG 知识库检索 | ❌ | ✅ |
-| 对话记忆（短期/长期/画像） | ❌ | ✅ |
-| 知识图谱（Neo4j） | ❌ | ✅ |
+| 模型管理面（DB CRUD） | ✅（纯内存） | ✅ |
+| RAG 知识库检索 | ✅（纯内存向量库） | ✅（Milvus） |
+| 对话记忆（短期/长期/画像） | ✅（纯内存 KV + 向量库） | ✅（Redis + Milvus） |
+| 知识图谱 | ✅（纯内存图） | ✅（Neo4j） |
+
+## 增强能力（纯内存实现）
+
+standalone 模式默认启用以下能力（`application-standalone.yml`）：
+
+```yaml
+app:
+  rag:
+    enabled: true
+    backend: memory          # milvus=生产向量库（需外部依赖），memory=纯内存向量库
+    embedding:
+      api-key: ${EMBEDDING_API_KEY:${QWEN_API_KEY:}}  # 向量化可复用 LLM Key（DashScope text-embedding-v3）
+  knowledge-graph:
+    enabled: true
+    backend: memory          # neo4j=生产图谱（需外部依赖），memory=纯内存图
+  llm:
+    admin:
+      memory: true           # 模型管理面使用纯内存仓储（DB 模式自动使用 MySQL 三表）
+  mapper-scan:
+    enabled: false           # 无 DB，关闭 MyBatis Mapper 扫描
+```
+
+> 数据仅存内存，重启即清空；生产请使用 milvus/neo4j backend 并接入 MySQL。
+
+### 1. 模型管理面（DB CRUD → 内存 CRUD）
+
+与完整模式同一套 API，增删改查写内存（`InMemoryLlmRoutingRepository`），apiKey 同样不回传：
+
+```bash
+# 新增提供商（providerName/baseUrl 必填）
+curl -X POST http://localhost:9095/api/v1/llm/admin/providers \
+  -H "Content-Type: application/json" \
+  -d '{"providerName":"ollama","providerType":"openai","baseUrl":"http://localhost:11434/v1","apiKey":"","models":[{"modelName":"llama3","displayName":"Llama 3"}]}'
+
+# 列表（YAML 静态 + 内存 DB 合并视图）
+curl http://localhost:9095/api/v1/llm/admin/providers
+```
+
+### 2. RAG 知识库检索（纯内存向量库）
+
+知识库 CRUD 走 MySQL（无 DB 时用 `InMemoryRAGRepository`），文档分片 + 向量化后存内存向量库（余弦相似度 TopK）：
+
+```bash
+# 创建知识库
+curl -X POST http://localhost:9095/api/v1/rag/kb \
+  -H "Content-Type: application/json" \
+  -d '{"name":"demo","description":"演示库"}'
+
+# 内部检索（chat-core 同款接口）
+curl -X POST http://localhost:9095/internal/rag/search \
+  -H "Content-Type: application/json" \
+  -d '{"kbId":1,"query":"如何部署","topK":3}'
+```
+
+### 3. 对话记忆（短期 KV + 长期事实向量）
+
+短期记忆存内存 KV（`InMemoryMemoryKVStore`，Redis 版自动降级），长期记忆 = LLM 抽取事实 → 向量化 → 内存向量库召回：
+
+```bash
+# 保存一轮对话（异步抽取用户事实）
+curl -X POST http://localhost:9095/internal/rag/memory/save \
+  -H "Content-Type: application/json" \
+  -d '{"scene":"chat","userId":1,"question":"我是Java开发者","answer":"好的！"}'
+
+# 取记忆上下文（短期 + 长期合并）
+curl -X POST http://localhost:9095/internal/rag/memory/context \
+  -H "Content-Type: application/json" \
+  -d '{"scene":"chat","userId":1,"question":"你好"}'
+
+# 语义召回用户事实（供 System Prompt 注入）
+curl -X POST http://localhost:9095/internal/rag/memory/facts/recall \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"question":"我的职业","topK":3}'
+```
+
+### 4. 知识图谱（纯内存图）
+
+`InMemoryKnowledgeGraphService` 实现 `GraphStore` 门面，图结构存 `ConcurrentHashMap`：
+
+```bash
+curl http://localhost:9095/internal/graph/stats        # {"entityCount":0,"relationCount":0}
+curl "http://localhost:9095/internal/graph?limit=50"    # 全图
+curl -X POST http://localhost:9095/internal/graph/extract -H "Content-Type: application/json" \
+  -d '{"messageId":1,"question":"...","answer":"...","source":"demo"}'
+```
 
 ## 环境变量
 
@@ -178,6 +264,7 @@ public class MyProviderFactory implements LLMProviderFactory {
 | `QWEN_API_KEY` | 千问 API Key | |
 | `DOUBAO_API_KEY` | 豆包 API Key | |
 | `OPENAI_API_KEY` | OpenAI API Key | |
+| `EMBEDDING_API_KEY` | RAG/记忆向量化 API Key（缺省回退 `QWEN_API_KEY`） | |
 
 ## 架构
 

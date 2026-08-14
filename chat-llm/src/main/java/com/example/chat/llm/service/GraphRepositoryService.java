@@ -6,7 +6,7 @@ import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -20,7 +20,7 @@ import java.util.Set;
  * 图谱持久化服务 —— 封装所有 Neo4j 读写操作（纯 Cypher 层），不涉及 LLM。
  */
 @Service
-@ConditionalOnProperty(name = "app.knowledge-graph.enabled", havingValue = "true")
+@ConditionalOnExpression("'${app.knowledge-graph.enabled:false}' == 'true' and '${app.knowledge-graph.backend:neo4j}' == 'neo4j'")
 public class GraphRepositoryService {
 
     private static final Logger log = LoggerFactory.getLogger(GraphRepositoryService.class);

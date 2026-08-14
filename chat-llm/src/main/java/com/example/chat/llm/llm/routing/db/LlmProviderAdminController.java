@@ -34,7 +34,7 @@ import java.util.Map;
  */
 @Tag(name = "LLM 模型管理", description = "模型/厂商自助接入管理面")
 @RestController
-@ConditionalOnProperty(name = "spring.datasource.url")
+@ConditionalOnProperty(name = "app.llm.admin.enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping("/api/v1/llm/admin/providers")
 public class LlmProviderAdminController {
 

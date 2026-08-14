@@ -1,6 +1,6 @@
 package com.example.chat.llm.controller;
 
-import com.example.chat.llm.service.KnowledgeGraphService;
+import com.example.chat.llm.service.KnowledgeGraphFacade;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
@@ -34,9 +34,9 @@ public class KnowledgeGraphController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeGraphController.class);
 
-    private final KnowledgeGraphService knowledgeGraphService;
+    private final KnowledgeGraphFacade knowledgeGraphService;
 
-    public KnowledgeGraphController(KnowledgeGraphService knowledgeGraphService) {
+    public KnowledgeGraphController(KnowledgeGraphFacade knowledgeGraphService) {
         this.knowledgeGraphService = knowledgeGraphService;
     }
 

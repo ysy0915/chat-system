@@ -5,7 +5,7 @@ import io.milvus.param.ConnectParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
  * 但代码归属已在 chat-llm 模块（知识库管理 + 对话记忆 + 按 kbId 检索）。
  */
 @Configuration
-@ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnExpression("'${app.rag.enabled:false}' == 'true' and '${app.rag.backend:milvus}' == 'milvus'")
 public class LegacyRagConfig {
 
     private static final Logger log = LoggerFactory.getLogger(LegacyRagConfig.class);

@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -38,7 +39,7 @@ public class TripleExtractionService {
     private final DirectLLMClient directLLMClient;
 
     public TripleExtractionService(ObjectMapper objectMapper,
-                                   ModelConfigRepository modelConfigRepository,
+                                   @Autowired(required = false) ModelConfigRepository modelConfigRepository,
                                    BaseUrlResolver baseUrlResolver,
                                    LlmConfigProperties llmConfig,
                                    DirectLLMClient directLLMClient) {
@@ -96,21 +97,23 @@ public class TripleExtractionService {
         String baseUrl = llmConfig.getBaseUrl();
         String model = llmConfig.getModel();
 
-        try {
-            List<ModelConfig> configs = modelConfigRepository.findAllEnabledByType("chat");
-            if (configs != null && !configs.isEmpty()) {
-                ModelConfig chosen = configs.stream()
-                        .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "dashscope".equalsIgnoreCase(c.provider))
-                        .findFirst()
-                        .orElse(configs.get(0));
-                if (chosen.apiKeyEncrypted != null && !chosen.apiKeyEncrypted.isBlank()) {
-                    apiKey = chosen.apiKeyEncrypted;
+        if (modelConfigRepository != null) {
+            try {
+                List<ModelConfig> configs = modelConfigRepository.findAllEnabledByType("chat");
+                if (configs != null && !configs.isEmpty()) {
+                    ModelConfig chosen = configs.stream()
+                            .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "dashscope".equalsIgnoreCase(c.provider))
+                            .findFirst()
+                            .orElse(configs.get(0));
+                    if (chosen.apiKeyEncrypted != null && !chosen.apiKeyEncrypted.isBlank()) {
+                        apiKey = chosen.apiKeyEncrypted;
+                    }
+                    baseUrl = baseUrlResolver.resolve(chosen, baseUrl);
+                    if (chosen.model != null && !chosen.model.isBlank()) model = chosen.model;
                 }
-                baseUrl = baseUrlResolver.resolve(chosen, baseUrl);
-                if (chosen.model != null && !chosen.model.isBlank()) model = chosen.model;
+            } catch (DataAccessException e) {
+                log.warn("[KnowledgeGraph] 获取模型配置失败，使用默认配置: {}", e.getMessage());
             }
-        } catch (DataAccessException e) {
-            log.warn("[KnowledgeGraph] 获取模型配置失败，使用默认配置: {}", e.getMessage());
         }
 
         try {

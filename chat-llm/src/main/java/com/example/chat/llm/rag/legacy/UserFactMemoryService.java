@@ -1,9 +1,5 @@
 package com.example.chat.llm.rag.legacy;
 
-import com.example.chat.dto.LangChainRequest;
-import com.example.chat.dto.LangChainResponse;
-import com.example.chat.llm.service.LLMInvokeService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.grpc.ConsistencyLevel;
 import io.milvus.grpc.DataType;
@@ -23,7 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -45,8 +41,8 @@ import java.util.concurrent.TimeUnit;
  * <p>Collection 结构：id(自增) / user_id / fact / source_scene / ts / embedding(1024维 COSINE)。</p>
  */
 @Service
-@ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
-public class UserFactMemoryService {
+@ConditionalOnExpression("'${app.rag.enabled:false}' == 'true' and '${app.rag.backend:milvus}' == 'milvus'")
+public class UserFactMemoryService implements UserFactMemory {
 
     private static final Logger log = LoggerFactory.getLogger(UserFactMemoryService.class);
 
@@ -55,8 +51,7 @@ public class UserFactMemoryService {
 
     private final MilvusServiceClient milvusClient;
     private final LegacyEmbeddingService embeddingService;
-    private final LLMInvokeService llmInvokeService;
-    private final ObjectMapper objectMapper;
+    private final FactExtractor factExtractor;
     private StringRedisTemplate redisTemplate;
 
     @Value("${app.rag.memory.fact-dimension:1024}")
@@ -68,27 +63,16 @@ public class UserFactMemoryService {
     @Value("${app.rag.memory.fact-threshold:0.35}")
     private float recallThreshold;
 
-    @Value("${app.rag.memory.fact-provider:qwen}")
-    private String factProvider;
-
-    @Value("${app.rag.memory.fact-model:qwen-turbo}")
-    private String factModel;
-
-    @Value("${app.rag.memory.fact-max-per-round:5}")
-    private int maxFactsPerRound;
-
     /** Redis 去重集合 key 前缀（事实指纹，避免重复入库） */
     private static final String FACT_SEEN_PREFIX = "memory:fact:seen:";
 
     @Autowired
     public UserFactMemoryService(@Qualifier("milvusServiceClient") MilvusServiceClient milvusClient,
                                  LegacyEmbeddingService embeddingService,
-                                 LLMInvokeService llmInvokeService,
-                                 ObjectMapper objectMapper) {
+                                 FactExtractor factExtractor) {
         this.milvusClient = milvusClient;
         this.embeddingService = embeddingService;
-        this.llmInvokeService = llmInvokeService;
-        this.objectMapper = objectMapper;
+        this.factExtractor = factExtractor;
     }
 
     @Autowired(required = false)
@@ -108,11 +92,12 @@ public class UserFactMemoryService {
      * @param question 用户问题
      * @param answer   AI 回答
      */
+    @Override
     public void saveFacts(String scene, Long userId, String question, String answer) {
         if (userId == null || question == null || question.isBlank()) return;
         try {
             ensureCollection();
-            List<String> facts = extractFacts(question, answer);
+            List<String> facts = factExtractor.extractFacts(question, answer);
             if (facts.isEmpty()) {
                 log.debug("[FactMemory] 本轮无新事实 scene={} user={}", scene, userId);
                 return;
@@ -138,6 +123,7 @@ public class UserFactMemoryService {
      * @param question 当前问题（查询向量）
      * @return 召回的事实列表（按相关度降序，已按 user_id 过滤）
      */
+    @Override
     public List<String> recallFacts(Long userId, String question, int topK) {
         if (userId == null || question == null || question.isBlank()) return List.of();
         try {
@@ -231,60 +217,6 @@ public class UserFactMemoryService {
     // ═══════════════════════════════════════════════════════════════════
     //  内部
     // ═══════════════════════════════════════════════════════════════════
-
-    /** LLM 抽取关键事实（JSON 数组） */
-    @SuppressWarnings("unchecked")
-    private List<String> extractFacts(String question, String answer) {
-        try {
-            String systemPrompt =
-                    "你是一名用户记忆分析师，任务是从用户与AI的对话中抽取关于用户的【持久事实】。\n" +
-                    "持久事实 = 用户的身份、职业、偏好、习惯、背景等，能在未来对话中帮助AI更好地服务该用户。\n" +
-                    "规则：\n" +
-                    "1. 只抽取关于用户的明确事实（如\"用户是Java开发者\"、\"用户不喜欢冗长的解释\"）；\n" +
-                    "2. 忽略AI回答的内容本身、一次性问题（如时间天气查询）、无信息量的寒暄；\n" +
-                    "3. 每条事实为简短的陈述句（≤30字），不得出现\"用户说\"\"用户表示\"等前缀；\n" +
-                    "4. 最多抽取5条；没有可抽取的事实则输出空数组 [];\n" +
-                    "5. 仅输出JSON数组字符串，不要输出任何解释或多余文字。";
-
-            String userContent = "用户的发言：\n" + question +
-                    "\n\nAI的回应：\n" + (answer != null ? answer : "");
-
-            LangChainRequest req = new LangChainRequest();
-            req.setBizType("RAG");
-            req.setProvider(factProvider);
-            req.setModel(factModel);
-            req.setTemperature(0.1);
-            req.setMaxTokens(500);
-            req.setMessages(List.of(
-                    Map.of("role", "system", "content", systemPrompt),
-                    Map.of("role", "user", "content", userContent)
-            ));
-
-            LangChainResponse resp = llmInvokeService.invoke(req);
-            if (!resp.isSuccess() || resp.getContent() == null || resp.getContent().isBlank()) {
-                log.warn("[FactMemory] 抽取失败 provider={} error={}", factProvider, resp.getError());
-                return List.of();
-            }
-            String content = resp.getContent().trim();
-            int start = content.indexOf('[');
-            int end = content.lastIndexOf(']');
-            if (start < 0 || end <= start) return List.of();
-
-            List<Object> raw = objectMapper.readValue(content.substring(start, end + 1), List.class);
-            List<String> facts = new ArrayList<>();
-            for (Object o : raw) {
-                String s = String.valueOf(o).trim();
-                if (s.length() > 2 && s.length() <= 60 && !facts.contains(s)) {
-                    facts.add(s);
-                }
-                if (facts.size() >= maxFactsPerRound) break;
-            }
-            return facts;
-        } catch (Exception e) {
-            log.warn("[FactMemory] 抽取解析失败: {}", e.getMessage());
-            return List.of();
-        }
-    }
 
     /** 插入单条事实到 Milvus */
     private boolean insertFact(Long userId, String fact, String scene) {

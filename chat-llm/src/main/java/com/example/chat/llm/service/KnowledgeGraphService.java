@@ -10,7 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -28,8 +28,8 @@ import java.util.concurrent.TimeUnit;
  * 知识图谱服务（编排层）—— 管理 Neo4j 连接生命周期，将具体逻辑委托给子服务。
  */
 @Service
-@ConditionalOnProperty(name = "app.knowledge-graph.enabled", havingValue = "true")
-public class KnowledgeGraphService implements GraphStore {
+@ConditionalOnExpression("'${app.knowledge-graph.enabled:false}' == 'true' and '${app.knowledge-graph.backend:neo4j}' == 'neo4j'")
+public class KnowledgeGraphService implements GraphStore, KnowledgeGraphFacade {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeGraphService.class);
 
@@ -137,6 +137,7 @@ public class KnowledgeGraphService implements GraphStore {
 
     // ---- 异步抽取 ----
 
+    @Override
     public void extractAndSaveAsync(Long messageId, String question, String answer, String source) {
         if (!enabled || neo4jDriver == null) return;
         if (question == null || question.isBlank() || answer == null || answer.isBlank()) return;
@@ -168,20 +169,24 @@ public class KnowledgeGraphService implements GraphStore {
 
     // ---- 图谱查询（委托） ----
 
+    @Override
     public Map<String, Object> getGraph(int limit, int minEntityWeight, int minRelationWeight) {
         return graphRepositoryService.getGraph(neo4jDriver, limit, minEntityWeight, minRelationWeight);
     }
 
+    @Override
     public Map<String, Object> searchEntities(String keyword, int limit, int minEntityWeight, int minRelationWeight) {
         return graphRepositoryService.searchEntities(neo4jDriver, keyword, limit, minEntityWeight, minRelationWeight);
     }
 
+    @Override
     public Map<String, Object> getStats() {
         return graphRepositoryService.getStats(neo4jDriver);
     }
 
     // ---- 批量导入 ----
 
+    @Override
     public boolean startBatchImport() {
         if (!enabled || neo4jDriver == null) return false;
         if (importing) return false;
@@ -199,6 +204,7 @@ public class KnowledgeGraphService implements GraphStore {
         return true;
     }
 
+    @Override
     public boolean isImporting() {
         return importing;
     }

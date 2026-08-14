@@ -25,6 +25,7 @@ spring:
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
       - org.springframework.boot.autoconfigure.data.neo4j.Neo4jDataAutoConfiguration
       - org.springframework.boot.autoconfigure.data.neo4j.Neo4jReactiveDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.neo4j.Neo4jAutoConfiguration
       - org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration
   cloud:
     nacos:
@@ -38,11 +39,30 @@ grpc:
   server:
     port: ${GRPC_PORT:9195}
 
-# RAG / 知识图谱 / 记忆 — 全部关闭
+# RAG / 知识图谱 / 对话记忆 — 全部启用，纯内存实现（app.rag.backend=memory / app.knowledge-graph.backend=memory）
+# 模型管理面（DB CRUD）— 纯内存实现（app.llm.admin.memory=true），可用 /api/v1/llm/admin/providers 自助接入模型
+# 向量化需要外部 Embedding API：可复用 LLM API Key（DashScope）或单独配置 EMBEDDING_API_KEY
 app:
   rag:
-    enabled: false
+    enabled: true
+    backend: memory
+    embedding:
+      provider: dashscope
+      mode: dashscope
+      base-url: https://dashscope.aliyuncs.com/api/v1
+      api-key: ${EMBEDDING_API_KEY:${QWEN_API_KEY:}}
+      model: text-embedding-v3
+      dimension: 1024
   knowledge-graph:
+    enabled: true
+    backend: memory
+  llm:
+    admin:
+      memory: true
+  security:
+    enabled: false
+  # standalone 无 DB：关闭 MyBatis Mapper 扫描（模型管理面/知识库仓储由内存实现接管）
+  mapper-scan:
     enabled: false
 
 # LLM 配置 — 只需配 API Key
@@ -125,10 +145,6 @@ management:
       show-details: always
 
 # Security — standalone 模式关闭认证
-app:
-  security:
-    enabled: false
-
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"

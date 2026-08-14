@@ -57,10 +57,11 @@ public class LlmApplication {
     }
 
     /**
-     * 有 DataSource 时才启用 MapperScan（避免 standalone 模式无 DB 启动失败）
+     * 有 DataSource 时才启用 MapperScan（避免 standalone 模式无 DB 启动失败）。
+     * 由 app.mapper-scan.enabled 控制（默认 true，standalone 配置中显式关闭）。
      */
     @org.springframework.context.annotation.Configuration
-    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "spring.datasource.url")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.mapper-scan.enabled", havingValue = "true", matchIfMissing = true)
     @MapperScan({"com.example.chat.repository",
             "com.example.chat.llm.rag.legacy",
             "com.example.chat.llm.llm.routing.db"})

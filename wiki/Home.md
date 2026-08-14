@@ -108,11 +108,13 @@ cd frontend && npm install && npm run dev
 
 ### LLM 独立部署（standalone 纯内存模式）
 
-chat-llm 支持**零外部依赖独立部署**：无需 MySQL/Redis/Neo4j/Milvus，模型管理面、RAG 检索、对话记忆、知识图谱四大能力全部使用纯内存实现，单个进程即可完整体验。
+chat-llm 支持**零外部依赖独立部署**：无需 MySQL/Redis/Neo4j/Milvus，模型管理面、RAG 检索、对话记忆、知识图谱四大能力全部使用纯内存实现，单个进程即可完整体验。适合本地演示、单机验证或作为通用 LLM 网关使用。
+
+#### JAR 启动
 
 ```bash
-# 1. 打包
-mvn clean install -DskipTests
+# 1. 打包（只需 chat-llm 及其依赖 chat-common）
+mvn clean install -DskipTests -pl chat-llm -am
 
 # 2. 配置 API Key（需要哪个厂商配哪个，不配则该厂商不可用但应用正常启动）
 export DEEPSEEK_API_KEY=sk-xxx      # DeepSeek
@@ -121,12 +123,26 @@ export DOUBAO_API_KEY=sk-xxx        # 豆包
 # 可选：单独指定向量化 Key（缺省回退 QWEN_API_KEY）
 export EMBEDDING_API_KEY=sk-xxx
 
-# 3. 启动 standalone（默认端口 9095）
+# 3. 启动 standalone（HTTP 9095 / gRPC 9195）
 java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=standalone --server.port=9095
 ```
 
-验证：
+#### Docker 启动
+
+```bash
+# 构建镜像（Dockerfile-llm 多阶段构建，无需本机 Maven/JDK）
+docker build -f Dockerfile-llm -t chat-llm:latest .
+
+# 启动容器（注入 API Key 环境变量）
+docker run -d --name chat-llm \
+  -p 9095:9095 -p 9195:9195 \
+  -e DEEPSEEK_API_KEY=sk-xxx \
+  -e QWEN_API_KEY=sk-xxx \
+  chat-llm:latest
+```
+
+#### 验证
 
 ```bash
 # 健康检查
@@ -141,9 +157,21 @@ curl -X POST http://localhost:9095/api/v1/llm/admin/providers \
 curl -X POST http://localhost:9095/api/v1/chain/invoke \
   -H "Content-Type: application/json" \
   -d '{"provider":"qwen","model":"qwen-plus","messages":[{"role":"user","content":"你好"}]}'
+
+# SSE 流式调用
+curl -N -X POST http://localhost:9095/api/v1/chain/stream \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"qwen","model":"qwen-plus","messages":[{"role":"user","content":"写一首关于秋天的诗"}]}'
 ```
 
-> **注意**：内存数据**重启即清空**，仅适合本地演示 / 单机验证；生产请使用默认 `local` profile 并接入 MySQL/Redis/Milvus/Neo4j。完整说明与全部 curl 示例见 `chat-llm/STANDALONE.md`。
+#### 端口说明
+
+| 端口 | 协议 | 用途 |
+|------|------|------|
+| 9095 | HTTP | REST API（对话、模型管理面、RAG、知识图谱） |
+| 9195 | gRPC | 图执行引擎 gRPC 接口（LangGraph 编排） |
+
+> **注意**：内存数据**重启即清空**，仅适合本地演示 / 单机验证；生产请使用 `local` 或 `prod` profile 并接入 MySQL/Redis/Milvus/Neo4j。完整说明与全部 curl 示例见 `chat-llm/STANDALONE.md`。
 
 ### Docker 部署
 
@@ -163,7 +191,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d   # 生产
 | 架构设计 | 双 core/双 web 高可用 + Multi-Agent 并行工作流（DLX 死信重试 + Reconciler 对账） |
 | 模型抽象 | SPI 策略工厂 + 动态路由 + 工具平台化 + 存储 SPI 热插拔 |
 | 可观测性 | Prometheus 监控栈（12 条告警规则）+ 全链路追踪 |
-| 文档 | 7 类文档中心 + ADR 23 条 + Swagger |
+| 文档 | 7 类文档中心 + ADR 24 条 + Swagger |
 | CI/CD | GitHub Actions CI + Deploy + Security + OWASP |
 | 安全性 | JWT 弱密钥校验 + 三层限流 + 内容安全过滤 |
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
+import { LanguageProvider, useLanguage } from './i18n/LanguageContext'
 import NavBar, { PUBLIC_PAGES } from './components/NavBar'
 import AuthModal from './components/AuthModal'
 import AnnouncementModal from './components/AnnouncementModal'
@@ -80,6 +81,7 @@ function KeepAliveShell({ pathname }) {
 const KeepAliveShellMemo = React.memo(KeepAliveShell, (prev, next) => prev.pathname === next.pathname)
 
 function AppShell(){
+    const { t } = useLanguage()
     const [authUser, setAuthUser] = useState(null)
     const [authModal, setAuthModal] = useState(null)
     const [disclaimerOpen, setDisclaimerOpen] = useState(false)
@@ -170,18 +172,18 @@ function AppShell(){
                 <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
                               alignItems: 'center', justifyContent: 'center', gap: 16, color: '#64748b' }}>
                     <div style={{ fontSize: 48 }}>🔐</div>
-                    <p style={{ fontSize: 16, fontWeight: 500 }}>请先登录后使用该功能</p>
+                    <p style={{ fontSize: 16, fontWeight: 500 }}>{t('common.loginRequired')}</p>
                     <button
                         type="button"
                         onClick={() => openAuth('login', location.pathname)}
                         className="navbar-auth-btn navbar-reg-btn"
-                    >去登录 / 注册</button>
+                    >{t('common.goLoginRegister')}</button>
                 </div>
             ) : (
                 <>
                     <KeepAliveShellMemo pathname={location.pathname} />
                     {/* 非常驻页面：仅访问时挂载，离开即卸载 */}
-                    <Suspense fallback={<div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b' }}>加载中...</div>}>
+                    <Suspense fallback={<div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b' }}>{t('common.loading')}</div>}>
                         {ephemeralRoute && ephemeralRoute.element}
                     </Suspense>
                     {/* 兜底：未知路径显示 Landing */}
@@ -202,8 +204,10 @@ function AppShell(){
 
 export default function App(){
     return (
-        <BrowserRouter basename="/chat">
-            <AppShell />
-        </BrowserRouter>
+        <LanguageProvider>
+            <BrowserRouter basename="/chat">
+                <AppShell />
+            </BrowserRouter>
+        </LanguageProvider>
     )
 }

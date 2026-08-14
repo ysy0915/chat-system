@@ -11,8 +11,10 @@ import { useStompConnection } from '../hooks/useStompConnection'
 import AiMessageBubble from '../components/chat/AiMessageBubble'
 import TypingIndicator from '../components/chat/TypingIndicator'
 import ChatInputBar from '../components/chat/ChatInputBar'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function PersonalChat() {
+  const { t } = useLanguage()
   // KeepAlive 会缓存本组件（离开页面也不卸载），断开跳转仅应在当前路由实际可见时执行，
   // 否则后台断开会触发 window.location 整页刷新，造成"页面每几秒刷新"的无限循环
   const location = useLocation()
@@ -120,7 +122,7 @@ export default function PersonalChat() {
         const models = (res.data || []).filter(m => m.enabled !== false && (m.modelType || 'chat') === 'chat')
         setModelList(models.map(m => ({
           id: m.id,
-          label: m.model || m.provider || '未知',
+          label: m.model || m.provider || t('personal.unknownModel'),
           provider: m.provider,
           model: m.model,
         })))
@@ -175,7 +177,7 @@ export default function PersonalChat() {
     if (circuitOpen) return
     setCurrentModel(model.label)
     setCurrentModelId(model.id)
-    setMessages(prev => [...prev, { role: 'system', content: `已切换到 ${model.label}` }])
+    setMessages(prev => [...prev, { role: 'system', content: t('personal.switchedModel', { model: model.label }) }])
   }
 
   useEffect(() => {
@@ -216,7 +218,7 @@ export default function PersonalChat() {
     failCountRef.current += 1
     if (failCountRef.current >= CIRCUIT_THRESHOLD && !circuitTimerRef.current) {
       setCircuitOpen(true)
-      setMessages(prev => [...prev, { role: 'system', content: '⚡ 当前请求过于频繁，服务暂时过载，请 30 秒后再试' }])
+      setMessages(prev => [...prev, { role: 'system', content: t('personal.rateLimited') }])
       circuitTimerRef.current = setTimeout(() => {
         setCircuitOpen(false)
         failCountRef.current = 0
@@ -229,7 +231,7 @@ export default function PersonalChat() {
     e?.preventDefault?.()
     if (!question.trim() && !selectedFile) return
     if (circuitOpen) {
-      setMessages(prev => [...prev, { role: 'system', content: '⚡ 服务熔断中，请稍后再试' }])
+      setMessages(prev => [...prev, { role: 'system', content: t('personal.circuitBreaker') }])
       return
     }
     if (disconnectedRef.current) {
@@ -239,12 +241,12 @@ export default function PersonalChat() {
     // 等待WebSocket连接建立
     const connected = await ensureConnected()
     if (!connected) {
-      setMessages(prev => [...prev, { role: 'system', content: '连接未就绪，请返回首页重试', action: 'home' }])
+      setMessages(prev => [...prev, { role: 'system', content: t('personal.connNotReady'), action: 'home' }])
       return
     }
     const fileToSend = selectedFile
     const isImageFile = fileToSend && fileToSend.type.startsWith('image/')
-    const text = question.trim() || (isImageFile ? '请描述这张图片' : (fileToSend ? '请分析这份文件' : ''))
+    const text = question.trim() || (isImageFile ? t('personal.describeImage') : (fileToSend ? t('personal.analyzeFile') : ''))
     const reqId = generateId()
 
     const fileLabel = fileToSend ? ` 📎 ${fileToSend.name}` : ''
@@ -285,16 +287,16 @@ export default function PersonalChat() {
       console.error(e)
       setTyping(false)
       if (e.response?.status === 400) {
-        const msg = e.response.data?.error || '问题包含敏感内容，请修改后重试'
+        const msg = e.response.data?.error || t('personal.sensitiveContent')
         setMessages(prev => [...prev, { role: 'system', content: '🚫 ' + msg }])
       } else if (e.response?.status === 429) {
-        const msg = e.response.data?.error || '请求过于频繁，请稍后再试'
+        const msg = e.response.data?.error || t('personal.rateLimitRetry')
         triggerFailure()
         setMessages(prev => [...prev, { role: 'system', content: '⏳ ' + msg }])
       } else {
         triggerFailure()
         if (!circuitOpen) {
-          setMessages(prev => [...prev, { role: 'system', content: '发送失败，请重试' }])
+          setMessages(prev => [...prev, { role: 'system', content: t('personal.sendFailed') }])
         }
       }
     }
@@ -316,8 +318,8 @@ export default function PersonalChat() {
     }
     setMessages(prev => {
       const last = prev[prev.length - 1]
-      if (last && last.role === 'system' && last.content.includes('连接已断开')) return prev
-      return [...prev, { role: 'system', content: '⏰ 因长时间未操作，连接已断开，即将返回首页', action: 'home' }]
+      if (last && last.role === 'system' && last.action === 'home') return prev
+      return [...prev, { role: 'system', content: t('personal.connLost'), action: 'home' }]
     })
     setRedirectCountdown(3)
   }
@@ -365,7 +367,7 @@ export default function PersonalChat() {
               const updated = [...prev]
               updated[updated.length - 1] = {
                 role: 'ai', content: answer || last.content, streaming: false,
-                thinking: '',  // 输出完成后清除思考过程
+                thinking: last.thinking || '',  // 保留思考过程（前端折叠展示）
                 latency: payload.latency, tokens: payload.tokens, model: payload.model,
                 reqId: last.reqId
               }
@@ -387,7 +389,7 @@ export default function PersonalChat() {
               const updated = [...prev]
               updated[updated.length - 1] = {
                 role: 'ai', content: answer || last.content, streaming: false, stopped: true,
-                thinking: '',
+                thinking: last.thinking || '',  // 保留思考过程（前端折叠展示）
                 reqId: last.reqId
               }
               return updated
@@ -398,7 +400,7 @@ export default function PersonalChat() {
           setTyping(false)
           streamingReqIdRef.current = null
           triggerFailure()
-          const errMsg = payload.message || '处理失败，请稍后重试'
+          const errMsg = payload.message || t('personal.processFailed')
           setMessages(prev => {
             const last = prev[prev.length - 1]
             if (last && last.role === 'ai' && last.streaming) {
@@ -484,7 +486,7 @@ export default function PersonalChat() {
     } catch (e) {
       console.error('重新生成请求失败', e)
       setTyping(false)
-      setMessages(prev => [...prev, { role: 'system', content: '重新生成失败，请重试' }])
+      setMessages(prev => [...prev, { role: 'system', content: t('personal.regenerateFailed') }])
     }
   }
 
@@ -525,16 +527,16 @@ export default function PersonalChat() {
 
   return (
     <div className="chat-container" onClick={() => showModelMenu && setShowModelMenu(false)}>
-      <Link to="/home" className="btn-back-home">← 返回首页</Link>
+      <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
 
       {messages.length === 0 && !typing && (
         <div className="chat-welcome">
-          <h1>✦ 个人对话空间</h1>
-          <p>{authUser?.name ? `${authUser.name}，这是你的私密AI助手` : '这是你的私密AI助手'}</p>
-          <p style={{fontSize:'12px', color:'var(--text-secondary)', opacity:0.6, marginTop:4}}>对话内容仅自己可见，不会公开</p>
+          <h1>{t('personalChat.title')}</h1>
+          <p>{authUser?.name ? t('personalChat.subtitle', { name: authUser.name }) : t('personalChat.subtitlePlain')}</p>
+          <p style={{fontSize:'12px', color:'var(--text-secondary)', opacity:0.6, marginTop:4}}>{t('personalChat.private')}</p>
           <div className="chat-online-badge" style={{marginTop:12}}>
             <span className="online-dot"></span>
-            {onlineCount} 人在线
+            {t('personal.onlineCount', { count: onlineCount })}
           </div>
         </div>
       )}
@@ -558,7 +560,7 @@ export default function PersonalChat() {
                 padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)',
               }}>
                 <span style={{ fontSize: 15, color: '#f1f5f9', fontWeight: 600 }}>
-                  {selectedResult ? '对话详情' : `搜索结果（${searchResults.length}）`}
+                  {selectedResult ? t('personal.chatDetail') : t('personal.searchResults', { count: searchResults.length })}
                 </span>
                 <button onClick={() => { setShowSearch(false); setSelectedResult(null) }}
                   style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -574,7 +576,7 @@ export default function PersonalChat() {
                         background: 'rgba(255,255,255,0.08)', color: '#e2e8f0',
                         border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
                         padding: '6px 14px', cursor: 'pointer', fontSize: 13, marginBottom: 12,
-                      }}>← 返回列表</button>
+                      }}>{t('common.backToList')}</button>
                     {selectedResult.messages.map((m, i) => (
                       <div key={i} style={{
                         marginBottom: 10,
@@ -594,7 +596,7 @@ export default function PersonalChat() {
                 ) : (
                   /* 列表视图 */
                   searchResults.length === 0 ? (
-                    <p style={{ fontSize: 14, color: '#cbd5e1', textAlign: 'center', padding: 20 }}>无匹配结果</p>
+                    <p style={{ fontSize: 14, color: '#cbd5e1', textAlign: 'center', padding: 20 }}>{t('common.noMatch')}</p>
                   ) : (
                     searchResults.map((item, i) => (
                       <div key={i} onClick={() => loadSearchResult(item)}
@@ -622,10 +624,10 @@ export default function PersonalChat() {
                 {!selectedResult && searchTotalPages > 1 && (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, padding: '10px 0 4px' }}>
                     <button onClick={() => handleSearch(searchPage - 1)} disabled={searchPage <= 1}
-                      style={{ background: 'rgba(255,255,255,0.08)', color: searchPage <= 1 ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage <= 1 ? 'default' : 'pointer', fontSize: 13 }}>上一页</button>
-                    <span style={{ fontSize: 13, color: '#cbd5e1' }}>{searchPage} / {searchTotalPages}（共{searchTotal}条）</span>
+                      style={{ background: 'rgba(255,255,255,0.08)', color: searchPage <= 1 ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage <= 1 ? 'default' : 'pointer', fontSize: 13 }}>{t('common.prevPage')}</button>
+                    <span style={{ fontSize: 13, color: '#cbd5e1' }}>{searchPage} / {searchTotalPages}{t('treehole.total', { count: searchTotal })}</span>
                     <button onClick={() => handleSearch(searchPage + 1)} disabled={searchPage >= searchTotalPages}
-                      style={{ background: 'rgba(255,255,255,0.08)', color: searchPage >= searchTotalPages ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage >= searchTotalPages ? 'default' : 'pointer', fontSize: 13 }}>下一页</button>
+                      style={{ background: 'rgba(255,255,255,0.08)', color: searchPage >= searchTotalPages ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage >= searchTotalPages ? 'default' : 'pointer', fontSize: 13 }}>{t('common.nextPage')}</button>
                   </div>
                 )}
               </div>
@@ -661,7 +663,7 @@ export default function PersonalChat() {
               {m.content}
               {m.action === 'home' && (
                 <span style={{ marginLeft: '8px', color: redirectCountdown <= 1 ? '#f44336' : '#4f8cff', fontWeight: 500 }}>
-                  （{redirectCountdown}秒后自动返回…）
+                  {t('personal.redirectCountdown', { seconds: redirectCountdown })}
                 </span>
               )}
             </div>
@@ -676,7 +678,7 @@ export default function PersonalChat() {
         onChange={e => setQuestion(e.target.value)}
         onKeyDown={handleKey}
         onSubmit={sendQuestion}
-        placeholder="输入你的私密问题..."
+        placeholder={t('personalChat.placeholder')}
         onInputFocus={handleFocus}
         voiceSupported={speechSupported}
         isRecording={isRecording}
@@ -694,7 +696,7 @@ export default function PersonalChat() {
             <div style={{ display: 'flex', gap: 4, flex: 1 }}>
               <input
                 type="text"
-                placeholder="搜索历史对话..."
+                placeholder={t('personalChat.searchPlaceholder')}
                 value={searchKeyword}
                 onChange={e => setSearchKeyword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -785,7 +787,7 @@ export default function PersonalChat() {
           )}
         </>}
         afterInput={
-          <button type="button" className="attach-btn" onClick={() => fileInputRef.current?.click()} title="上传文件">
+          <button type="button" className="attach-btn" onClick={() => fileInputRef.current?.click()} title={t('personalChat.uploadTitle')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
             </svg>

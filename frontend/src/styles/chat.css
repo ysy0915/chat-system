@@ -199,6 +199,29 @@
     word-break: break-word;
 }
 
+/* 思考过程折叠箭头 — 完成后保留思考过程，点击展开 */
+.thinking-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #6b7280;
+    font-size: 12px;
+    margin-bottom: 8px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, color 0.15s;
+}
+.thinking-toggle:hover {
+    background: rgba(107, 114, 128, 0.08);
+    color: #4b5563;
+}
+.thinking-toggle .thinking-arrow {
+    font-size: 9px;
+    transition: transform 0.15s;
+}
+
 .msg.system {
     align-self: center;
     background: rgba(244,63,94,0.1);

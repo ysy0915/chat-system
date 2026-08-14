@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useLanguage, LangSwitch } from '../i18n/LanguageContext'
 
 // 无需登录即可访问的公开页面（其余页面一律需登录）
 export const PUBLIC_PAGES = new Set(['/home'])
@@ -22,22 +23,23 @@ const PREFETCH_ROUTE_MAP = {
 }
 
 const NAV_LINKS = [
-    { to: '/home', label: '首页' },
-    { to: '/debate', label: '观点辩论场' },
-    { to: '/graph', label: '知识脉络图' },
-    { to: '/personal', label: '个人对话空间' },
-    { to: '/treehole', label: '情绪树洞' },
-    { to: '/', label: 'AI伙伴群聊' },
-    { to: '/media', label: '图片与视频' },
-    { to: '/3d', label: '3D模型生成' },
-    { to: '/games', label: 'AI多人游戏' },
-    { to: '/history', label: '问答列表' },
-    { to: '/profile', label: '个人信息' },
-    { to: '/admin/models', label: '模型管理' },
-    { to: '/knowledge', label: '知识库' },
+    { to: '/home', labelKey: 'nav.home' },
+    { to: '/debate', labelKey: 'nav.debate' },
+    { to: '/graph', labelKey: 'nav.graph' },
+    { to: '/personal', labelKey: 'nav.personal' },
+    { to: '/treehole', labelKey: 'nav.treehole' },
+    { to: '/', labelKey: 'nav.chat' },
+    { to: '/media', labelKey: 'nav.media' },
+    { to: '/3d', labelKey: 'nav.model3d' },
+    { to: '/games', labelKey: 'nav.games' },
+    { to: '/history', labelKey: 'nav.history' },
+    { to: '/profile', labelKey: 'nav.profile' },
+    { to: '/admin/models', labelKey: 'nav.adminModels' },
+    { to: '/knowledge', labelKey: 'nav.knowledge' },
 ]
 
 export default function NavBar({ authUser, onLogout, onOpenAuth }) {
+    const { t } = useLanguage()
     const location = useLocation()
     const isActive = (path) => location.pathname === path ? 'active' : ''
     const [mobileOpen, setMobileOpen] = useState(false)
@@ -84,21 +86,22 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
             <nav className="navbar">
                 <Link to="/home" className="navbar-brand">
                     <img src="/chat/logo.png" alt="logo" className="logo" />
-                    博思AI
+                    {t('nav.brand')}
                 </Link>
                 <div className="navbar-links">
                     {NAV_LINKS.map(l => (
                         <Link key={l.to} to={l.to} className={isActive(l.to)}
                               onMouseEnter={() => prefetchRoute(l.to)}
-                              onClick={(e) => renderNavClick(l, e)}>{l.label}</Link>
+                              onClick={(e) => renderNavClick(l, e)}>{t(l.labelKey)}</Link>
                     ))}
                 </div>
                 <div className="navbar-auth">
+                    <LangSwitch className="navbar-lang-switch" />
                     <button
                         className="navbar-announcement-btn navbar-announcement-desktop"
                         onClick={handleOpenAnnouncement}
                         type="button"
-                        title="公告"
+                        title={t('nav.announcement')}
                     >
                         📢
                         {announcementUnread && <span className="navbar-announcement-badge">1</span>}
@@ -106,22 +109,23 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                     {authUser ? (
                         <>
                             <Link to="/profile" className="navbar-user navbar-user-link">👋 {authUser.name}</Link>
-                            <button onClick={onLogout} className="navbar-auth-btn navbar-logout-btn">退出</button>
+                            <button onClick={onLogout} className="navbar-auth-btn navbar-logout-btn">{t('nav.logout')}</button>
                         </>
                     ) : (
                         <>
-                            <button onClick={() => onOpenAuth('login')} className="navbar-auth-btn">登录</button>
-                            <button onClick={() => onOpenAuth('register')} className="navbar-auth-btn navbar-reg-btn">注册</button>
+                            <button onClick={() => onOpenAuth('login')} className="navbar-auth-btn">{t('nav.login')}</button>
+                            <button onClick={() => onOpenAuth('register')} className="navbar-auth-btn navbar-reg-btn">{t('nav.register')}</button>
                         </>
                     )}
                 </div>
-                <div className="navbar-credit">制作者：杨思义</div>
+                <div className="navbar-credit">{t('nav.credit')}</div>
                 <div className="navbar-mobile-actions">
+                    <LangSwitch className="navbar-lang-switch" />
                     <button
                         className="navbar-announcement-btn"
                         onClick={handleOpenAnnouncement}
                         type="button"
-                        title="公告"
+                        title={t('nav.announcement')}
                     >
                         📢
                         {announcementUnread && <span className="navbar-announcement-badge">1</span>}
@@ -138,7 +142,7 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                         <span className="navbar-hamburger-icon">
                             <span /><span /><span />
                         </span>
-                        <span className="navbar-hamburger-label">菜单</span>
+                        <span className="navbar-hamburger-label">{t('nav.menu')}</span>
                     </button>
                 </div>
             </nav>
@@ -153,26 +157,29 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                             onClick={() => setAnnouncementOpen(false)}
                             type="button"
                         >✕</button>
-                        <h3 className="announcement-title">📢 系统公告</h3>
+                        <h3 className="announcement-title">{t('nav.announcementTitle')}</h3>
                         <div className="announcement-content">
-                            <p><strong>博思AI智能体 · 最新优化</strong></p>
+                            <p><strong>{t('nav.announcement.s1')}</strong></p>
 
-                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🗣️ 观点辩论场 · 多模型自由组队</p>
-                            <p>新增「模型数」选择器（与场次同款样式），支持 3~5 个模型自由组队；每场辩论阵容随机抽取、模型名中文展示，场场不重样。</p>
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>{t('nav.announcement.s2Title')}</p>
+                            <p>{t('nav.announcement.s2Body')}</p>
 
-                            <p style={{ fontWeight: 700 }}>🌳 观点辩论场 · 树状博弈提速</p>
-                            <p>树状博弈自动排除本地慢速推理模型，改用云端 API 模型随机组队，多视角并行博弈响应速度大幅提升。</p>
+                            <p style={{ fontWeight: 700 }}>{t('nav.announcement.s3Title')}</p>
+                            <p>{t('nav.announcement.s3Body')}</p>
 
-                            <p style={{ fontWeight: 700 }}>🤖 接入自研大模型</p>
-                            <p>接入本地推理的 Hermes3 与 Qwen2.5-3B 两款自研模型，与豆包、千问、DeepSeek 组成完整 AI 模型矩阵。</p>
+                            <p style={{ fontWeight: 700 }}>{t('nav.announcement.s4Title')}</p>
+                            <p>{t('nav.announcement.s4Body')}</p>
 
-                            <p style={{ fontWeight: 700 }}>🛡️ 安全加固升级</p>
-                            <p>注册图形验证码、登录失败锁定（连续 5 次锁 15 分钟）、Kibana/Neo4j 控制台访问鉴权、服务器全面切换密钥登录。</p>
+                            <p style={{ fontWeight: 700 }}>{t('nav.announcement.s5Title')}</p>
+                            <p>{t('nav.announcement.s5Body')}</p>
 
-                            <p style={{ fontWeight: 700 }}>🧪 测试覆盖率提升至 20%+</p>
-                            <p>新增 64 项自动化测试，全量 692 项测试全绿，核心业务链路回归有保障。</p>
+                            <p style={{ fontWeight: 700 }}>{t('nav.announcement.s6Title')}</p>
+                            <p>{t('nav.announcement.s6Body')}</p>
 
-                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月14日 · 博思AI团队</p>
+                            <p style={{ fontWeight: 700 }}>{t('nav.announcement.s7Title')}</p>
+                            <p>{t('nav.announcement.s7Body')}</p>
+
+                            <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>{t('nav.announcement.date')}</p>
                         </div>
                     </div>
                 </div>
@@ -195,19 +202,20 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                             {NAV_LINKS.map(l => (
                                 <Link key={l.to} to={l.to} className={isActive(l.to)}
                                       onTouchStart={() => prefetchRoute(l.to)}
-                                      onClick={(e) => renderNavClick(l, e, closeMobile)}>{l.label}</Link>
+                                      onClick={(e) => renderNavClick(l, e, closeMobile)}>{t(l.labelKey)}</Link>
                             ))}
                         </div>
                         <div className="mobile-drawer-auth">
+                            <LangSwitch className="navbar-lang-switch mobile" />
                             {authUser ? (
                                 <>
                                     <span className="mobile-drawer-user">👋 {authUser.name}</span>
-                                    <button onClick={() => { onLogout(); closeMobile() }} className="mobile-drawer-btn mobile-drawer-logout">退出</button>
+                                    <button onClick={() => { onLogout(); closeMobile() }} className="mobile-drawer-btn mobile-drawer-logout">{t('nav.logout')}</button>
                                 </>
                             ) : (
                                 <>
-                                    <button onClick={() => { onOpenAuth('login'); closeMobile() }} className="mobile-drawer-btn">登录</button>
-                                    <button onClick={() => { onOpenAuth('register'); closeMobile() }} className="mobile-drawer-btn mobile-drawer-reg">注册</button>
+                                    <button onClick={() => { onOpenAuth('login'); closeMobile() }} className="mobile-drawer-btn">{t('nav.login')}</button>
+                                    <button onClick={() => { onOpenAuth('register'); closeMobile() }} className="mobile-drawer-btn mobile-drawer-reg">{t('nav.register')}</button>
                                 </>
                             )}
                         </div>

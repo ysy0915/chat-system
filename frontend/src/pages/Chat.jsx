@@ -8,10 +8,14 @@ import { useAutoScroll } from '../hooks/useAutoScroll'
 import { useStompConnection } from '../hooks/useStompConnection'
 import TypingIndicator from '../components/chat/TypingIndicator'
 import ChatInputBar from '../components/chat/ChatInputBar'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
 export default function ChatPage(){
+  const { t } = useLanguage()
+  const tRef = useRef(t)
+  tRef.current = t
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
@@ -68,7 +72,7 @@ export default function ChatPage(){
         if (payload.type === 'done' || payload.answer) {
           setTyping(false)
           const ans = extractAnswer(payload.answer || '')
-          setMessages(prev => [...prev, { role: 'ai', content: ans || '暂无回复' }])
+          setMessages(prev => [...prev, { role: 'ai', content: ans || tRef.current('chat.noReply') }])
         }
       },
       '/topic/public-questions': (payload) => {
@@ -99,7 +103,7 @@ export default function ChatPage(){
               content: payload.question,
               fromOther: true,
               reqId: payload.req_id,
-              userName: payload.user_name || ('用户' + payload.user_id)
+              userName: payload.user_name || tRef.current('common.userPrefix', { id: payload.user_id })
             }]
           })
         } else if (payload.type === 'answer' && payload.answer && payload.user_id !== userId) {
@@ -149,10 +153,10 @@ export default function ChatPage(){
       console.error(e)
       setTyping(false)
       if (e.response?.status === 400) {
-        const msg = e.response.data?.error || '问题包含敏感内容，请修改后重试'
+        const msg = e.response.data?.error || tRef.current('chat.sensitive')
         setMessages(prev => [...prev, { role: 'system', content: '🚫 ' + msg }])
       } else {
-        setMessages(prev => [...prev, { role: 'system', content: '发送失败，请重试' }])
+        setMessages(prev => [...prev, { role: 'system', content: tRef.current('chat.sendFailed') }])
       }
     }
   }
@@ -193,7 +197,7 @@ export default function ChatPage(){
       console.error('[Speech] error:', event.error)
       setIsRecording(false)
       if (event.error === 'not-allowed') {
-        setMessages(prev => [...prev, { role: 'system', content: '请允许麦克风权限以使用语音输入' }])
+        setMessages(prev => [...prev, { role: 'system', content: tRef.current('chat.micPermission') }])
       }
     }
 
@@ -207,15 +211,15 @@ export default function ChatPage(){
 
   return (
       <div className="chat-container">
-        <Link to="/home" className="btn-back-home">← 返回首页</Link>
+        <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
 
         {messages.length === 0 && (
             <div className="chat-welcome">
-              <h1>✦ 博思AI</h1>
-              <p>有什么想问的？我来帮你解答</p>
+              <h1>{t('chat.welcomeTitle')}</h1>
+              <p>{t('chat.welcomeSub')}</p>
               <div className="chat-online-badge" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
                 <span className="online-dot"></span>
-                {onlineCount + ' 人在线'}
+                {t('common.online', { count: onlineCount })}
                 <span style={{fontSize:'10px', opacity:0.6}}>{showOnlineList ? '▲' : '▼'}</span>
               </div>
             </div>
@@ -227,7 +231,7 @@ export default function ChatPage(){
                   <div key={idx} className="msg-row msg-auto-q-row">
                     <div className="msg-avatar msg-auto-q-avatar">🤖</div>
                     <div className="msg-auto-wrap">
-                      <div className="msg-auto-name">{m.userName} 提问</div>
+                      <div className="msg-auto-name">{t('common.asked', { name: m.userName })}</div>
                       <div className="msg auto-q">{m.content}</div>
                     </div>
                   </div>
@@ -235,12 +239,12 @@ export default function ChatPage(){
                   <div key={idx} className="msg-row msg-auto-a-row">
                     <div className="msg-avatar msg-auto-a-avatar">✦</div>
                     <div className="msg-auto-wrap">
-                      <div className="msg-auto-name">{m.userName} 回答</div>
+                      <div className="msg-auto-name">{t('common.answered', { name: m.userName })}</div>
                       <div className="msg auto-a">
                         {formatAnswer(m.content).map((sentence, i) => (
                             <span key={i} style={{display:'block'}}>{sentence}</span>
                         ))}
-                        <span className="ai-generated-tag">AI生成</span>
+                        <span className="ai-generated-tag">{t('common.aiGenerated')}</span>
                       </div>
                     </div>
                   </div>
@@ -269,7 +273,7 @@ export default function ChatPage(){
                       <img src={getUserAvatar()} alt="avatar" className="avatar-img" />
                     </div>
                     <div className="msg-user-wrap">
-                      <div className="msg-user-name">{authUser?.nickname || ('用户' + userId)}</div>
+                      <div className="msg-user-name">{authUser?.nickname || t('common.userPrefix', { id: userId })}</div>
                       <div className="msg user">{m.content}</div>
                     </div>
                   </div>
@@ -278,7 +282,7 @@ export default function ChatPage(){
                     <div className="msg user">{formatAnswer(m.content).map((sentence, i) => (
                         <span key={i} style={{display:'block'}}>{sentence}</span>
                     ))}
-                      <span className="ai-generated-tag">AI生成</span>
+                      <span className="ai-generated-tag">{t('common.aiGenerated')}</span>
                     </div>
                     <div className="msg-avatar other-ai-avatar">
                       <img src="/chat/logo.png" alt="AI" className="avatar-img" />
@@ -293,7 +297,7 @@ export default function ChatPage(){
                       {formatAnswer(m.content).map((sentence, i) => (
                           <span key={i} style={{display:'block'}}>{sentence}</span>
                       ))}
-                      <span className="ai-generated-tag">AI生成</span>
+                      <span className="ai-generated-tag">{t('common.aiGenerated')}</span>
                     </div>
                   </div>
               ) : (
@@ -309,7 +313,7 @@ export default function ChatPage(){
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={handleKey}
             onSubmit={sendQuestion}
-            placeholder="输入你的问题..."
+            placeholder={t('chat.placeholder')}
             voiceSupported={speechSupported}
             isRecording={isRecording}
             onToggleVoice={toggleVoice}
@@ -317,11 +321,11 @@ export default function ChatPage(){
                 <div className="chat-input-top">
                     <span className="chat-online-mini" onClick={() => setShowOnlineList(!showOnlineList)} style={{cursor:'pointer'}}>
                         <span className="online-dot-small"></span>
-                        {onlineCount + ' 人在线'}
+                        {t('common.online', { count: onlineCount })}
                         <span style={{fontSize:'9px', opacity:0.6}}>{showOnlineList ? '▲' : '▼'}</span>
                     </span>
                     <button type="button" className={`ai-toggle-btn ${aiAnswer ? 'active' : ''}`} onClick={() => setAiAnswer(!aiAnswer)}>
-                        ✦ 点击此按钮-由AI回答你提的问题
+                        {t('chat.aiToggle')}
                     </button>
                 </div>
                 {showOnlineList && onlineUsers.length > 0 && (
@@ -329,7 +333,7 @@ export default function ChatPage(){
                         {onlineUsers.map(u => (
                             <div key={u.id} className="online-user-item">
                                 <span className="online-user-avatar">🐰</span>
-                                <span className="online-user-name">{u.name || ('用户' + u.id)}</span>
+                                <span className="online-user-name">{u.name || t('common.userPrefix', { id: u.id })}</span>
                                 <span className="online-user-dot"></span>
                             </div>
                         ))}

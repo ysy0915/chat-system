@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 /**
  * 语音朗读 Hook（基于 Web Speech API speechSynthesis）
@@ -8,6 +9,7 @@ import { useRef, useState, useCallback } from 'react'
  *   stop(): 停止朗读
  */
 export function useSpeechSynthesis() {
+    const { t } = useLanguage()
     const [speakingId, setSpeakingId] = useState(null)
     const currentIdRef = useRef(null)
 
@@ -23,7 +25,7 @@ export function useSpeechSynthesis() {
 
     const speak = useCallback((id, text) => {
         if (!window.speechSynthesis) {
-            alert('当前浏览器不支持语音朗读')
+            alert(t('speechSynth.notSupported'))
             return
         }
         // 同一条消息再次点击：停止
@@ -62,7 +64,7 @@ export function useSpeechSynthesis() {
         currentIdRef.current = id
         setSpeakingId(id)
         window.speechSynthesis.speak(utter)
-    }, [stop])
+    }, [stop, t])
 
     return { speakingId, speak, stop }
 }

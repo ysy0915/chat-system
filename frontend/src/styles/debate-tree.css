@@ -21,6 +21,17 @@
   transition: transform 0.1s ease-out;
 }
 
+/* 语义拆解阶段等待提示 */
+.tree-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+}
+
 /* ==================== SVG 连线 ==================== */
 
 .debate-tree-svg {

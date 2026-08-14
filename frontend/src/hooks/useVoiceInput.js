@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 /**
  * 语音输入 Hook
@@ -12,6 +13,7 @@ import { useRef, useState, useCallback } from 'react'
  *   5. iOS 上 interimResults 可能不触发，需要 onend 兜底
  */
 export function useVoiceInput(onResult) {
+    const { t } = useLanguage()
     const recRef = useRef(null)
     const [recording, setRecording] = useState(false)
     const finalTextRef = useRef('')
@@ -25,16 +27,16 @@ export function useVoiceInput(onResult) {
     const start = useCallback(() => {
         // iOS 非 HTTPS 环境降级提示
         if (isIOS && !isSecureContext) {
-            alert('iOS 设备需要通过 HTTPS 访问才能使用语音输入功能。\n当前为 HTTP 连接，请切换到 HTTPS 地址访问。')
+            alert(t('voiceInput.iosHttps'))
             return
         }
 
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition
         if (!SR) {
             if (isIOS) {
-                alert('iOS 版本过低，需要 iOS 14.5 以上才支持语音输入')
+                alert(t('voiceInput.iosVersion'))
             } else {
-                alert('当前浏览器不支持语音输入，请使用 Chrome 或 Safari')
+                alert(t('voiceInput.notSupported'))
             }
             return
         }
@@ -89,11 +91,11 @@ export function useVoiceInput(onResult) {
         rec.onerror = (e) => {
             console.warn('[VoiceInput] error:', e.error)
             if (e.error === 'not-allowed') {
-                alert('请允许浏览器使用麦克风权限')
+                alert(t('voiceInput.micPermission'))
             } else if (e.error === 'no-speech') {
                 // iOS 上经常触发 no-speech，静默处理
             } else if (e.error === 'network') {
-                alert('语音识别服务网络错误，请检查网络连接')
+                alert(t('voiceInput.networkError'))
             }
             setRecording(false)
         }
@@ -120,13 +122,13 @@ export function useVoiceInput(onResult) {
             if (err.name === 'InvalidStateError') {
                 // 已经在录音中，忽略
             } else {
-                alert('语音识别启动失败，请重试')
+                alert(t('voiceInput.startFailed'))
             }
             setRecording(false)
         }
     // start 回调依赖 recRef/setState（稳定），仅随 isIOS/onResult 重建
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isIOS, onResult])
+    }, [isIOS, onResult, t])
 
     const stop = useCallback(() => {
         if (recRef.current) {

@@ -4,8 +4,10 @@ import { Link } from 'react-router-dom'
 import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Landing() {
+  const { t, lang } = useLanguage()
   const [onlineCount, setOnlineCount] = useState(0)
   const [totalUsage, setTotalUsage] = useState(0)
   const stompRef = useRef(null)
@@ -51,71 +53,71 @@ export default function Landing() {
   return (
     <div className="landing">
       <section className="hero">
-        <h1 className="hero-title">博思AI智能体</h1>
+        <h1 className="hero-title">{t('landing.heroTitle')}</h1>
         <div className="hero-stats-row">
           <div className="hero-online-badge">
             <span className="online-dot"></span>
-            {onlineCount} 人 1 小时内在线
+            {t('landing.hourlyActive', { count: onlineCount })}
           </div>
           <div className="hero-usage-badge">
             <span className="usage-icon">📈</span>
-            累计使用 {totalUsage >= 10000 ? (totalUsage / 10000).toFixed(1) + '万' : totalUsage.toLocaleString()} 次
+            {t('landing.totalUsage', { count: totalUsage >= 10000 ? (totalUsage / 10000).toFixed(1) + (lang === 'zh' ? '万' : '0K') : totalUsage.toLocaleString() })}
           </div>
         </div>
 
 
         {/* Product Intro */}
         <section className="product-intro" id="product-intro">
-          <h2 className="section-title">功能简介</h2>
+          <h2 className="section-title">{t('landing.featuresTitle')}</h2>
           <p className="product-lead">
-            打破人机边界，融合真人社交与AI智慧，打造懂你、助你的全能数字伙伴。
+            {t('landing.productLead')}
           </p>
-          <p className="product-tip">点击卡片即可使用对应功能 👆</p>
+          <p className="product-tip">{t('landing.productTip')}</p>
           <div className="feature-grid">
             <Link to="/debate" className="feature-card">
               <div className="feature-icon">🤖</div>
-              <h3>观点辩论场</h3>
-              <p>让三位AI专家为你展开辩论，在思想交锋中，帮你获得更全面、更深入的结论。</p>
+              <h3>{t('landing.f.debate.title')}</h3>
+              <p>{t('landing.f.debate.desc')}</p>
             </Link>
             <Link to="/graph" className="feature-card">
               <div className="feature-icon">🌐</div>
-              <h3>知识脉络图</h3>
-              <p>将零散的知识点连接成网，帮你一眼看清问题的来龙去脉和核心关联。</p>
+              <h3>{t('landing.f.graph.title')}</h3>
+              <p>{t('landing.f.graph.desc')}</p>
             </Link>
             <Link to="/personal" className="feature-card">
               <div className="feature-icon">🔒</div>
-              <h3>个人对话空间</h3>
-              <p>你的专属私密空间，安全归档所有灵感与深度探讨，让AI成为你成长的长期伙伴。</p>
+              <h3>{t('landing.f.personal.title')}</h3>
+              <p>{t('landing.f.personal.desc')}</p>
             </Link>
             <Link to="/treehole" className="feature-card">
               <div className="feature-icon">🌳</div>
-              <h3>情绪树洞</h3>
-              <p>有情绪无处安放？在这里悄悄说出来，AI会温柔倾听、真诚回应，陪你走过每一段情绪低谷。</p>
+              <h3>{t('landing.f.treehole.title')}</h3>
+              <p>{t('landing.f.treehole.desc')}</p>
             </Link>
             <Link to="/" className="feature-card">
               <div className="feature-icon">💬</div>
-              <h3>AI 伙伴群聊</h3>
-              <p>随时拉上AI伙伴加入你的群聊，它既是智能助手，也是懂气氛的聊天搭子。</p>
+              <h3>{t('landing.f.chat.title')}</h3>
+              <p>{t('landing.f.chat.desc')}</p>
             </Link>
             <Link to="/media" className="feature-card">
               <div className="feature-icon">🎨</div>
-              <h3>文生视频/图</h3>
-              <p>一句提示词，秒级生成电影级大片或短视频，低成本实现从"脑洞"到"现实"。</p>
+              <h3>{t('landing.f.media.title')}</h3>
+              <p>{t('landing.f.media.desc')}</p>
             </Link>
             <Link to="/3d" className="feature-card">
               <div className="feature-icon">📦</div>
-              <h3>3D 模型生成</h3>
-              <p>输入文字描述，AI 自动生成 3D 模型，支持下载查看，让创意从平面走向立体。</p>
+              <h3>{t('landing.f.model3d.title')}</h3>
+              <p>{t('landing.f.model3d.desc')}</p>
             </Link>
             <Link to="/games" className="feature-card">
               <div className="feature-icon">🎮</div>
-              <h3>AI多人游戏</h3>
-              <p>和真人玩家、AI模型同场竞技，在蛇王争霸、城池争夺战与AI乒乓球中体验更有代入感的多人对抗乐趣。</p>
+              <h3>{t('landing.f.games.title')}</h3>
+              <p>{t('landing.f.games.desc')}</p>
             </Link>
             <Link to="/history" className="feature-card">
               <div className="feature-icon">📋</div>
-              <h3>问答足迹</h3>
-              <p>集中管理你的提问与探索，支持快速检索与二次编辑，让过往思考不被遗忘。</p>
+              <h3>{t('landing.f.history.title')}</h3>
+              <p>{t('landing.f.history.desc')}</p>
             </Link>
           </div>
         </section>
@@ -124,40 +126,40 @@ export default function Landing() {
 
       {/* Features */}
       <section className="features">
-        <h2 className="section-title">核心能力</h2>
+        <h2 className="section-title">{t('landing.coreTitle')}</h2>
         <p className="product-lead">
-          从意图理解到任务执行，从安全守护到弹性扩展，六大核心能力构建全能数字伙伴。
+          {t('landing.coreLead')}
         </p>
         <div className="feature-grid">
           <div className="feature-card">
             <div className="feature-icon">🧠</div>
-            <h3>懂你所想</h3>
-            <p>无论是规划行程、分析资料还是创作内容，它都能精准理解你的意图，自动拆解步骤并调用工具，让你专注于结果本身。</p>
+            <h3>{t('landing.c.understand.title')}</h3>
+            <p>{t('landing.c.understand.desc')}</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔄</div>
-            <h3>自动拆解</h3>
-            <p>无论是写策划还是做攻略，只需一句话，我就能为你制定详细的行动路线图，按部就班，高效交付。</p>
+            <h3>{t('landing.c.decompose.title')}</h3>
+            <p>{t('landing.c.decompose.desc')}</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">⚡</div>
-            <h3>随时调用</h3>
-            <p>告别在不同AI软件间来回切换的烦恼。我能自动调动各种外部服务，将复杂的多步操作化繁为简，让体验如丝般顺滑。</p>
+            <h3>{t('landing.c.invoke.title')}</h3>
+            <p>{t('landing.c.invoke.desc')}</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🛡️</div>
-            <h3>安全可靠</h3>
-            <p>采用金融级安全架构，全方位守护你的数据隐私与系统稳定，让你每一次使用都安心无忧。</p>
+            <h3>{t('landing.c.secure.title')}</h3>
+            <p>{t('landing.c.secure.desc')}</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">🔌</div>
-            <h3>轻松扛住</h3>
-            <p>无论是日常使用还是突发热点，强大的底层算力都能瞬间调动资源，为你护航，让每一次对话都如丝般顺滑。</p>
+            <h3>{t('landing.c.scale.title')}</h3>
+            <p>{t('landing.c.scale.desc')}</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">📡</div>
-            <h3>全程透明</h3>
-            <p>遇到复杂问题，AI会自动记录它的分析路径与推理过程。不仅给你最终答案，更让你看懂得出答案的逻辑。</p>
+            <h3>{t('landing.c.transparent.title')}</h3>
+            <p>{t('landing.c.transparent.desc')}</p>
           </div>
         </div>
       </section>
@@ -468,12 +470,12 @@ export default function Landing() {
 
       {/* Disclaimer */}
       <div className="landing-disclaimer">
-        <p>⚠️ 用户须知：请在使用本平台时遵守国家法律法规，文明发言，共同维护良好的网络环境。</p>
+        <p>{t('landing.disclaimer')}</p>
       </div>
 
       {/* Footer */}
       <footer className="landing-footer">
-        <span>博思AI智能体 · 全栈融合架构驱动</span>
+        <span>{t('landing.footer')}</span>
       </footer>
     </div>
   )

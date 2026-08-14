@@ -1,10 +1,13 @@
 import React from 'react'
+import { LanguageContext } from '../i18n/LanguageContext'
 
 /**
  * 全局错误边界：任意子组件抛异常时显示友好提示，避免整树卸载导致白屏
  * 同时将错误堆栈上报到后端，便于定位用户反馈的问题
  */
 export default class ErrorBoundary extends React.Component {
+    static contextType = LanguageContext
+
     constructor(props) {
         super(props)
         this.state = { hasError: false, error: null, info: null, reported: false }
@@ -47,6 +50,7 @@ export default class ErrorBoundary extends React.Component {
     }
 
     render() {
+        const t = this.context?.t || ((k) => k)
         if (this.state.hasError) {
             const errStr = (this.state.error?.stack || String(this.state.error || '')).slice(0, 1500)
             return (
@@ -64,9 +68,9 @@ export default class ErrorBoundary extends React.Component {
                     textAlign: 'center'
                 }}>
                     <div style={{ fontSize: 48 }}>😵</div>
-                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>页面加载出了点问题</h2>
+                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{t('errorBoundary.title')}</h2>
                     <p style={{ margin: 0, fontSize: 14, opacity: 0.7, maxWidth: 360 }}>
-                        可能是网络波动或浏览器兼容性问题，请尝试重新加载。
+                        {t('errorBoundary.desc')}
                     </p>
                     <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
                         <button
@@ -76,7 +80,7 @@ export default class ErrorBoundary extends React.Component {
                                 background: '#6366f1', color: '#fff', fontSize: 14,
                                 fontWeight: 600, cursor: 'pointer'
                             }}
-                        >返回首页</button>
+                        >{t('errorBoundary.backHome')}</button>
                         <button
                             onClick={this.handleHardReload}
                             style={{
@@ -84,14 +88,14 @@ export default class ErrorBoundary extends React.Component {
                                 background: 'transparent', color: '#fff', fontSize: 14,
                                 fontWeight: 500, cursor: 'pointer'
                             }}
-                        >重新加载</button>
+                        >{t('errorBoundary.reload')}</button>
                     </div>
                     <details style={{
                         marginTop: 16, maxWidth: 600, width: '100%',
                         background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '12px 16px',
                         textAlign: 'left', fontSize: 12, opacity: 0.85
                     }}>
-                        <summary style={{ cursor: 'pointer', opacity: 0.7 }}>查看错误详情（可截图反馈）</summary>
+                        <summary style={{ cursor: 'pointer', opacity: 0.7 }}>{t('errorBoundary.details')}</summary>
                         <pre style={{
                             marginTop: 8, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11

@@ -1,0 +1,50 @@
+/* ===== 语言切换按钮（i18n） ===== */
+.lang-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border: 1px solid rgba(255, 255, 255, .35);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .12);
+    color: #fff;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all .2s ease;
+    line-height: 1.4;
+    white-space: nowrap;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+}
+
+.lang-switch:hover {
+    background: rgba(255, 255, 255, .25);
+    border-color: rgba(255, 255, 255, .6);
+}
+
+.lang-switch-globe {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.lang-switch-label {
+    font-weight: 600;
+    letter-spacing: .3px;
+}
+
+/* NavBar 内切换按钮：navbar 为浅色背景，覆盖默认的深色背景白色文字样式 */
+.navbar-lang-switch {
+    margin-right: 4px;
+    border-color: rgba(15, 23, 42, 0.18);
+    background: rgba(255, 255, 255, 0.65);
+    color: var(--text-primary, #1e293b);
+}
+.navbar-lang-switch:hover {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(15, 23, 42, 0.35);
+    color: var(--text-primary, #1e293b);
+}
+.navbar-lang-switch.mobile {
+    margin: 0 0 12px 0;
+}

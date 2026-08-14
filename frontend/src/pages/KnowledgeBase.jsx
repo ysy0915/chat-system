@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import apiClient from '../config/http'
 import './KnowledgeBase.css'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function KnowledgeBase() {
+  const { t } = useLanguage()
   const [knowledgeBases, setKnowledgeBases] = useState([])
   const [selectedKb, setSelectedKb] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -37,7 +39,7 @@ export default function KnowledgeBase() {
       if (e.response?.status === 403 || e.response?.status === 401) {
         setForbidden(true)
       } else {
-        setError(e.response?.data?.error || '加载知识库失败')
+        setError(e.response?.data?.error || t('kb.loadFailed'))
       }
     } finally {
       setLoading(false)
@@ -53,12 +55,12 @@ export default function KnowledgeBase() {
       setShowCreate(false)
       loadKnowledgeBases()
     } catch (e) {
-      setError(e.response?.data?.error || '创建失败')
+      setError(e.response?.data?.error || t('kb.createFailed'))
     }
   }
 
   const deleteKnowledgeBase = async (id, name) => {
-    if (!confirm(`确认删除知识库「${name}」？所有向量数据将一并删除。`)) return
+    if (!confirm(t('kb.deleteKbConfirm', { name }))) return
     try {
       await apiClient.delete(`/api/v1/rag/kb/${id}`)
       if (selectedKb === id) {
@@ -67,7 +69,7 @@ export default function KnowledgeBase() {
       }
       loadKnowledgeBases()
     } catch (e) {
-      setError(e.response?.data?.error || '删除失败')
+      setError(e.response?.data?.error || t('kb.deleteFailed'))
     }
   }
 
@@ -78,7 +80,7 @@ export default function KnowledgeBase() {
       const res = await apiClient.get(`/api/v1/rag/kb/${kbId}/documents`)
       setDocuments(res.data || [])
     } catch (e) {
-      setError(e.response?.data?.error || '加载文档失败')
+      setError(e.response?.data?.error || t('kb.loadDocsFailed'))
     }
   }
 
@@ -96,19 +98,19 @@ export default function KnowledgeBase() {
       loadDocuments(selectedKb)
       loadKnowledgeBases()
     } catch (e) {
-      setError(e.response?.data?.error || '上传失败')
+      setError(e.response?.data?.error || t('kb.uploadFailed'))
     } finally {
       setUploading(false)
     }
   }
 
   const deleteDocument = async (id, name) => {
-    if (!confirm(`确认删除文档「${name}」？`)) return
+    if (!confirm(t('kb.deleteDocConfirm', { name }))) return
     try {
       await apiClient.delete(`/api/v1/rag/documents/${id}`)
       loadDocuments(selectedKb)
     } catch (e) {
-      setError(e.response?.data?.error || '删除失败')
+      setError(e.response?.data?.error || t('kb.deleteFailed'))
     }
   }
 
@@ -124,7 +126,7 @@ export default function KnowledgeBase() {
       })
       setSearchResults(res.data || [])
     } catch (e) {
-      setError(e.response?.data?.error || '检索失败')
+      setError(e.response?.data?.error || t('kb.searchFailed'))
     } finally {
       setSearching(false)
     }
@@ -150,19 +152,19 @@ export default function KnowledgeBase() {
       {forbidden ? (
         <div className="kb-forbidden">
           <span className="kb-forbidden-icon">🔒</span>
-          <h2>{localStorage.getItem('auth_token') ? '仅管理员可访问' : '请先登录'}</h2>
-          <p>{localStorage.getItem('auth_token') ? '知识库管理功能仅对管理员开放，普通用户无权访问。' : '知识库管理功能需要登录管理员账号才能使用。'}</p>
-          <p className="kb-forbidden-hint">{localStorage.getItem('auth_token') ? '如需开通权限，请联系管理员。' : '请登录后重试，或联系管理员开通权限。'}</p>
+          <h2>{localStorage.getItem('auth_token') ? t('kb.adminOnly') : t('kb.loginFirst')}</h2>
+          <p>{localStorage.getItem('auth_token') ? t('kb.adminOnlyDesc') : t('kb.loginFirstDesc')}</p>
+          <p className="kb-forbidden-hint">{localStorage.getItem('auth_token') ? t('kb.contactAdmin') : t('kb.loginRetry')}</p>
         </div>
       ) : (
         <>
       <div className="kb-header">
         <div>
-          <h2>📚 知识库管理</h2>
-          <p className="kb-subtitle">上传文档构建知识库，AI 回答时自动检索相关内容（RAG）</p>
+          <h2>{t('kb.title')}</h2>
+          <p className="kb-subtitle">{t('kb.subtitle')}</p>
         </div>
         <button className="kb-btn-primary" onClick={() => setShowCreate(!showCreate)}>
-          {showCreate ? '取消' : '+ 新建知识库'}
+          {showCreate ? t('kb.cancel') : t('kb.newKb')}
         </button>
       </div>
 
@@ -185,7 +187,7 @@ export default function KnowledgeBase() {
             className="kb-input"
           />
           <button className="kb-btn-primary" onClick={createKnowledgeBase} disabled={!newKbName.trim()}>
-            创建
+            {t('kb.create')}
           </button>
         </div>
       )}
@@ -193,11 +195,11 @@ export default function KnowledgeBase() {
       <div className="kb-layout">
         {/* 左侧：知识库列表 */}
         <div className="kb-sidebar">
-          <h3 className="kb-sidebar-title">知识库列表</h3>
+          <h3 className="kb-sidebar-title">{t('kb.sidebarTitle')}</h3>
           {loading ? (
-            <p className="kb-empty">加载中...</p>
+            <p className="kb-empty">{t('common.loading')}</p>
           ) : knowledgeBases.length === 0 ? (
-            <p className="kb-empty">暂无知识库，点击右上角创建</p>
+            <p className="kb-empty">{t('kb.empty')}</p>
           ) : (
             <div className="kb-list">
               {knowledgeBases.map(kb => (
@@ -212,14 +214,14 @@ export default function KnowledgeBase() {
                   </div>
                   {kb.description && <p className="kb-card-desc">{kb.description}</p>}
                   <div className="kb-card-stats">
-                    <span>📄 {kb.documentCount || 0} 文档</span>
-                    <span>🧩 {kb.totalChunks || 0} 分片</span>
+                    <span>{t('kb.docCount', { count: kb.documentCount || 0 })}</span>
+                    <span>{t('kb.chunkCount', { count: kb.totalChunks || 0 })}</span>
                   </div>
                   <button
                     className="kb-btn-delete"
                     onClick={e => { e.stopPropagation(); deleteKnowledgeBase(kb.id, kb.name) }}
                   >
-                    删除
+                    {t('kb.delete')}
                   </button>
                 </div>
               ))}
@@ -232,13 +234,13 @@ export default function KnowledgeBase() {
           {!selectedKb ? (
             <div className="kb-placeholder">
               <span className="kb-placeholder-icon">📚</span>
-              <p>选择左侧知识库，或新建一个知识库开始</p>
+              <p>{t('kb.selectHint')}</p>
             </div>
           ) : (
             <>
               {/* 上传区域 */}
               <div className="kb-section">
-                <h3 className="kb-section-title">上传文档</h3>
+                <h3 className="kb-section-title">{t('kb.uploadTitle')}</h3>
                 <div className="kb-upload-area">
                   <label className="kb-upload-label">
                     <input
@@ -249,18 +251,18 @@ export default function KnowledgeBase() {
                       style={{ display: 'none' }}
                     />
                     <span className="kb-upload-text">
-                      {uploading ? '⏳ 正在上传和向量化...' : '📎 点击选择文件（PDF / Word / TXT / MD）'}
+                      {uploading ? t('kb.uploading') : t('kb.chooseFile')}
                     </span>
                   </label>
-                  <p className="kb-upload-hint">文件将自动解析、分片、向量化后存入 Milvus</p>
+                  <p className="kb-upload-hint">{t('kb.uploadHint')}</p>
                 </div>
               </div>
 
               {/* 文档列表 */}
               <div className="kb-section">
-                <h3 className="kb-section-title">文档列表（{documents.length}）</h3>
+                <h3 className="kb-section-title">{t('kb.docList', { count: documents.length })}</h3>
                 {documents.length === 0 ? (
-                  <p className="kb-empty">暂无文档</p>
+                  <p className="kb-empty">{t('kb.noDocs')}</p>
                 ) : (
                   <div className="kb-doc-list">
                     {documents.map(doc => (
@@ -269,14 +271,14 @@ export default function KnowledgeBase() {
                         <div className="kb-doc-info">
                           <span className="kb-doc-name">{doc.fileName}</span>
                           <span className="kb-doc-meta">
-                            {formatSize(doc.fileSize)} · {doc.chunkCount} 分片 · {doc.status === 'done' ? '✅ 完成' : doc.status === 'processing' ? '⏳ 处理中' : '❌ ' + (doc.errorMessage || doc.status)}
+                            {formatSize(doc.fileSize)} · {t('kb.chunks', { count: doc.chunkCount })} · {doc.status === 'done' ? t('kb.docDone') : doc.status === 'processing' ? t('kb.docProcessing') : '❌ ' + (doc.errorMessage || doc.status)}
                           </span>
                         </div>
                         <button
                           className="kb-btn-delete-sm"
                           onClick={() => deleteDocument(doc.id, doc.fileName)}
                         >
-                          删除
+                          {t('kb.delete')}
                         </button>
                       </div>
                     ))}
@@ -286,18 +288,18 @@ export default function KnowledgeBase() {
 
               {/* 检索测试 */}
               <div className="kb-section">
-                <h3 className="kb-section-title">检索测试</h3>
+                <h3 className="kb-section-title">{t('kb.searchTitle')}</h3>
                 <div className="kb-search-box">
                   <input
                     type="text"
-                    placeholder="输入问题，测试向量检索效果..."
+                    placeholder={t('kb.searchPlaceholder')}
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSearch()}
                     className="kb-input kb-search-input"
                   />
                   <button className="kb-btn-primary" onClick={handleSearch} disabled={searching || !searchQuery.trim()}>
-                    {searching ? '检索中...' : '检索'}
+                    {searching ? t('kb.searching') : t('kb.search')}
                   </button>
                 </div>
                 {searchResults.length > 0 && (
@@ -305,8 +307,8 @@ export default function KnowledgeBase() {
                     {searchResults.map((r, i) => (
                       <div key={i} className="kb-search-result-item">
                         <div className="kb-result-header">
-                          <span className="kb-result-source">来源: {r.source}</span>
-                          <span className="kb-result-score">相似度: {(r.score * 100).toFixed(1)}%</span>
+                          <span className="kb-result-source">{t('kb.source', { source: r.source })}</span>
+                          <span className="kb-result-score">{t('kb.score', { score: (r.score * 100).toFixed(1) })}</span>
                         </div>
                         <p className="kb-result-text">{r.text}</p>
                       </div>
@@ -314,7 +316,7 @@ export default function KnowledgeBase() {
                   </div>
                 )}
                 {searchResults.length === 0 && searchQuery && !searching && (
-                  <p className="kb-empty">无匹配结果，尝试换关键词</p>
+                  <p className="kb-empty">{t('kb.noMatch')}</p>
                 )}
               </div>
             </>

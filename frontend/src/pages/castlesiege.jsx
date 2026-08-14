@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import apiClient from '../config/http'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
+import { useLanguage } from '../i18n/LanguageContext'
 /* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环+STOMP 生命周期，内部函数经 ref/闭包转发取最新值 */
 
 const MAP_WIDTH = 3600
@@ -28,6 +29,20 @@ const ARCHER_DAMAGE = 20
 const ARCHER_ATTACK_COOLDOWN_MS = 420
 const LORD_LEADERBOARD_LIMIT = 10
 const BATTLEFIELD_SYNC_INTERVAL = 120
+
+// 模块级 i18n 引用：游戏循环/模块级函数内通过 T() 读取最新翻译（组件渲染时同步 t）
+let _t = (key) => key
+function T(key, vars) {
+    return _t(key, vars)
+}
+
+// AI 领主的展示名：player 用动态名，其余用翻译键
+function lordName(army) {
+    if (army?.id && army.id !== 'player' && ARMY_PROFILES[army.id]) {
+        return T('castlesiege.lord.' + army.id)
+    }
+    return army?.name || ''
+}
 
 const POWERUP_TYPES = {
     speed: { label: '加速', icon: '💨', color: '#38bdf8', duration: 6500 },
@@ -147,14 +162,14 @@ function normalizeVector(x, y) {
 function getCurrentPlayerName() {
     try {
         const stored = localStorage.getItem('auth_user')
-        if (!stored) return '玩家#guest'
+        if (!stored) return T('castlesiege.guestName')
         const user = JSON.parse(stored)
         const displayName = user?.nickname ?? user?.nickName ?? user?.name ?? user?.username
         if (displayName) return String(displayName)
         const playerId = user?.id ?? user?.userId
-        return playerId ? `玩家#${playerId}` : '玩家#guest'
+        return playerId ? `Player#${playerId}` : T('castlesiege.guestName')
     } catch {
-        return '玩家#guest'
+        return T('castlesiege.guestName')
     }
 }
 
@@ -437,7 +452,7 @@ function applyTroopDamage(army, displayedAmount) {
     }
 }
 
-function killArmy(game, army, killerName) {
+function killArmy(game, army, killerArmy) {
     if (!army.alive) return
     scatterArmyRemains(game, army)
     army.alive = false
@@ -448,7 +463,10 @@ function killArmy(game, army, killerName) {
     army.defenseShieldReady = false
     army.defenseChargeMs = 0
     army.castleId = null
-    setToast(game, `${killerName || '战场'} 击溃了 ${army.name}`, 'danger')
+    setToast(game, T('castlesiege.killMsg', {
+        killer: killerArmy ? lordName(killerArmy) : T('castlesiege.battlefield'),
+        name: lordName(army)
+    }), 'danger')
     game.shakeUntil = Date.now() + 220
 }
 
@@ -457,7 +475,7 @@ function respawnArmy(game, army) {
     const point = randomFreePosition(game, 80)
     const fresh = createArmy(profile, point)
     Object.assign(army, fresh, {
-        name: profile.id === 'player' ? getCurrentPlayerName() : profile.name
+        name: profile.id === 'player' ? getCurrentPlayerName() : lordName(profile)
     })
 }
 
@@ -605,10 +623,10 @@ function activatePowerup(game, army, type, now) {
 
     army.powerups[type] -= 1
     army.effects[type] = now + POWERUP_TYPES[type].duration
-    addFloatingText(game, army.x, army.y - 36, `${POWERUP_TYPES[type].icon} ${POWERUP_TYPES[type].label}`, 'power')
+    addFloatingText(game, army.x, army.y - 36, `${POWERUP_TYPES[type].icon} ${T('castlesiege.powerup.' + type)}`, 'power')
 
     if (army.id === 'player') {
-        setToast(game, `${army.name} 释放了${POWERUP_TYPES[type].label}`, 'power')
+        setToast(game, T('castlesiege.usedPowerup', { name: lordName(army), powerup: T('castlesiege.powerup.' + type) }), 'power')
     }
     return true
 }
@@ -682,7 +700,7 @@ function updateCastleDefense(game, army, now, deltaMs) {
         while (now >= army.garrisonRewardAt) {
             const recruitType = pickRandomUnitType()
             army.units[recruitType] += 1
-            addFloatingText(game, army.x, army.y - 42, `🏰 +100 ${UNIT_TYPES[recruitType].name}`, 'recruit')
+            addFloatingText(game, army.x, army.y - 42, `🏰 +100 ${T('castlesiege.unit.' + recruitType)}`, 'recruit')
             army.garrisonRewardAt += 1000
         }
     }
@@ -707,7 +725,7 @@ function resolveRecruitment(game, army) {
             game.playerRecruitScore += recruitTroops
             game.playerRecruitByType[type] += recruitTroops
         }
-        addFloatingText(game, soldier.x, soldier.y, `+${recruitTroops} ${UNIT_TYPES[type].name}`, 'recruit')
+        addFloatingText(game, soldier.x, soldier.y, `+${recruitTroops} ${T('castlesiege.unit.' + type)}`, 'recruit')
     }
 }
 
@@ -720,10 +738,10 @@ function resolvePowerupPickup(game, army, now) {
         army.powerups[powerup.type] += 1
         game.powerups.splice(index, 1)
         const config = POWERUP_TYPES[powerup.type]
-        addFloatingText(game, powerup.x, powerup.y, `${config.icon} +1 ${config.label}`, 'power')
+        addFloatingText(game, powerup.x, powerup.y, `${config.icon} +1 ${T('castlesiege.powerup.' + powerup.type)}`, 'power')
 
         if (army.behavior === 'player') {
-            setToast(game, `获得道具：${config.label}`, 'power')
+            setToast(game, T('castlesiege.gotPowerup', { powerup: T('castlesiege.powerup.' + powerup.type) }), 'power')
         } else {
             tryAutoUsePowerup(game, army, now)
         }
@@ -774,7 +792,7 @@ function resolveBattle(game, left, right, now) {
         if (left.defenseShieldReady) {
             damageToLeft = 0
             left.defenseShieldReady = false
-            addFloatingText(game, left.x, left.y - 30, '免疫首次碰撞', 'shield')
+            addFloatingText(game, left.x, left.y - 30, T('castlesiege.shieldImmune'), 'shield')
         } else if (!rightInvincible) {
             damageToLeft = Math.max(0, Math.round(damageToLeft * 0.5))
         }
@@ -784,7 +802,7 @@ function resolveBattle(game, left, right, now) {
         if (right.defenseShieldReady) {
             damageToRight = 0
             right.defenseShieldReady = false
-            addFloatingText(game, right.x, right.y - 30, '免疫首次碰撞', 'shield')
+            addFloatingText(game, right.x, right.y - 30, T('castlesiege.shieldImmune'), 'shield')
         } else if (!leftInvincible) {
             damageToRight = Math.max(0, Math.round(damageToRight * 0.5))
         }
@@ -809,10 +827,10 @@ function resolveBattle(game, left, right, now) {
     addFloatingText(game, right.x, right.y - 16, `-${damageToRight}`, damageToRight > 0 ? 'danger' : 'shield')
 
     if (getArmyTotal(left) <= 0) {
-        killArmy(game, left, right.name)
+        killArmy(game, left, right)
     }
     if (getArmyTotal(right) <= 0) {
-        killArmy(game, right, left.name)
+        killArmy(game, right, left)
     }
 }
 
@@ -833,7 +851,7 @@ function resolveRangedAttacks(game, attacker, defender, now) {
     addFloatingText(game, defender.x, defender.y - 26, `🏹 -${ARCHER_DAMAGE}`, 'danger')
 
     if (getArmyTotal(defender) <= 0) {
-        killArmy(game, defender, attacker.name)
+        killArmy(game, defender, attacker)
     }
 }
 
@@ -859,7 +877,7 @@ function buildHud(game, now) {
         .map((army) => ({
             id: army.id || army.playerKey,
             icon: army.icon,
-            name: army.name,
+            name: lordName(army),
             troops: getDisplayedTroops(army),
             alive: army.alive
         }))
@@ -868,19 +886,19 @@ function buildHud(game, now) {
     const activeEffects = POWERUP_KEYS.filter((key) => hasActiveEffect(player, key, now)).map((key) => ({
         key,
         icon: POWERUP_TYPES[key].icon,
-        label: POWERUP_TYPES[key].label,
+        label: T('castlesiege.powerup.' + key),
         remain: Math.max(1, Math.ceil((player.effects[key] - now) / 1000))
     }))
 
     const playerState = !player.alive
-        ? `☠️ 复活中 ${Math.max(1, Math.ceil((player.respawnAt - now) / 1000))}s`
+        ? T('castlesiege.respawning', { seconds: Math.max(1, Math.ceil((player.respawnAt - now) / 1000)) })
         : hasActiveEffect(player, 'invincible', now)
-            ? `⚡ 无敌中 ${Math.max(1, Math.ceil((player.effects.invincible - now) / 1000))}s`
+            ? T('castlesiege.invincibleActive', { seconds: Math.max(1, Math.ceil((player.effects.invincible - now) / 1000)) })
         : player.defenseActive
-            ? '🏰 城堡防御中'
+            ? T('castlesiege.defending')
             : player.battleUntil > now
-                ? '⚔️ 战斗中'
-                : `👑 ${player.name} · 兵力 ${getDisplayedTroops(player)}`
+                ? T('castlesiege.battling')
+                : T('castlesiege.playerState', { name: player.name, troops: getDisplayedTroops(player) })
 
     return {
         ranking,
@@ -965,7 +983,7 @@ function drawCastle(ctx, castle, occupant, _now) {
     ctx.fillStyle = '#e2e8f0'
     ctx.font = 'bold 15px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(castle.name, 0, castle.radius + 26)
+    ctx.fillText(T('castlesiege.castle.' + castle.id), 0, castle.radius + 26)
     ctx.restore()
 }
 
@@ -1498,8 +1516,8 @@ function drawArmy(ctx, army, now) {
     ctx.fillStyle = isPlayer ? '#fde68a' : 'rgba(255,255,255,0.92)'
     ctx.strokeStyle = 'rgba(0,0,0,0.7)'
     ctx.lineWidth = 2.5
-    ctx.strokeText(army.name, army.x, nameY)
-    ctx.fillText(army.name, army.x, nameY)
+    ctx.strokeText(lordName(army), army.x, nameY)
+    ctx.fillText(lordName(army), army.x, nameY)
 
     // 道具图标
     const activeIcons = POWERUP_KEYS.filter((key) => hasActiveEffect(army, key, now)).map((key) => POWERUP_TYPES[key].icon).join(' ')
@@ -1559,7 +1577,7 @@ function drawPowerup(ctx, powerup, now) {
     ctx.textBaseline = 'middle'
     ctx.fillText(config.icon, 0, 1)
     ctx.font = '10px sans-serif'
-    ctx.fillText(config.label, 0, 25)
+    ctx.fillText(T('castlesiege.powerup.' + powerup.type), 0, 25)
     ctx.restore()
 }
 
@@ -1665,7 +1683,7 @@ function createGameState() {
         powerups: [],
         powerupSeed: 0,
         toast: {
-            text: `${ARMY_PROFILES.player.name} 已入场，开始争夺城池！`,
+            text: T('castlesiege.enterMsg', { name: ARMY_PROFILES.player.name }),
             tone: 'power',
             until: Date.now() + 1800
         },
@@ -1689,6 +1707,9 @@ function createGameState() {
 }
 
 export default function CastleSiege() {
+    const { t } = useLanguage()
+    // 同步模块级翻译引用：游戏循环/模块级函数内通过 T() 读取最新翻译（每次渲染刷新）
+    _t = t
     const canvasRef = useRef(null)
     const joystickRef = useRef(null)
     const stompRef = useRef(null)
@@ -1835,7 +1856,7 @@ export default function CastleSiege() {
                             .map((player) => ({
                                 id: player.playerKey,
                                 playerKey: player.playerKey,
-                                name: player.name || '访客玩家',
+                                name: player.name || T('castlesiege.guest'),
                                 icon: player.icon || '👑',
                                 color: player.color || '#f97316',
                                 glow: 'rgba(255,255,255,0.2)',
@@ -2009,27 +2030,27 @@ export default function CastleSiege() {
 
     return (
         <div className="castlewar-page">
-            <Link to="/games" className="btn-back-home">← 返回游戏列表</Link>
+            <Link to="/games" className="btn-back-home">{t('games.backToList')}</Link>
             <div className="castlewar-header">
                 <div className="castlewar-header-main">
-                    <h2 className="castlewar-title">🏰 AI 城池争夺战</h2>
-                    <p className="castlewar-subtitle">从 1 个士兵起步，招募野兵 · 占据城堡 · 与 DeepSeek · Doubao · 千问三路 AI 展开混战</p>
+                    <h2 className="castlewar-title">{t('castlesiege.title')}</h2>
+                    <p className="castlewar-subtitle">{t('castlesiege.subtitle')}</p>
                 </div>
                 <div className="castlewar-header-actions">
                     <button type="button" className="castlewar-action-btn castlewar-action-btn--rank" onClick={() => setLordPanelOpen((open) => !open)}>
-                        🏆 领主排行榜
+                        {t('castlesiege.lordRankBtn')}
                     </button>
                     <button type="button" className="castlewar-action-btn castlewar-action-btn--restart" onClick={handleRestart}>
-                        ⚔️ 重新开战
+                        {t('castlesiege.restart')}
                     </button>
                 </div>
             </div>
             {lordPanelOpen && (
                 <div className="castlewar-lord-panel">
-                    <div className="castlewar-overlay-title">领主榜</div>
+                    <div className="castlewar-overlay-title">{t('castlesiege.lordRank')}</div>
                     <div className="castlewar-status-note">
-                        仅注册玩家会进入领主排行榜，榜单统一显示注册昵称。
-                        {!lordEligible ? ' 当前以游客身份游玩，注册或登录后才会上榜。' : ''}
+                        {t('castlesiege.lordNote')}
+                        {!lordEligible ? t('castlesiege.lordNoteGuest') : ''}
                     </div>
                     <div className="castlewar-rank-list">
                         {lordRanking.map((entry) => (
@@ -2038,7 +2059,7 @@ export default function CastleSiege() {
                                 <strong>{entry.score}</strong>
                             </div>
                         ))}
-                        {!lordRanking.length && <div className="castlewar-status-note">暂无领主战绩</div>}
+                        {!lordRanking.length && <div className="castlewar-status-note">{t('castlesiege.noLordRecord')}</div>}
                     </div>
                 </div>
             )}
@@ -2046,7 +2067,7 @@ export default function CastleSiege() {
             <div className={`castlewar-board-shell ${hud.shake ? 'shake' : ''}`}>
                 <div className="castlewar-overlay castlewar-overlay-left">
                     <div className="castlewar-overlay-card">
-                        <div className="castlewar-overlay-title">兵力榜</div>
+                        <div className="castlewar-overlay-title">{t('castlesiege.armyRank')}</div>
                         <div className="castlewar-rank-list">
                             {hud.ranking.map((entry, index) => (
                                 <div key={entry.id} className={`castlewar-rank-item ${entry.alive ? '' : 'dead'}`}>
@@ -2060,9 +2081,9 @@ export default function CastleSiege() {
 
                 <div className="castlewar-overlay castlewar-overlay-center">
                     <div className="castlewar-overlay-card">
-                        <div className="castlewar-overlay-title">当前状态</div>
+                        <div className="castlewar-overlay-title">{t('castlesiege.status')}</div>
                         <div className="castlewar-status-text">{hud.playerState}</div>
-                        <div className="castlewar-status-note">累计招募兵力：{hud.lordScore}。地图已扩大；只有到达城堡中心核心区才会开始占领，静止 2 秒后触发防御。</div>
+                        <div className="castlewar-status-note">{t('castlesiege.statusNote', { score: hud.lordScore })}</div>
                     </div>
                 </div>
 
@@ -2135,7 +2156,7 @@ export default function CastleSiege() {
             </div>
 
             <div className="castlewar-joystick-panel">
-                <div className="castlewar-joystick-hint">拖动摇杆可 360 度控制队伍；城堡核心区驻守后每秒获得 +100 随机兵种</div>
+                <div className="castlewar-joystick-hint">{t('castlesiege.joystickHint')}</div>
                 <div
                     ref={joystickRef}
                     className="castlewar-joystick-pad"
@@ -2161,12 +2182,12 @@ export default function CastleSiege() {
 
             <div className="castlewar-info-grid">
                 <div className="castlewar-info-card">
-                    <h3>规则亮点</h3>
-                    <p>碰到无主士兵即可直接招募，兵力每次随机 +100~500；弓箭手进入 2 格射程会远程打出 -20；战场会刷新加速、强攻、坚盾、无敌道具；到达城堡中心核心区并驻守后，每秒还会获得 +100 随机兵种。</p>
+                    <h3>{t('castlesiege.rulesTitle')}</h3>
+                    <p>{t('castlesiege.rulesDesc')}</p>
                 </div>
                 <div className="castlewar-info-card">
-                    <h3>AI 风格</h3>
-                    <p>纯骑兵机动最快；混入步兵后速度减半；带投石车会更慢。DeepSeek偏激进追杀，Doubao优先抢占堡心，千问偏机动游击。</p>
+                    <h3>{t('castlesiege.aiStyleTitle')}</h3>
+                    <p>{t('castlesiege.aiStyleDesc')}</p>
                 </div>
             </div>
         </div>

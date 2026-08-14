@@ -2,8 +2,10 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import API from '../config/api'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Games() {
+    const { t } = useLanguage()
     const navigate = useNavigate()
     const [gamesUp, setGamesUp] = useState(true) // 默认可用，避免探测期间闪烁
     const [checking, setChecking] = useState(true)
@@ -29,39 +31,39 @@ export default function Games() {
     const games = [
         {
             id: 'castlesiege',
-            title: 'AI城池攻防战',
+            title: t('games.castlesiege.title'),
             icon: '🏰',
-            description: '支持多人在线同场乱战，与你的队友、对手和三路 AI 统帅互相争夺领地与城堡，展开大规模攻防混战！',
-            tag: '火爆'
+            description: t('games.castlesiege.desc'),
+            tag: t('games.castlesiege.tag')
         },
         {
             id: 'snakeking',
-            title: 'AI蛇王争霸',
+            title: t('games.snakeking.title'),
             icon: '🐍',
-            description: '和 DeepSeek蛇、Doubao蛇、千问蛇同场厮杀，抢无敌、咬尾巴、舔残骸，争夺蛇王宝座！',
-            tag: '热门'
+            description: t('games.snakeking.desc'),
+            tag: t('games.snakeking.tag')
         },
         {
             id: 'pingpong',
-            title: 'AI 乒乓球',
+            title: t('games.pingpong.title'),
             icon: '🏓',
-            description: '选择 AI 对手，点击球台不同角度击球，挑战你的反应速度！',
-            tag: '开发中',
+            description: t('games.pingpong.desc'),
+            tag: t('games.pingpong.tag'),
             disabled: true
         }
     ]
 
     return (
         <div className="games-page">
-            <Link to="/home" className="btn-back-home">← 返回首页</Link>
-            <h1 className="games-title">AI多人游戏</h1>
-            <p className="games-subtitle">与 AI 一起玩游戏，享受互动乐趣</p>
+            <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
+            <h1 className="games-title">{t('games.title')}</h1>
+            <p className="games-subtitle">{t('games.subtitle')}</p>
             {!gamesUp && !checking && (
                 <div className="games-maintenance">
                     <span className="games-maintenance-icon">🛠️</span>
                     <div className="games-maintenance-info">
-                        <h3>游戏服务维护中</h3>
-                        <p>当前为高峰期系统保护，游戏服务暂时下线，请稍后再来。AI 对话、辩论、树洞等核心功能不受影响，可放心使用。</p>
+                        <h3>{t('games.maintenanceTitle')}</h3>
+                        <p>{t('games.maintenanceDesc')}</p>
                     </div>
                 </div>
             )}
@@ -82,7 +84,7 @@ export default function Games() {
                             </div>
                             <p>{game.description}</p>
                         </div>
-                        <div className="game-item-arrow">{game.disabled ? '开发中' : !gamesUp ? '维护中' : '›'}</div>
+                        <div className="game-item-arrow">{game.disabled ? t('games.dev') : !gamesUp ? t('games.maintenance') : '›'}</div>
                     </div>
                 ))}
             </div>

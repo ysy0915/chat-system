@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useLanguage } from '../i18n/LanguageContext'
 import '../styles/debate-tree.css'
 
 // ---- 布局常量 ----
@@ -50,6 +51,7 @@ export function formatFinalText(text) {
 // ---- 主组件 ----
 
 export default function DebateTreeView({ websocketEvents, onDone }) {
+  const { t } = useLanguage()
   const [perspectives, setPerspectives] = useState([])  // [{id, label, focus, rounds:[], summary, status}]
   const [roleModelNames, setRoleModelNames] = useState({})  // {正方/反方/中立: 模型中文名}
   const [rootQuestion, setRootQuestion] = useState('')
@@ -250,18 +252,18 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
           break
         }
         case 'tree_aggregate_result': {
-          setFinalAnswer(msg.answer || '汇总完成')
+          setFinalAnswer(msg.answer || t('debateTree.done'))
           setFinalStreaming(false)
           break
         }
         case 'tree_perspective_error': {
           setPerspectives(prev =>
             prev.map(p => p.id === msg.perspectiveId
-              ? { ...p, status: 'error', summary: '辩论中断: ' + msg.error } : p))
+              ? { ...p, status: 'error', summary: t('debateTree.interrupted', { err: msg.error }) } : p))
           break
         }
         case 'done': {
-          const answer = msg.answer || '辩论完成'
+          const answer = msg.answer || t('debateTree.done')
           setFinalAnswer(answer)
           setFinalStreaming(false)
           // 延迟通知父组件，让 finalAnswer 先渲染出来
@@ -459,7 +461,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
               {/* 视角卡片 */}
               <div className={`tree-node new-node tree-perspective-node`}
                 style={{ left: pX, top: PERSPECTIVE_Y }}>
-                <div className="node-badge">视角 {idx + 1}</div>
+                <div className="node-badge">{t('debateTree.perspectiveN', { n: idx + 1 })}</div>
                 <div className="node-label">{p.label}</div>
                 {p.focus && <div className="node-focus">🎯 {p.focus}</div>}
               </div>
@@ -484,7 +486,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
                           )                           : (
                             <>
                               <div className="arg-role" style={{ color: colors.accent }}>
-                                {colors.icon} R{rIdx + 1} · {arg?.provider || role}
+                                {colors.icon} R{rIdx + 1} · {arg?.provider || t('debateTree.role.' + role)}
                               </div>
                               <div className="arg-text">{arg.text}</div>
                             </>
@@ -500,7 +502,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
               {p.summary && (
                 <div className="tree-node new-node tree-summary-node"
                   style={{ left: pX, top: ROUND_START_Y + p.rounds.length * ROUND_HEIGHT + SUMMARY_OFFSET }}>
-                  <div className="summary-label">📋 视角结论</div>
+                  <div className="summary-label">{t('debateTree.perspectiveTitle')}</div>
                   <div className={`summary-text${p.summaryStreaming ? ' streaming' : ''}`}>{p.summary}</div>
                 </div>
               )}
@@ -508,7 +510,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
               {p.status === 'concluding' && !p.summary && (
                 <div className="tree-node tree-summary-node"
                   style={{ left: pX, top: ROUND_START_Y + p.rounds.length * ROUND_HEIGHT + SUMMARY_OFFSET }}>
-                  <div className="summary-label">📋 正在归纳...</div>
+                  <div className="summary-label">{t('debateTree.summarizing')}</div>
                 </div>
               )}
 
@@ -526,30 +528,42 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
         {finalAnswer && finalAnswer !== '...' && (
           <div className="tree-node new-node tree-final-node"
             style={{ left: ROOT_X, top: finalY }}>
-            <div className="final-icon">📊 最终结论</div>
+            <div className="final-icon">{t('debateTree.finalTitle')}</div>
             <div className={`final-text${finalStreaming ? ' streaming' : ''}`}>{finalFormatted}</div>
           </div>
         )}
         {finalAnswer === '...' && (
           <div className="tree-node tree-final-node"
             style={{ left: ROOT_X, top: finalY }}>
-            <div className="final-icon">📊 正在汇总各视角结论...</div>
+            <div className="final-icon">{t('debateTree.finalizing')}</div>
           </div>
         )}
       </div>
 
+      {/* 语义拆解阶段：画布尚未生成节点 */}
+      {perspectives.length === 0 && (
+        <div className="tree-waiting">
+          <div className="debate-thinking-body">
+            <span className="debate-thinking-dot"></span>
+            <span className="debate-thinking-dot"></span>
+            <span className="debate-thinking-dot"></span>
+            <span className="debate-thinking-text">{t('debateTree.thinking')}</span>
+          </div>
+        </div>
+      )}
+
       {/* 图例（模型名动态来自后端 start 事件） */}
       <div className="tree-legend">
-        <span><span className="dot" style={{ background: '#38bdf8' }} /> {roleModelNames['正方'] || '正方'}</span>
-        <span><span className="dot" style={{ background: '#ef4444' }} /> {roleModelNames['反方'] || '反方'}</span>
-        <span><span className="dot" style={{ background: '#a855f7' }} /> {roleModelNames['中立'] || '中立'}</span>
+        <span><span className="dot" style={{ background: '#38bdf8' }} /> {roleModelNames['正方'] || t('debateTree.role.正方')}</span>
+        <span><span className="dot" style={{ background: '#ef4444' }} /> {roleModelNames['反方'] || t('debateTree.role.反方')}</span>
+        <span><span className="dot" style={{ background: '#a855f7' }} /> {roleModelNames['中立'] || t('debateTree.role.中立')}</span>
       </div>
 
       {/* 缩放控件 */}
       <div className="tree-controls">
-        <button onClick={zoomIn} title="放大">+</button>
-        <button onClick={zoomOut} title="缩小">−</button>
-        <button onClick={resetView} title="复位" style={{ fontSize: 14 }}>⌂</button>
+        <button onClick={zoomIn} title={t('debateTree.zoomIn')}>+</button>
+        <button onClick={zoomOut} title={t('debateTree.zoomOut')}>−</button>
+        <button onClick={resetView} title={t('debateTree.reset')} style={{ fontSize: 14 }}>⌂</button>
       </div>
     </div>
   )

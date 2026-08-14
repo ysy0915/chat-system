@@ -6,7 +6,7 @@
  * @param {Function} props.onChange
  * @param {Function} props.onKeyDown
  * @param {Function} props.onSubmit
- * @param {string} [props.placeholder='输入你的问题...']
+ * @param {string} [props.placeholder=翻译后的'输入你的问题...']
  * @param {boolean} [props.showStop]  是否显示"停止生成"按钮（替换发送按钮）
  * @param {Function} [props.onStop]
  * @param {boolean} [props.voiceSupported]
@@ -19,12 +19,13 @@
  * @param {string} [props.formClassName]  form 额外类名（如拖拽高亮 drag-over）
  * @param {Function} [props.onInputFocus] 输入框聚焦回调（如检查断线状态）
  */
+import { useLanguage } from '../../i18n/LanguageContext'
 export default function ChatInputBar({
     value,
     onChange,
     onKeyDown,
     onSubmit,
-    placeholder = '输入你的问题...',
+    placeholder,
     showStop,
     onStop,
     voiceSupported,
@@ -37,6 +38,8 @@ export default function ChatInputBar({
     formClassName,
     onInputFocus,
 }) {
+    const { t } = useLanguage()
+    const finalPlaceholder = placeholder ?? t('chat.placeholder')
     return (
         <div className="chat-input-area">
             {topBar}
@@ -51,7 +54,7 @@ export default function ChatInputBar({
                     onChange={onChange}
                     onKeyDown={onKeyDown}
                     onFocus={onInputFocus}
-                    placeholder={placeholder}
+                    placeholder={finalPlaceholder}
                 />
                 {afterInput}
                 {voiceSupported && (
@@ -71,7 +74,7 @@ export default function ChatInputBar({
                     </button>
                 )}
                 {showStop ? (
-                    <button type="button" className="send-btn stop-btn" onClick={onStop} title="停止生成">
+                    <button type="button" className="send-btn stop-btn" onClick={onStop} title={t('chat.stopGenerate')}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <rect x="6" y="6" width="12" height="12" rx="2"/>
                         </svg>
@@ -82,7 +85,7 @@ export default function ChatInputBar({
             </form>
             {isRecording && (
                 <div className="voice-hint">
-                    <span className="voice-dot"></span> 正在聆听，请说话...
+                    <span className="voice-dot"></span> {t('chat.listening')}
                 </div>
             )}
         </div>

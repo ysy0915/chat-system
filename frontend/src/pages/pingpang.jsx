@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../i18n/LanguageContext'
 /* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环内引用大量内部函数，依赖数组无法也不应静态枚举 */
 
 const AI_MODELS = [
-    { id: 'deepseek', name: 'DeepSeek', color: '#3b82f6', emoji: '🐋' },
-    { id: 'doubao', name: '豆包', color: '#8b5cf6', emoji: '🎯' },
-    { id: 'qwen', name: '千问', color: '#10b981', emoji: '🧠' }
+    { id: 'deepseek', nameKey: 'pingpang.ai.deepseek', color: '#3b82f6', emoji: '🐋' },
+    { id: 'doubao', nameKey: 'pingpang.ai.doubao', color: '#8b5cf6', emoji: '🎯' },
+    { id: 'qwen', nameKey: 'pingpang.ai.qwen', color: '#10b981', emoji: '🧠' }
 ]
 
 const MAX_ROUNDS = 10
@@ -13,9 +14,10 @@ const JOYSTICK_RADIUS = 50
 const JOYSTICK_DEADZONE = 0.12
 
 function ModelSelect({ onSelect }) {
+    const { t } = useLanguage()
     return (
         <div className="pingpong-select">
-            <h2>选择你的 AI 对手</h2>
+            <h2>{t('pingpang.selectOpponent')}</h2>
             <div className="model-grid">
                 {AI_MODELS.map(model => (
                     <div
@@ -25,7 +27,7 @@ function ModelSelect({ onSelect }) {
                         onClick={() => onSelect(model)}
                     >
                         <div className="model-emoji">{model.emoji}</div>
-                        <div className="model-name">{model.name}</div>
+                        <div className="model-name">{t(model.nameKey)}</div>
                     </div>
                 ))}
             </div>
@@ -159,8 +161,22 @@ function reflectWithinBounds(value, min, max) {
 }
 
 function PingPongGame({ opponent }) {
+    const { t } = useLanguage()
     const canvasRef = useRef(null)
     const joystickRef = useRef(null)
+    // rAF 循环闭包内读取的最新翻译文本（避免 useEffect 依赖数组重跑导致游戏重置）
+    const textsRef = useRef({})
+    textsRef.current = {
+        serveHint: t('pingpang.serveHint'),
+        bounce: t('pingpang.bounce'),
+        skillActive: t('pingpang.skillActive'),
+        skillNames: {
+            smash: t('pingpang.skill.smash'),
+            loop: t('pingpang.skill.loop'),
+            block: t('pingpang.skill.block'),
+            cut: t('pingpang.skill.cut'),
+        },
+    }
     const [score, setScore] = useState({ player: 0, ai: 0 })
     const [round, setRound] = useState(1)
     const [gameState, setGameState] = useState('waiting')
@@ -220,10 +236,10 @@ function PingPongGame({ opponent }) {
     })
 
     const skills = [
-        { id: 'smash', name: '抽球', icon: '', color: '#ef4444', desc: '加速球速', effect: 'speed' },
-        { id: 'loop', name: '拉球', icon: '', color: '#8b5cf6', desc: '旋转弧线', effect: 'spin' },
-        { id: 'block', name: '挡球', icon: '️', color: '#3b82f6', desc: '稳定回球', effect: 'block' },
-        { id: 'cut', name: '削球', icon: '✂️', color: '#10b981', desc: '下旋减速', effect: 'cut' }
+        { id: 'smash', name: t('pingpang.skill.smash'), icon: '', color: '#ef4444', desc: t('pingpang.skillDesc.smash'), effect: 'speed' },
+        { id: 'loop', name: t('pingpang.skill.loop'), icon: '', color: '#8b5cf6', desc: t('pingpang.skillDesc.loop'), effect: 'spin' },
+        { id: 'block', name: t('pingpang.skill.block'), icon: '️', color: '#3b82f6', desc: t('pingpang.skillDesc.block'), effect: 'block' },
+        { id: 'cut', name: t('pingpang.skill.cut'), icon: '✂️', color: '#10b981', desc: t('pingpang.skillDesc.cut'), effect: 'cut' }
     ]
 
     const startServe = (nextPosition) => {
@@ -420,7 +436,7 @@ function PingPongGame({ opponent }) {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
                 ctx.font = '14px sans-serif'
                 ctx.textAlign = 'center'
-                ctx.fillText('触摸球台发球 | 拖拽移动球拍', TABLE_WIDTH / 2, 30)
+                ctx.fillText(textsRef.current.serveHint, TABLE_WIDTH / 2, 30)
 
                 animationRef.current = requestAnimationFrame(gameLoop)
                 return
@@ -620,13 +636,13 @@ function PingPongGame({ opponent }) {
                 ctx.fillStyle = '#ef4444'
                 ctx.font = 'bold 16px sans-serif'
                 ctx.textAlign = 'left'
-                ctx.fillText(`弹跳: ${data.playerBounces}/2`, 10, TABLE_HEIGHT - 30)
+                ctx.fillText(textsRef.current.bounce.replace('{count}', data.playerBounces), 10, TABLE_HEIGHT - 30)
             }
             if (data.aiBounces > 0) {
                 ctx.fillStyle = '#ef4444'
                 ctx.font = 'bold 16px sans-serif'
                 ctx.textAlign = 'right'
-                ctx.fillText(`弹跳: ${data.aiBounces}/2`, TABLE_WIDTH - 10, 30)
+                ctx.fillText(textsRef.current.bounce.replace('{count}', data.aiBounces), TABLE_WIDTH - 10, 30)
             }
 
             if (data.skillActive) {
@@ -637,7 +653,7 @@ function PingPongGame({ opponent }) {
                     ctx.fillStyle = skill.color
                     ctx.font = '12px sans-serif'
                     ctx.textAlign = 'center'
-                    ctx.fillText(skill.name + '生效中', data.playerX + PADDLE_WIDTH / 2, data.playerY - 6)
+                    ctx.fillText(textsRef.current.skillActive.replace('{skill}', textsRef.current.skillNames[skill.id] || skill.id), data.playerX + PADDLE_WIDTH / 2, data.playerY - 6)
                 }
             }
 
@@ -765,18 +781,18 @@ function PingPongGame({ opponent }) {
 
     return (
         <div className="pingpong-game">
-            <Link to="/games" className="btn-back-home">← 返回游戏列表</Link>
+            <Link to="/games" className="btn-back-home">{t('games.backToList')}</Link>
             <div className="pingpong-header">
-                <h2>AI 乒乓球</h2>
+                <h2>{t('pingpang.title')}</h2>
                 <div className="pingpong-score">
-                    <span className="score-player">你: {score.player}</span>
+                    <span className="score-player">{t('pingpang.you')}: {score.player}</span>
                     <span className="score-vs">VS</span>
-                    <span className="score-ai" style={{ color: opponent.color }}>{opponent.name}: {score.ai}</span>
-                    <span className="score-round">第 {Math.min(round, MAX_ROUNDS)}/{MAX_ROUNDS} 球</span>
+                    <span className="score-ai" style={{ color: opponent.color }}>{t(opponent.nameKey)}: {score.ai}</span>
+                    <span className="score-round">{t('pingpang.round', { current: Math.min(round, MAX_ROUNDS), total: MAX_ROUNDS })}</span>
                 </div>
             </div>
             <div className="pingpong-instructions">
-                触摸/拖拽移动球拍 | 点击发球 | 球过拍后接不到 | 跳 2 下算输
+                {t('pingpang.instructions')}
             </div>
             <canvas
                 ref={canvasRef}
@@ -800,7 +816,7 @@ function PingPongGame({ opponent }) {
                 ))}
             </div>
             <div className="joystick-panel">
-                <div className="joystick-hint">拖动中间摇杆移动，点击中心可直接发球</div>
+                <div className="joystick-hint">{t('pingpang.joystickHint')}</div>
                 <div
                     ref={joystickRef}
                     className="joystick-pad"
@@ -829,17 +845,17 @@ function PingPongGame({ opponent }) {
                 <div className="gameover-overlay">
                     <div className="gameover-content">
                         <h2 className={playerWon ? 'win-title' : 'lose-title'}>
-                            {playerWon ? ' 你赢了！' : ' 你输了'}
+                            {playerWon ? t('pingpang.win') : t('pingpang.lose')}
                         </h2>
                         <p className="final-score">
-                            最终比分：{score.player} : {score.ai}
+                            {t('pingpang.finalScore', { player: score.player, ai: score.ai })}
                         </p>
                         <div className="gameover-buttons">
                             <button className="btn-restart" onClick={handleRestart}>
-                                再来一局
+                                {t('pingpang.playAgain')}
                             </button>
                             <Link to="/games" className="btn-back-games">
-                                返回游戏列表
+                                {t('pingpang.backToGames')}
                             </Link>
                         </div>
                     </div>
@@ -850,12 +866,13 @@ function PingPongGame({ opponent }) {
 }
 
 export default function PingPong() {
+    const { t } = useLanguage()
     const [selectedModel, setSelectedModel] = useState(null)
 
     if (!selectedModel) {
         return (
             <div className="pingpong-page">
-                <Link to="/games" className="btn-back-home">← 返回游戏列表</Link>
+                <Link to="/games" className="btn-back-home">← {t('pingpang.backToGames')}</Link>
                 <ModelSelect onSelect={setSelectedModel} />
             </div>
         )

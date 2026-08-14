@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function MediaGen() {
+  const { t } = useLanguage()
   const [authUser, setAuthUser] = useState(null)
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState([])
@@ -40,7 +42,7 @@ export default function MediaGen() {
           } else if (r.status === 'error') {
             history.push({
               role: 'ai',
-              content: '生成失败',
+              content: t('common.generateFailed'),
               type: r.type,
               url: null,
               error: true
@@ -91,7 +93,7 @@ export default function MediaGen() {
             if (updated[msgIndex] && updated[msgIndex].recordId === recordId) {
               updated[msgIndex] = {
                 role: 'ai',
-                content: data.error || '生成失败',
+                content: data.error || t('common.generateFailed'),
                 type: data.type,
                 url: null,
                 error: true
@@ -125,7 +127,7 @@ export default function MediaGen() {
           ...msg,
           error: true,
           url: null,
-          content: '媒体来源已失效或已过期，请重新生成'
+          content: t('mediaGen.mediaExpired')
         }
       }
       return updated
@@ -179,7 +181,7 @@ export default function MediaGen() {
         timeout
       })
       setGenerating(false)
-      const typeLabel = genType === 'video' ? '视频' : '图片'
+      const typeLabel = genType === 'video' ? t('mediaGen.typeVideo') : t('mediaGen.typeImage')
       setMessages(prev => [...prev, {
         role: 'ai',
         content: typeLabel,
@@ -188,7 +190,7 @@ export default function MediaGen() {
       }])
     } catch (err) {
       setGenerating(false)
-      const errorMsg = err.response?.data?.error || '生成失败，请重试'
+      const errorMsg = err.response?.data?.error || t('mediaGen.retry')
       setMessages(prev => [...prev, {
         role: 'ai',
         content: errorMsg,
@@ -217,15 +219,15 @@ export default function MediaGen() {
               <path d="M21 15l-5-5L5 21"/>
             </svg>
           </div>
-          <h2 className="media-gate-title">图片与视频生成</h2>
-          <p className="media-gate-desc">该功能需要登录后才能使用，请先登录您的账号</p>
+          <h2 className="media-gate-title">{t('mediaGen.gateTitle')}</h2>
+          <p className="media-gate-desc">{t('mediaGen.gateDesc')}</p>
           <button onClick={openLogin} className="media-gate-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/>
               <polyline points="10 17 15 12 10 7"/>
               <line x1="15" y1="12" x2="3" y2="12"/>
             </svg>
-            立即登录
+            {t('mediaGen.loginNow')}
           </button>
         </div>
       </div>
@@ -236,9 +238,9 @@ export default function MediaGen() {
     <div className="chat-container">
       {messages.length === 0 && (
         <div className="chat-welcome">
-          <Link to="/home" className="btn-back-home">← 返回首页</Link>
-          <h1>🎨 AI 创作</h1>
-          <p>描述你想要的图片或视频，AI 为你生成</p>
+          <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
+          <h1>{t('mediaGen.title')}</h1>
+          <p>{t('mediaGen.subtitle')}</p>
         </div>
       )}
 
@@ -248,7 +250,7 @@ export default function MediaGen() {
             {m.role === 'user' ? (
               <div className="media-prompt">
                 <span className={`media-type-badge ${m.type}`}>
-                  {m.type === 'image' ? '🖼 图片' : '🎬 视频'}
+                  {m.type === 'image' ? `🖼 ${t('mediaGen.typeImage')}` : `🎬 ${t('mediaGen.typeVideo')}`}
                 </span>
                 <span>{m.content}</span>
               </div>
@@ -256,7 +258,7 @@ export default function MediaGen() {
               <div className="media-result">
                 <div className="media-video-placeholder">
                   <div className="media-gen-spinner"></div>
-                  <span>{m.type === 'video' ? '视频生成中，请稍候...' : 'AI 正在创作中，请稍候...'}</span>
+                  <span>{m.type === 'video' ? t('mediaGen.generating') : t('mediaGen.generatingImage')}</span>
                 </div>
               </div>
             ) : m.error ? (
@@ -282,26 +284,26 @@ export default function MediaGen() {
                 ) : (
                   <div className="media-video-placeholder">
                     <div className="media-video-icon">▶</div>
-                    <span>视频生成中，请稍候...</span>
+                    <span>{t('mediaGen.generating')}</span>
                   </div>
                 )}
                 {m.url && (
                   <div className="media-result-actions">
-                    <a href={m.url} target="_blank" rel="noopener noreferrer" className="media-action-btn" title="新窗口打开">
+                    <a href={m.url} target="_blank" rel="noopener noreferrer" className="media-action-btn" title={t('mediaGen.openNewWindow')}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-4a2 2 0 012-2h6"/>
                         <polyline points="15 3 21 3 21 9"/>
                         <line x1="10" y1="14" x2="21" y2="3"/>
                       </svg>
                     </a>
-                    <a href={m.url} download className="media-action-btn" title="下载">
+                    <a href={m.url} download className="media-action-btn" title={t('mediaGen.download')}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                       </svg>
                     </a>
-                    <span className="ai-generated-tag">AI生成</span>
+                    <span className="ai-generated-tag">{t('history.aiGenerated')}</span>
                   </div>
                 )}
               </div>
@@ -312,7 +314,7 @@ export default function MediaGen() {
           <div className="msg ai">
             <div className="media-generating">
               <div className="media-gen-spinner"></div>
-              <span>{genType === 'video' ? '视频生成较慢，预计需要 2~5 分钟，请耐心等待...' : 'AI 正在创作中，请稍候...'}</span>
+              <span>{genType === 'video' ? t('mediaGen.slowVideo') : t('mediaGen.generatingImage')}</span>
             </div>
           </div>
         )}
@@ -323,11 +325,11 @@ export default function MediaGen() {
         <div className="media-type-selector">
           <button className={`media-type-btn ${genType === 'image' ? 'active' : ''}`}
                   onClick={() => switchType('image')}>
-            🖼 图片生成
+            {t('mediaGen.genImage')}
           </button>
           <button className={`media-type-btn ${genType === 'video' ? 'active' : ''}`}
                   onClick={() => switchType('video')}>
-            🎬 视频生成
+            {t('mediaGen.genVideo')}
           </button>
         </div>
         <form className="chat-input-wrapper" onSubmit={handleGenerate}>
@@ -335,7 +337,7 @@ export default function MediaGen() {
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
             onKeyDown={handleKey}
-            placeholder={genType === 'image' ? '描述你想生成的图片...' : '描述你想生成的视频...'}
+            placeholder={genType === 'image' ? t('mediaGen.placeholderImage') : t('mediaGen.placeholderVideo')}
           />
           <button type="submit" className="send-btn" disabled={generating}>↑</button>
         </form>

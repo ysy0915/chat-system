@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function History(){
+  const { t } = useLanguage()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const authUser = useAuthUser()
@@ -27,13 +29,13 @@ export default function History(){
 
   return (
     <div className="history-page">
-      <Link to="/home" className="btn-back-home">← 返回首页</Link>
+      <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
       <div className="history-header">
-        <h2 className="history-title">历史问答记录</h2>
-        <button onClick={fetchList} className="btn-refresh">刷新</button>
+        <h2 className="history-title">{t('history.title')}</h2>
+        <button onClick={fetchList} className="btn-refresh">{t('history.refresh')}</button>
       </div>
-      {loading && <div>加载中…</div>}
-      {!loading && items.length === 0 && <div>暂无历史记录</div>}
+      {loading && <div>{t('common.loading')}</div>}
+      {!loading && items.length === 0 && <div>{t('history.empty')}</div>}
       <div className="history-list">
         {items.filter(it => it.answerJson && it.answerJson.trim()).map((it, idx) => {
           let answerText = it.answerJson || ''
@@ -58,11 +60,11 @@ export default function History(){
                       <div>Q: {it.question}</div>
                     )}
                   </div>
-                  <div className="history-meta">提问者</div>
+                  <div className="history-meta">{t('history.asker')}</div>
                 </div>
                 <div className="history-a">
                   A: {answerText}
-                  <span className="ai-generated-tag">AI生成</span>
+                  <span className="ai-generated-tag">{t('history.aiGenerated')}</span>
                 </div>
               </div>
           )

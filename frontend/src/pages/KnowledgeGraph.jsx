@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../i18n/LanguageContext'
 
 /**
  * 知识脉络图（基于 Neo4j）
@@ -9,6 +10,7 @@ import { Link } from 'react-router-dom'
  * 可视化：Canvas 力导向图
  */
 export default function KnowledgeGraph() {
+    const { t } = useLanguage()
     const canvasRef = useRef(null)
     const [stats, setStats] = useState({ entityCount: 0, relationCount: 0 })
     const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
@@ -287,7 +289,7 @@ export default function KnowledgeGraph() {
         ctx.font = '16px sans-serif'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText('暂无知识图谱数据，发起 AI 对话后将自动构建', canvas.width / 2, canvas.height / 2)
+        ctx.fillText(t('graph.emptyCanvas'), canvas.width / 2, canvas.height / 2)
     }
 
     // 鼠标交互：拖拽节点 + 悬停 + 点击
@@ -477,20 +479,20 @@ export default function KnowledgeGraph() {
     return (
         <div className="graph-page">
             {/* 返回按钮 */}
-            <Link to="/home" className="graph-back-btn">← 返回首页</Link>
+            <Link to="/home" className="graph-back-btn">{t('common.backHome')}</Link>
 
             {/* 说明区域 */}
             <div className="graph-welcome">
-                <h1 className="graph-welcome-title">🧬 知识脉络图</h1>
+                <h1 className="graph-welcome-title">{t('knowledgeGraph.title')}</h1>
                 <p className="graph-welcome-desc">
-                    基于 AI 对话内容自动抽取实体与关系，构建可视化知识图谱。<br />
-                    放大缩小浏览、拖拽节点探索、点击查看关联关系。支持按权重筛选核心节点。
+                    {t('knowledgeGraph.desc1')}<br />
+                    {t('knowledgeGraph.desc2')}
                 </p>
                 <div className="graph-stats">
-                    <span className="stat-badge">🏷 实体 {stats.entityCount || 0}</span>
-                    <span className="stat-badge">🔗 关系 {stats.relationCount || 0}</span>
+                    <span className="stat-badge">{t('graph.entityBadge', { count: stats.entityCount || 0 })}</span>
+                    <span className="stat-badge">{t('graph.relationBadge', { count: stats.relationCount || 0 })}</span>
                     {graphData.nodes.length > 0 && (
-                        <span className="stat-badge">📊 图中 {graphData.nodes.length} 节点</span>
+                        <span className="stat-badge">{t('graph.nodesBadge', { count: graphData.nodes.length })}</span>
                     )}
                 </div>
             </div>
@@ -512,13 +514,13 @@ export default function KnowledgeGraph() {
 
                 {loading && (
                     <div className="graph-loading-overlay">
-                        <span>加载中…</span>
+                        <span>{t('common.loading')}</span>
                     </div>
                 )}
 
                 {!loading && graphData.nodes.length === 0 && (
                     <div className="graph-empty-hint">
-                        暂无数据，发起 AI 对话后将自动构建
+                        {t('graph.emptyHint')}
                     </div>
                 )}
 
@@ -529,10 +531,10 @@ export default function KnowledgeGraph() {
                             <button onClick={() => setSelectedNode(null)} className="graph-detail-close">✕</button>
                         </div>
                         <div className="graph-detail-body">
-                            <p className="graph-detail-meta">关联数：{selectedNode.value || 0}</p>
+                            <p className="graph-detail-meta">{t('graph.relationCount', { count: selectedNode.value || 0 })}</p>
                             {relatedEdges.length > 0 && (
                                 <div className="graph-detail-relations">
-                                    <h4>关联关系</h4>
+                                    <h4>{t('graph.relations')}</h4>
                                     {relatedEdges.map((e, i) => {
                                         const other = e.source.id === selectedNode.id ? e.target : e.source
                                         const direction = e.source.id === selectedNode.id ? '→' : '←'
@@ -544,7 +546,7 @@ export default function KnowledgeGraph() {
                                                 <span className="relation-node">{other.label}</span>
                                                 {e.question && (
                                                     <div className="relation-source" title={e.question}>
-                                                        来源: {e.question.substring(0, 40)}...
+                                                        {t('graph.source', { question: e.question.substring(0, 40) })}...
                                                     </div>
                                                 )}
                                             </div>
@@ -559,7 +561,7 @@ export default function KnowledgeGraph() {
                 {hoveredNode && !selectedNode && (
                     <div className="graph-tooltip">
                         <strong>{hoveredNode.label}</strong>
-                        <span>关联数: {hoveredNode.value || 0}</span>
+                        <span>{t('graph.tooltipCount', { count: hoveredNode.value || 0 })}</span>
                     </div>
                 )}
             </div>
@@ -571,14 +573,14 @@ export default function KnowledgeGraph() {
                         type="text"
                         value={keyword}
                         onChange={e => setKeyword(e.target.value)}
-                        placeholder="搜索知识实体…"
+                        placeholder={t('graph.searchPlaceholder')}
                         className="graph-search-input"
                     />
                     <button type="submit" className="graph-btn" disabled={loading}>
-                        {loading ? '搜索中…' : '搜索'}
+                        {loading ? t('graph.searching') : t('graph.search')}
                     </button>
                     <button type="button" onClick={handleReset} className="graph-btn graph-btn-secondary">
-                        重置
+                        {t('graph.reset')}
                     </button>
                 </form>
 
@@ -590,13 +592,13 @@ export default function KnowledgeGraph() {
                         >?</span>
                         {helpOpen === 'entity' && (
                             <div className="graph-help-popup">
-                                一个词关联的知识越多，它的"权重"就越高。<br />
-                                设个数字，只展示权重 ≥ 这个值的词。<br />
-                                数字越大，图中出现的词越少但越核心。不填默认显示全部。
+                                {t('graph.entityHelp1')}<br />
+                                {t('graph.entityHelp2')}<br />
+                                {t('graph.entityHelp3')}
                             </div>
                         )}
                         <label className="graph-weight-label">
-                            实体最低权重
+                            {t('graph.minEntityWeight')}
                             <input
                                 type="number"
                                 min="1"
@@ -615,13 +617,13 @@ export default function KnowledgeGraph() {
                         >?</span>
                         {helpOpen === 'relation' && (
                             <div className="graph-help-popup">
-                                两个词之间被 AI 提到越多次，"关系"就越强。<br />
-                                设个数字，只展示出现次数 ≥ 这个值的关系线。<br />
-                                数字越大，图里的连线越少但越重要。不填默认显示全部。
+                                {t('graph.relHelp1')}<br />
+                                {t('graph.relHelp2')}<br />
+                                {t('graph.relHelp3')}
                             </div>
                         )}
                         <label className="graph-weight-label">
-                            关系最低权重
+                            {t('graph.minRelationWeight')}
                             <input
                                 type="number"
                                 min="1"
@@ -635,7 +637,7 @@ export default function KnowledgeGraph() {
                     </div>
                     <button type="button" onClick={() => loadGraph(keyword, minEntityWeight, minRelationWeight)}
                             className="graph-btn" disabled={loading}>
-                        筛选
+                        {t('graph.filter')}
                     </button>
                 </div>
             </div>

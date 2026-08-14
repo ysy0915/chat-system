@@ -376,6 +376,19 @@
     margin-left: 4px;
 }
 
+/* 提交后等待第一个回答 */
+.debate-waiting {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 36px 0;
+    margin: 20px 0;
+    border-radius: 16px;
+    background: rgba(168, 85, 247, 0.04);
+    border: 1px dashed rgba(168, 85, 247, 0.2);
+    animation: debateFadeIn 0.4s ease;
+}
+
 @keyframes debateThinkDot {
     0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
     40% { opacity: 1; transform: scale(1.2); }

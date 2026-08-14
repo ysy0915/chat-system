@@ -18,6 +18,7 @@ import './styles/debate.css'
 import './styles/monitor.css'
 import './styles/responsive.css'
 import './styles/game.css'
+import './styles/i18n.css'
 
 // 全局 axios 拦截器：401 时清除登录状态
 axios.interceptors.response.use(

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import apiClient from '../config/http'
+import { useLanguage } from '../i18n/LanguageContext'
 
 /**
  * 登录 / 注册弹窗（含算术验证码）
@@ -7,6 +8,7 @@ import apiClient from '../config/http'
  * - 注册需携带 captcha_token / captcha_answer（后端 V5 起必填，防自动化刷号）
  */
 const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
+    const { t } = useLanguage()
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [captcha, setCaptcha] = useState(null)
@@ -29,7 +31,7 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
             setError('')
         } catch (e) {
             setCaptcha(null)
-            setError('验证码获取失败，请重试')
+            setError(t('auth.captchaFetchFailed'))
         } finally {
             setCaptchaLoading(false)
         }
@@ -53,13 +55,13 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
         e.preventDefault()
         const username = loginUsernameRef.current?.value?.trim() || ''
         const password = loginPasswordRef.current?.value || ''
-        if (!username || !password) { setError('请输入用户名和密码'); return }
+        if (!username || !password) { setError(t('auth.needCredentials')); return }
         setLoading(true); setError('')
         try {
             const res = await apiClient.post('/api/v1/auth/login', { username, password })
             finishAuth(res)
         } catch (err) {
-            setError(err.response?.data?.error || '登录失败')
+            setError(err.response?.data?.error || t('auth.loginFailed'))
         } finally { setLoading(false) }
     }
 
@@ -69,8 +71,8 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
         const password = regPasswordRef.current?.value || ''
         const nickname = regNicknameRef.current?.value?.trim() || ''
         const captchaAnswer = captchaAnswerRef.current?.value?.trim() || ''
-        if (!username || !password) { setError('请输入用户名和密码'); return }
-        if (!captcha?.captcha_token || !captchaAnswer) { setError('请完成验证码'); return }
+        if (!username || !password) { setError(t('auth.needCredentials')); return }
+        if (!captcha?.captcha_token || !captchaAnswer) { setError(t('auth.needCaptcha')); return }
         setLoading(true); setError('')
         try {
             await apiClient.post('/api/v1/auth/register', {
@@ -82,7 +84,7 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
             const res = await apiClient.post('/api/v1/auth/login', { username, password })
             finishAuth(res)
         } catch (err) {
-            setError(err.response?.data?.error || '注册失败')
+            setError(err.response?.data?.error || t('auth.registerFailed'))
             // 注册失败（如验证码过期）后刷新验证码
             fetchCaptcha()
         } finally { setLoading(false) }
@@ -94,67 +96,67 @@ const AuthModal = React.memo(function AuthModal({ mode, onClose, onSwitch }) {
                 <button className="auth-modal-close" onClick={onClose}>✕</button>
                 <div className="auth-tabs">
                     <button className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
-                            onClick={() => { onSwitch('login'); setError('') }}>登录</button>
+                            onClick={() => { onSwitch('login'); setError('') }}>{t('auth.tabLogin')}</button>
                     <button className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
-                            onClick={() => { onSwitch('register'); setError('') }}>注册</button>
+                            onClick={() => { onSwitch('register'); setError('') }}>{t('auth.tabRegister')}</button>
                 </div>
                 {error && <div className="auth-error">{error}</div>}
                 {mode === 'login' ? (
                     <form onSubmit={handleLogin}>
                         <div className="auth-field">
-                            <label>用户名</label>
+                            <label>{t('auth.username')}</label>
                             <input ref={loginUsernameRef} type="text"
                                    defaultValue=""
-                                   placeholder="请输入用户名" required />
+                                   placeholder={t('auth.usernamePlaceholder')} required />
                         </div>
                         <div className="auth-field">
-                            <label>密码</label>
+                            <label>{t('auth.password')}</label>
                             <input ref={loginPasswordRef} type="password"
                                    defaultValue=""
-                                   placeholder="请输入密码" required />
+                                   placeholder={t('auth.passwordPlaceholder')} required />
                         </div>
                         <button type="submit" className="auth-submit" disabled={loading}>
-                            {loading ? '登录中...' : '登 录'}
+                            {loading ? t('auth.loginLoading') : t('auth.login')}
                         </button>
                     </form>
                 ) : (
                     <form onSubmit={handleRegister}>
                         <div className="auth-field">
-                            <label>用户名</label>
+                            <label>{t('auth.username')}</label>
                             <input ref={regUsernameRef} type="text"
                                    defaultValue=""
-                                   placeholder="请输入用户名" required />
+                                   placeholder={t('auth.usernamePlaceholder')} required />
                         </div>
                         <div className="auth-field">
-                            <label>昵称</label>
+                            <label>{t('auth.nickname')}</label>
                             <input ref={regNicknameRef} type="text"
                                    defaultValue=""
-                                   placeholder="选填，不填则默认使用用户名" />
+                                   placeholder={t('auth.nicknamePlaceholder')} />
                         </div>
                         <div className="auth-field">
-                            <label>密码</label>
+                            <label>{t('auth.password')}</label>
                             <input ref={regPasswordRef} type="password"
                                    defaultValue=""
-                                   placeholder="请输入密码" required />
+                                   placeholder={t('auth.passwordPlaceholder')} required />
                         </div>
                         <div className="auth-field">
-                            <label>验证码</label>
+                            <label>{t('auth.captcha')}</label>
                             <div className="captcha-row">
                                 <span className={`captcha-question${!captchaLoading && !captcha ? ' failed' : ''}`}>
-                                    {captchaLoading ? '加载中...'
-                                        : (captcha ? captcha.question : '加载失败，点击右侧重试')}
+                                    {captchaLoading ? t('auth.captchaLoading')
+                                        : (captcha ? captcha.question : t('auth.captchaFailed'))}
                                 </span>
                                 <button type="button" className="captcha-refresh"
                                         onClick={fetchCaptcha} disabled={captchaLoading}>
-                                    {captchaLoading ? '加载中' : (captcha ? '换一题' : '重 试')}
+                                    {captchaLoading ? t('auth.captchaLoadingShort') : (captcha ? t('auth.captchaRefresh') : t('auth.captchaRetry'))}
                                 </button>
                             </div>
                             <input ref={captchaAnswerRef} type="text" maxLength="5"
                                    autoComplete="off"
-                                   placeholder="输入计算结果" required />
+                                   placeholder={t('auth.captchaPlaceholder')} required />
                         </div>
                         <button type="submit" className="auth-submit" disabled={loading}>
-                            {loading ? '注册中...' : '注 册'}
+                            {loading ? t('auth.registerLoading') : t('auth.register')}
                         </button>
                     </form>
                 )}

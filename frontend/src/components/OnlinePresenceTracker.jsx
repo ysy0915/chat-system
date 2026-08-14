@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useStompConnection } from '../hooks/useStompConnection'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // 路由 → 在线状态 page 标识
 function getPresencePage(pathname) {
@@ -24,11 +25,11 @@ function getPresencePage(pathname) {
     return 'landing'
 }
 
-function getPresenceIdentity(authUser) {
+function getPresenceIdentity(authUser, t) {
     if (authUser?.id) {
         return {
             userId: String(authUser.id),
-            name: authUser.nickname || authUser.name || `用户${authUser.id}`
+            name: authUser.nickname || authUser.name || t('presence.user', { id: authUser.id })
         }
     }
 
@@ -39,7 +40,7 @@ function getPresenceIdentity(authUser) {
     }
     return {
         userId: guestId,
-        name: '访客'
+        name: t('presence.guest')
     }
 }
 
@@ -49,6 +50,7 @@ function getPresenceIdentity(authUser) {
  * - 断开期间显示顶部红条提示，点击页面/按键即可恢复
  */
 export default function OnlinePresenceTracker({ authUser }) {
+    const { t } = useLanguage()
     const location = useLocation()
     const desiredPresenceRef = useRef(null)
     const activePresenceRef = useRef(null)
@@ -57,7 +59,7 @@ export default function OnlinePresenceTracker({ authUser }) {
     const disconnectedRef = useRef(false)
     const [showIdleBanner, setShowIdleBanner] = useState(false)
 
-    const identity = getPresenceIdentity(authUser)
+    const identity = getPresenceIdentity(authUser, t)
     const userId = `presence-${identity.userId}`
 
     // onConnect/onBeforeDisconnect 均为异步触发，闭包延迟引用下方定义的函数，运行期已初始化
@@ -164,7 +166,7 @@ export default function OnlinePresenceTracker({ authUser }) {
             fontSize: 13, fontWeight: 500,
             boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
         }}>
-            您已 5 分钟无操作，连接已断开。点击页面任意位置或按任意键可重新连接。
+            {t('presence.idleBanner')}
         </div>
     ) : null
 }

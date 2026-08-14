@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../i18n/LanguageContext'
 /* eslint-disable react-hooks/exhaustive-deps -- rAF 游戏循环内引用大量内部函数，依赖数组无法也不应静态枚举 */
 
 const GRID_COLS = 40
@@ -25,6 +26,10 @@ const DIRECTIONS = [
     { x: -1, y: 0, name: 'left' }
 ]
 
+// 模块级 i18n 引用：游戏循环/模块级函数内使用（组件渲染时同步 t）
+let _t = (k) => k
+function T(key, vars) { return _t(key, vars) }
+
 const SNAKE_PROFILES = {
     player: {
         id: 'player',
@@ -38,7 +43,8 @@ const SNAKE_PROFILES = {
     },
     deepseek: {
         id: 'deepseek',
-        name: 'DeepSeek蛇',
+        name: 'DeepSeek',
+        nameKey: 'snakeking.snakeDeepseek',
         icon: '🐋',
         color: '#2563eb',
         glow: 'rgba(37, 99, 235, 0.4)',
@@ -48,7 +54,8 @@ const SNAKE_PROFILES = {
     },
     doubao: {
         id: 'doubao',
-        name: 'Doubao蛇',
+        name: 'Doubao',
+        nameKey: 'snakeking.snakeDoubao',
         icon: '🟢',
         color: '#22c55e',
         glow: 'rgba(34, 197, 94, 0.35)',
@@ -58,7 +65,8 @@ const SNAKE_PROFILES = {
     },
     qwen: {
         id: 'qwen',
-        name: '千问蛇',
+        name: 'Qwen',
+        nameKey: 'snakeking.snakeQwen',
         icon: '🧠',
         color: '#8b5cf6',
         glow: 'rgba(139, 92, 246, 0.4)',
@@ -112,6 +120,11 @@ function createSegments(headX, headY, direction, length = BASE_LENGTH) {
         x: headX - direction.x * index,
         y: headY - direction.y * index
     }))
+}
+
+function snakeName(snake) {
+    if (snake.id === 'player') return snake.name
+    return snake.nameKey ? T(snake.nameKey) : snake.name
 }
 
 function getCurrentPlayerName() {
@@ -199,7 +212,7 @@ function createGameState() {
 
     replenishFood(game)
     game.toast = {
-        text: `${SNAKE_PROFILES.player.name} 已入场，立即开战！`,
+        text: T('snakeking.enterMsg', { name: SNAKE_PROFILES.player.name }),
         tone: 'power',
         until: Date.now() + 1800
     }
@@ -304,9 +317,9 @@ function killSnake(game, snake, killerName, reason = 'body', killerId = null) {
     }
 
     if (killerName) {
-        setToast(game, `${killerName} 击败了 ${snake.name}`, reason === 'tail' ? 'tail' : 'danger')
+        setToast(game, T('snakeking.killedBy', { killer: killerName, name: snakeName(snake) }), reason === 'tail' ? 'tail' : 'danger')
     } else {
-        setToast(game, `${snake.name} 出局了`, 'danger')
+        setToast(game, T('snakeking.out', { name: snakeName(snake) }), 'danger')
     }
 }
 
@@ -700,11 +713,11 @@ function stepGame(game, now, deltaMs) {
     for (const snake of movedSnakes) {
         const head = getSnakeHead(snake)
         if (!isInBounds(head)) {
-            deaths.set(snake.id, { snake, killerName: '边界', reason: 'wall', killerId: null })
+            deaths.set(snake.id, { snake, killerName: T('snakeking.wallKiller'), reason: 'wall', killerId: null })
             continue
         }
         if (snakeOccupiesCell(snake, head, 1) !== -1) {
-            deaths.set(snake.id, { snake, killerName: snake.name, reason: 'self', killerId: null })
+            deaths.set(snake.id, { snake, killerName: snakeName(snake), reason: 'self', killerId: null })
         }
     }
 
@@ -721,7 +734,7 @@ function stepGame(game, now, deltaMs) {
         if (invincibleSnakes.length === 1) {
             for (const snake of group) {
                 if (snake.id !== invincibleSnakes[0].id) {
-                    deaths.set(snake.id, { snake, killerName: invincibleSnakes[0].name, reason: 'head', killerId: invincibleSnakes[0].id })
+                    deaths.set(snake.id, { snake, killerName: snakeName(invincibleSnakes[0]), reason: 'head', killerId: invincibleSnakes[0].id })
                 }
             }
             continue
@@ -746,12 +759,12 @@ function stepGame(game, now, deltaMs) {
             if (hitIndex === -1) continue
 
             if (isInvincible(target, now) && !isInvincible(attacker, now)) {
-                deaths.set(attacker.id, { snake: attacker, killerName: target.name, reason: 'invincible', killerId: target.id })
+                deaths.set(attacker.id, { snake: attacker, killerName: snakeName(target), reason: 'invincible', killerId: target.id })
                 break
             }
 
             if (isInvincible(attacker, now)) {
-                deaths.set(target.id, { snake: target, killerName: attacker.name, reason: 'invincible', killerId: attacker.id })
+                deaths.set(target.id, { snake: target, killerName: snakeName(attacker), reason: 'invincible', killerId: attacker.id })
                 continue
             }
 
@@ -781,14 +794,14 @@ function stepGame(game, now, deltaMs) {
         if (removedB.length) scatterRemains(game, removedB, 1)
 
         game.shakeUntil = now + 200
-        setToast(game, `💥 ${snakeA.name} ↔ ${snakeB.name} 互相碰撞，各损 1 格`, 'tail')
+        setToast(game, T('snakeking.collision', { a: snakeName(snakeA), b: snakeName(snakeB) }), 'tail')
 
         // 长度不足 2 则死亡
         if (snakeA.segments.length < 2) {
-            deaths.set(snakeA.id, { snake: snakeA, killerName: snakeB.name, reason: 'body', killerId: snakeB.id })
+            deaths.set(snakeA.id, { snake: snakeA, killerName: snakeName(snakeB), reason: 'body', killerId: snakeB.id })
         }
         if (snakeB.segments.length < 2) {
-            deaths.set(snakeB.id, { snake: snakeB, killerName: snakeA.name, reason: 'body', killerId: snakeA.id })
+            deaths.set(snakeB.id, { snake: snakeB, killerName: snakeName(snakeA), reason: 'body', killerId: snakeA.id })
         }
     }
 
@@ -810,7 +823,7 @@ function stepGame(game, now, deltaMs) {
             snake.invincibleUntil = now + POWER_ORB_DURATION
             game.powerOrb = null
             game.nextPowerOrbAt = now + randomBetween(30000, 60000)
-            setToast(game, `${snake.name} 进入无敌状态`, 'power')
+            setToast(game, T('snakeking.invincibleMsg', { name: snakeName(snake) }), 'power')
         }
     }
 
@@ -916,7 +929,7 @@ function drawSnake(ctx, snake, now) {
     ctx.shadowBlur = 0
     ctx.font = isPlayer ? `bold ${Math.round(12 * scale + 2)}px sans-serif` : `${Math.round(11 * scale + 2)}px sans-serif`
     ctx.fillStyle = isPlayer ? '#fde68a' : 'rgba(255,255,255,0.86)'
-    ctx.fillText(snake.name, headCenterX, head.y * CELL_SIZE - 10)
+    ctx.fillText(snakeName(snake), headCenterX, head.y * CELL_SIZE - 10)
     ctx.restore()
 }
 
@@ -1003,7 +1016,7 @@ function buildHud(game, now) {
         .map((snake) => ({
             id: snake.id,
             icon: snake.icon,
-            name: snake.name,
+            name: snakeName(snake),
             length: currentLength(snake),
             alive: snake.alive
         }))
@@ -1014,7 +1027,7 @@ function buildHud(game, now) {
         .map((snake) => ({
             id: snake.id,
             icon: snake.icon,
-            name: snake.name,
+            name: snakeName(snake),
             kills: game.killStats ? (game.killStats[snake.id] || 0) : 0,
             color: snake.color
         }))
@@ -1023,10 +1036,10 @@ function buildHud(game, now) {
     const player = findSnakeById(game, 'player')
     const aliveSnakes = game.snakes.filter((snake) => snake.alive).length
     const playerStatus = !player.alive
-        ? `☠️ 复活中 ${Math.max(1, Math.ceil((player.respawnAt - now) / 1000))}s`
+        ? T('snakeking.respawn', { seconds: Math.max(1, Math.ceil((player.respawnAt - now) / 1000)) })
         : isInvincible(player, now)
-            ? `⚡️ 无敌中 ${Math.max(1, Math.ceil((player.invincibleUntil - now) / 1000))}s`
-            : `👑 ${player.name} · 长度 ${currentLength(player)} · 存活 ${aliveSnakes}/4`
+            ? T('snakeking.invincible', { seconds: Math.max(1, Math.ceil((player.invincibleUntil - now) / 1000)) })
+            : T('snakeking.playerStatus', { name: player.name, length: currentLength(player), alive: aliveSnakes })
 
     return {
         leaderboard,
@@ -1058,6 +1071,9 @@ function buildHud(game, now) {
 }
 
 export default function SnakeKing() {
+    const { t } = useLanguage()
+    // 同步模块级翻译引用：游戏循环/模块级函数内通过 T() 读取最新翻译（每次渲染刷新）
+    _t = t
     const canvasRef = useRef(null)
     const joystickRef = useRef(null)
     const gameRef = useRef(createGameState())
@@ -1198,22 +1214,22 @@ export default function SnakeKing() {
 
     return (
         <div className="snakeking-page">
-            <Link to="/games" className="btn-back-home">← 返回游戏列表</Link>
+            <Link to="/games" className="btn-back-home">{t('games.backToList')}</Link>
 
             <div className="snakeking-header">
                 <div className="snakeking-title-wrap">
-                    <h2 className="snakeking-title">🐍 AI 蛇王争霸</h2>
-                    <p className="snakeking-subtitle">与 DeepSeek · Doubao · 千问 三路 AI 同场厮杀，咬尾夺无敌，争夺蛇王宝座</p>
+                    <h2 className="snakeking-title">{t('snakeking.title')}</h2>
+                    <p className="snakeking-subtitle">{t('snakeking.subtitle')}</p>
                 </div>
                 <button type="button" className="snake-action-btn" onClick={handleRestart}>
-                    🔄 重新开局
+                    {t('snakeking.restart')}
                 </button>
             </div>
 
             <div className={`snake-board-shell ${hud.shake ? 'shake' : ''}`}>
                 <div className="snake-overlay snake-overlay-left">
                     <div className="snake-overlay-card">
-                        <div className="snake-overlay-title">🏆 排行榜</div>
+                        <div className="snake-overlay-title">{t('snakeking.leaderboard')}</div>
                         <div className="snake-rank-list">
                             {hud.leaderboard.map((entry, index) => (
                                 <div key={entry.id} className={`snake-rank-item ${entry.alive ? '' : 'dead'}`}>
@@ -1228,12 +1244,12 @@ export default function SnakeKing() {
 
                 <div className="snake-overlay snake-overlay-right">
                     <div className="snake-overlay-card snake-status-card">
-                        <div className="snake-overlay-title">📡 当前状态</div>
+                        <div className="snake-overlay-title">{t('snakeking.status')}</div>
                         <div className="snake-status-text">{hud.playerStatus}</div>
-                        <div className="snake-status-note">吃豆变长变快 · 镜头 2× 跟随 · 抢⚡无敌球</div>
+                        <div className="snake-status-note">{t('snakeking.statusNote')}</div>
                     </div>
                     <div className="snake-overlay-card snake-kill-card">
-                        <div className="snake-overlay-title">⚔️ 击败榜</div>
+                        <div className="snake-overlay-title">{t('snakeking.killRank')}</div>
                         <div className="snake-rank-list">
                             {hud.killboard.map((entry, index) => (
                                 <div key={entry.id} className="snake-rank-item">
@@ -1295,7 +1311,7 @@ export default function SnakeKing() {
             </div>
 
             <div className="snake-joystick-panel">
-                <div className="snake-joystick-hint">👆 拖动摇杆控制方向（仅锁定上下左右）</div>
+                <div className="snake-joystick-hint">{t('snakeking.joystickHint')}</div>
                 <div
                     ref={joystickRef}
                     className="snake-joystick-pad"
@@ -1321,12 +1337,12 @@ export default function SnakeKing() {
 
             <div className="snake-info-grid">
                 <div className="snake-info-card">
-                    <h3>⚡ 规则亮点</h3>
-                    <p>普通圆点 +1 长度并提速；<span className="snake-highlight">无敌球</span>持续 5 秒可碾压一切；被咬尾掉 3 格并爆出残骸；全员互相碰撞淘汰，无安全区。</p>
+                    <h3>{t('snakeking.rulesTitle')}</h3>
+                    <p>{t('snakeking.rulesDescPre')}<span className="snake-highlight">{t('snakeking.invincibleOrb')}</span>{t('snakeking.rulesDescMid')}</p>
                 </div>
                 <div className="snake-info-card">
-                    <h3>🤖 AI 风格</h3>
-                    <p><span className="snake-highlight-blue">DeepSeek</span> 激进追尾；<span className="snake-highlight-green">Doubao</span> 绕圈筑墙；<span className="snake-highlight-purple">千问</span> 稳健发育，混战后收割。</p>
+                    <h3>{t('snakeking.aiStyleTitle')}</h3>
+                    <p><span className="snake-highlight-blue">DeepSeek</span> {t('snakeking.hunt')}<span className="snake-highlight-green">Doubao</span> {t('snakeking.wall')}<span className="snake-highlight-purple">{t('snakeking.qwen')}</span> {t('snakeking.harvest')}</p>
                 </div>
             </div>
         </div>

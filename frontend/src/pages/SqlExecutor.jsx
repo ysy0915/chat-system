@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import apiClient from '../config/http'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const WRITE_KEYWORDS = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'GRANT', 'REVOKE', 'SHUTDOWN']
 const READ_KEYWORDS = ['SELECT', 'SHOW', 'DESC', 'EXPLAIN']
@@ -15,6 +16,7 @@ function classifySql(sql) {
 }
 
 export default function SqlExecutor() {
+  const { t } = useLanguage()
   const [token, setToken] = useState(localStorage.getItem('sql_token') || '')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
@@ -38,7 +40,7 @@ export default function SqlExecutor() {
       const t = res.data.token
       setToken(t)
       localStorage.setItem('sql_token', t)
-    } catch { setLoginError('密码错误，请重新输入') }
+    } catch { setLoginError(t('sqlExec.wrongPassword')) }
   }
 
   function handleLogout() {
@@ -52,7 +54,7 @@ export default function SqlExecutor() {
   async function handleExecute() {
     if (!sql.trim()) return
     if (sql.length > 5000) {
-      setResult({ error: 'SQL长度不能超过5000字符' })
+      setResult({ error: t('sqlExec.tooLong') })
       return
     }
     // 进入二次确认流程
@@ -76,7 +78,7 @@ export default function SqlExecutor() {
       setResult(res.data)
     } catch (err) {
       if (err.response?.status === 401) { setToken(''); localStorage.removeItem('sql_token') }
-      else if (err.code === 'ECONNABORTED') setResult({ error: '执行超时（60秒），请优化SQL' })
+      else if (err.code === 'ECONNABORTED') setResult({ error: t('sqlExec.timeout') })
       else setResult({ error: err.response?.data?.error || err.message })
     } finally { setExecuting(false) }
   }
@@ -86,7 +88,7 @@ export default function SqlExecutor() {
     if (!confirmModal) return
     const { sqlType } = confirmModal
     if (sqlType === 'write') {
-      if (!verifyPwd.trim()) { setVerifyError('请输入管理密码进行二次验证'); return }
+      if (!verifyPwd.trim()) { setVerifyError(t('sqlExec.verifyPwdRequired')); return }
       setVerifying(true)
       setVerifyError('')
       try {
@@ -98,7 +100,7 @@ export default function SqlExecutor() {
         doExecute()
       } catch {
         setVerifying(false)
-        setVerifyError('密码错误，请重新输入')
+        setVerifyError(t('sqlExec.wrongPassword'))
       }
     } else {
       // read / unknown：直接确认
@@ -121,17 +123,17 @@ export default function SqlExecutor() {
   }
 
   const quickSqls = [
-    { label: '所有表', sql: 'SHOW TABLES' },
-    { label: '用户列表', sql: 'SELECT * FROM users ORDER BY id DESC' },
-    { label: '消息记录', sql: 'SELECT * FROM messages ORDER BY id DESC' },
-    { label: '模型配置', sql: 'SELECT * FROM llm_model_config ORDER BY id DESC' },
-    { label: '辩论记录', sql: 'SELECT * FROM debate_records ORDER BY id DESC' },
-    { label: '媒体生成记录', sql: 'SELECT * FROM media_gen_records ORDER BY id DESC' },
-    { label: '情绪树洞', sql: 'SELECT * FROM tree_hole_messages ORDER BY id DESC' },
-    { label: '在线统计', sql: 'SELECT * FROM online_count_records ORDER BY id DESC' },
-    { label: '附件', sql: 'SELECT * FROM attachments ORDER BY id DESC' },
-    { label: '审计日志', sql: 'SELECT * FROM audit_logs ORDER BY id DESC' },
-    { label: '用户注册', sql: 'SELECT * FROM user_registrations ORDER BY id DESC' },
+    { label: t('sqlExec.quickAllTables'), sql: 'SHOW TABLES' },
+    { label: t('sqlExec.quickUserList'), sql: 'SELECT * FROM users ORDER BY id DESC' },
+    { label: t('sqlExec.quickMessages'), sql: 'SELECT * FROM messages ORDER BY id DESC' },
+    { label: t('sqlExec.quickModelConfig'), sql: 'SELECT * FROM llm_model_config ORDER BY id DESC' },
+    { label: t('sqlExec.quickDebateRecords'), sql: 'SELECT * FROM debate_records ORDER BY id DESC' },
+    { label: t('sqlExec.quickMediaRecords'), sql: 'SELECT * FROM media_gen_records ORDER BY id DESC' },
+    { label: t('sqlExec.quickTreeHole'), sql: 'SELECT * FROM tree_hole_messages ORDER BY id DESC' },
+    { label: t('sqlExec.quickOnlineStats'), sql: 'SELECT * FROM online_count_records ORDER BY id DESC' },
+    { label: t('sqlExec.quickAttachments'), sql: 'SELECT * FROM attachments ORDER BY id DESC' },
+    { label: t('sqlExec.quickAuditLogs'), sql: 'SELECT * FROM audit_logs ORDER BY id DESC' },
+    { label: t('sqlExec.quickUserRegistrations'), sql: 'SELECT * FROM user_registrations ORDER BY id DESC' },
   ]
 
   if (!token) {
@@ -149,16 +151,16 @@ export default function SqlExecutor() {
                 <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
               </svg>
             </div>
-            <h2>数据库管理</h2>
-            <p className="sql-login-sub">输入管理密码以继续</p>
+            <h2>{t('sqlExec.dbTitle')}</h2>
+            <p className="sql-login-sub">{t('sqlExec.passwordPrompt')}</p>
             <form onSubmit={handleLogin}>
               <div className="sql-login-field">
                 <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                       placeholder="请输入管理密码" autoFocus className="sql-login-input" />
+                       placeholder={t('sqlExec.passwordPlaceholder')} autoFocus className="sql-login-input" />
                 {loginError && <div className="sql-login-error">{loginError}</div>}
               </div>
               <button type="submit" className="sql-login-btn">
-                <span>验证并进入</span>
+                <span>{t('sqlExec.verifyEnter')}</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M5 12h14M12 5l7 7-7 7"/>
                 </svg>
@@ -180,13 +182,13 @@ export default function SqlExecutor() {
                 <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
               </svg>
             </div>
-            <h2>SQL 执行器</h2>
+            <h2>{t('sqlExec.title')}</h2>
           </div>
           <button onClick={handleLogout} className="sql-logout-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
             </svg>
-            退出登录
+            {t('sqlExec.logout')}
           </button>
         </div>
 
@@ -199,18 +201,18 @@ export default function SqlExecutor() {
         </div>
 
         <div className="sql-editor-wrap">
-          <div className="sql-editor-label">SQL 查询</div>
+          <div className="sql-editor-label">{t('sqlExec.sqlLabel')}</div>
           <textarea ref={textareaRef} value={sql} onChange={e => setSql(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="输入 SQL 语句... (Ctrl+Enter 执行)"
+                    placeholder={t('sqlExec.placeholder')}
                     className="sql-textarea" rows={6} spellCheck={false} />
           <div className="sql-editor-actions">
-            <span className="sql-hint">Ctrl + Enter 执行</span>
+            <span className="sql-hint">{t('sqlExec.hint')}</span>
             <button onClick={handleExecute} disabled={executing} className="sql-execute-btn">
               {executing ? (
-                  <><span className="sql-spinner" /> 执行中...</>
+                  <><span className="sql-spinner" /> {t('sqlExec.executing')}</>
               ) : (
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> 执行</>
+                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> {t('sqlExec.execute')}</>
               )}
             </button>
           </div>
@@ -231,15 +233,15 @@ export default function SqlExecutor() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/>
                     </svg>
-                    <span>执行成功，影响 {result.affectedRows} 行</span>
-                    {execTime && <span className="sql-time">耗时 {execTime}s</span>}
+                    <span>{t('sqlExec.successRows', { count: result.affectedRows })}</span>
+                    {execTime && <span className="sql-time">{t('sqlExec.elapsed', { seconds: execTime })}</span>}
                   </div>
               )}
               {result.columns && result.columns.length > 0 && (
                 <>
                   <div className="sql-result-header">
-                    <span className="sql-info-badge">{result.rows.length} 行结果</span>
-                    {execTime && <span className="sql-time">耗时 {execTime}s</span>}
+                    <span className="sql-info-badge">{t('sqlExec.resultRows', { count: result.rows.length })}</span>
+                    {execTime && <span className="sql-time">{t('sqlExec.elapsed', { seconds: execTime })}</span>}
                   </div>
                   <div className="sql-table-wrap">
                     <table className="sql-table">
@@ -265,17 +267,17 @@ export default function SqlExecutor() {
             <div className="sql-confirm-modal" onClick={e => e.stopPropagation()}>
               <div className="sql-confirm-header">
                 <span className={`sql-confirm-type ${confirmModal.sqlType === 'write' ? 'danger' : confirmModal.sqlType === 'read' ? 'safe' : 'warn'}`}>
-                  {confirmModal.sqlType === 'write' ? '⚠️ 写操作' : confirmModal.sqlType === 'read' ? '📖 读操作' : '❓ 未知类型'}
+                  {confirmModal.sqlType === 'write' ? t('sqlExec.writeBadge') : confirmModal.sqlType === 'read' ? t('sqlExec.readBadge') : t('sqlExec.unknownBadge')}
                 </span>
-                <h3>二次确认</h3>
+                <h3>{t('sqlExec.confirmTitle')}</h3>
               </div>
               <div className="sql-confirm-body">
                 <p className="sql-confirm-tip">
                   {confirmModal.sqlType === 'write'
-                    ? '检测到该 SQL 会修改数据，为安全起见，请再次输入管理密码以确认执行：'
+                    ? t('sqlExec.confirmWriteDesc')
                     : confirmModal.sqlType === 'read'
-                      ? '即将执行查询操作，请确认 SQL 内容无误后继续。'
-                      : '无法识别该 SQL 类型，请仔细确认后继续。'}
+                      ? t('sqlExec.confirmReadDesc')
+                      : t('sqlExec.confirmUnknownDesc')}
                 </p>
                 <div className="sql-confirm-sql-preview">
                   <code>{confirmModal.sqlText.length > 300 ? confirmModal.sqlText.slice(0, 300) + '...' : confirmModal.sqlText}</code>
@@ -287,7 +289,7 @@ export default function SqlExecutor() {
                       value={verifyPwd}
                       onChange={e => setVerifyPwd(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleConfirmExecute() } }}
-                      placeholder="请输入管理密码"
+                      placeholder={t('sqlExec.passwordPlaceholder')}
                       autoFocus
                       className="sql-confirm-input"
                       disabled={verifying}
@@ -298,10 +300,10 @@ export default function SqlExecutor() {
               </div>
               <div className="sql-confirm-actions">
                 <button type="button" className="sql-confirm-btn cancel" onClick={handleCancelConfirm} disabled={verifying}>
-                  取消
+                  {t('sqlExec.cancel')}
                 </button>
                 <button type="button" className={`sql-confirm-btn ${confirmModal.sqlType === 'write' ? 'danger' : 'primary'}`} onClick={handleConfirmExecute} disabled={verifying}>
-                  {verifying ? '验证中...' : confirmModal.sqlType === 'write' ? '验证并执行' : '确认执行'}
+                  {verifying ? t('sqlExec.verifying') : confirmModal.sqlType === 'write' ? t('sqlExec.verifyAndExecute') : t('sqlExec.confirmExecute')}
                 </button>
               </div>
             </div>

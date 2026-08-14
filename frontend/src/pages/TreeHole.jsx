@@ -6,31 +6,32 @@ import { formatAnswer, extractAnswer, stripMarkdownSymbols } from '../utils/form
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
 import { useStompConnection } from '../hooks/useStompConnection'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const MOODS = [
-    { label: '😢 难过', value: '难过' },
-    { label: '😤 愤怒', value: '愤怒' },
-    { label: '😰 焦虑', value: '焦虑' },
-    { label: '😞 失落', value: '失落' },
-    { label: '😔 孤独', value: '孤独' },
-    { label: '😊 开心', value: '开心' },
-    { label: '🤔 迷茫', value: '迷茫' },
-    { label: '😴 疲惫', value: '疲惫' },
+    { emoji: '😢', value: '难过' },
+    { emoji: '😤', value: '愤怒' },
+    { emoji: '😰', value: '焦虑' },
+    { emoji: '😞', value: '失落' },
+    { emoji: '😔', value: '孤独' },
+    { emoji: '😊', value: '开心' },
+    { emoji: '🤔', value: '迷茫' },
+    { emoji: '😴', value: '疲惫' },
 ]
 
-const formatTime = (ts) => {
-    if (!ts) return ''
-    const d = new Date(ts)
-    const now = new Date()
-    const diffMs = now - d
-    const diffMins = Math.floor(diffMs / 60000)
-    if (diffMins < 1) return '刚刚'
-    if (diffMins < 60) return `${diffMins} 分钟前`
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)} 小时前`
-    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
 export default function TreeHole() {
+    const { t } = useLanguage()
+    const formatTime = (ts) => {
+        if (!ts) return ''
+        const d = new Date(ts)
+        const now = new Date()
+        const diffMs = now - d
+        const diffMins = Math.floor(diffMs / 60000)
+        if (diffMins < 1) return t('common.justNow')
+        if (diffMins < 60) return t('common.minutesAgo', { count: diffMins })
+        if (diffMins < 1440) return t('common.hoursAgo', { count: Math.floor(diffMins / 60) })
+        return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    }
     const authUser = useAuthUser()
     const [messages, setMessages] = useState([])   // { role: 'user'|'ai', text, mood, time }
     const [searchKeyword, setSearchKeyword] = useState('')
@@ -201,10 +202,10 @@ export default function TreeHole() {
                                 const last = prev[prev.length - 1]
                                 if (last && last.role === 'ai' && last.streaming) {
                                     const updated = [...prev]
-                                    updated[updated.length - 1] = { role: 'ai', text: payload.message || '生成失败', streaming: false, time: new Date().toISOString() }
+                                    updated[updated.length - 1] = { role: 'ai', text: payload.message || t('common.generateFailed'), streaming: false, time: new Date().toISOString() }
                                     return updated
                                 }
-                                return [...prev, { role: 'ai', text: payload.message || '生成失败', time: new Date().toISOString() }]
+                                return [...prev, { role: 'ai', text: payload.message || t('common.generateFailed'), time: new Date().toISOString() }]
                             })
                         }
             },
@@ -253,7 +254,7 @@ export default function TreeHole() {
                     headers: { 'Content-Type': 'multipart/form-data' },
                     timeout: 120000
                 })
-                const answerText = extractAnswer(res.data.answerJson) || '树洞暂时没有回应...'
+                const answerText = extractAnswer(res.data.answerJson) || t('common.treeholeNoReply')
                 setMessages(prev => [...prev, { role: 'ai', text: answerText, time: new Date().toISOString() }])
                 setTyping(false)
             } else {
@@ -265,13 +266,13 @@ export default function TreeHole() {
                 return
             }
         } catch (err) {
-            const msg = err.response?.data || '发送失败，请稍后重试'
+            const msg = err.response?.data || t('common.sendFailed')
             setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
             setMessages(prev => prev.slice(0, -1))
             setTyping(false)
         }
     // handleSend 内部仅调用 setHasInput，未读取 hasInput，故不加入依赖
-    }, [mood, typing, selectedFile])
+    }, [mood, typing, selectedFile, t])
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -315,7 +316,7 @@ export default function TreeHole() {
         } catch (e) {
             console.error('重新生成请求失败', e)
             setTyping(false)
-            setError('重新生成失败，请重试')
+            setError(t('common.regenerateFailed'))
         }
     }
 
@@ -338,9 +339,9 @@ export default function TreeHole() {
                 <div className="treehole-login-prompt">
                     <div className="treehole-login-card">
                         <div className="treehole-empty-icon">🔒</div>
-                        <h2>情绪树洞</h2>
-                        <p>登录后即可倾诉你的情绪</p>
-                        <button className="treehole-login-btn" onClick={openAuth}>去登录</button>
+                        <h2>{t('treehole.title')}</h2>
+                        <p>{t('treehole.loginPrompt')}</p>
+                        <button className="treehole-login-btn" onClick={openAuth}>{t('common.goLogin')}</button>
                     </div>
                 </div>
             </div>
@@ -353,14 +354,14 @@ export default function TreeHole() {
 
             {/* 情绪选择 */}
             <div className="treehole-mood-bar">
-                <span className="treehole-mood-label">今天的心情：</span>
+                <span className="treehole-mood-label">{t('treehole.moodLabel')}</span>
                 {MOODS.map(m => (
                     <button
                         key={m.value}
                         className={`treehole-mood-btn${mood === m.value ? ' selected' : ''}`}
                         onClick={() => setMood(prev => prev === m.value ? '' : m.value)}
                     >
-                        {m.label}
+                        {m.emoji} {t('treehole.mood.' + m.value)}
                     </button>
                 ))}
             </div>
@@ -373,8 +374,8 @@ export default function TreeHole() {
                 {messages.length === 0 && !typing ? (
                     <div className="treehole-empty">
                         <div className="treehole-empty-icon">🌳</div>
-                        <p>这里是你的情绪树洞</p>
-                        <small>把心里话都说出来吧，树洞会好好倾听的</small>
+                        <p>{t('treehole.emptyTitle')}</p>
+                        <small>{t('treehole.emptyDesc')}</small>
                     </div>
                 ) : (
                     <>
@@ -389,7 +390,7 @@ export default function TreeHole() {
                                         <div className="treehole-msg-meta">
                                             {formatTime(msg.time)}
                                             {msg.mood && (
-                                                <span className="treehole-mood-tag">{msg.mood}</span>
+                                                <span className="treehole-mood-tag">{t('treehole.mood.' + msg.mood)}</span>
                                             )}
                                         </div>
                                     </>
@@ -416,14 +417,14 @@ export default function TreeHole() {
                                                 <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'var(--accent, #818cf8)'}}>▋</span>
                                             )}
                                             <span className="ai-generated-tag">
-                                                AI生成{msg.latency != null ? ` · ${(msg.latency / 1000).toFixed(1)}s` : ''}{msg.tokens != null ? ` · ${msg.tokens} tokens` : ''}{msg.stopped ? ' · 已停止' : ''}
+                                                {t('common.aiGenerated')}{msg.latency != null ? ` · ${(msg.latency / 1000).toFixed(1)}s` : ''}{msg.tokens != null ? ` · ${msg.tokens} tokens` : ''}{msg.stopped ? ' · ' + t('common.stopped') : ''}
                                             </span>
                                             {!msg.streaming && msg.text && (
                                                 <button
                                                     type="button"
                                                     className="speak-btn"
                                                     onClick={() => speakMessage(idx, msg.text)}
-                                                    title={speakingId === idx ? '停止朗读' : '朗读'}
+                                                    title={speakingId === idx ? t('common.stopSpeak') : t('common.speak')}
                                                 >
                                                     {speakingId === idx ? '⏸' : '🔊'}
                                                 </button>
@@ -446,7 +447,7 @@ export default function TreeHole() {
                                                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
                                                     onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                                 >
-                                                    ↻ 重新生成
+                                                    {t('common.regenerate')}
                                                 </button>
                                             )}
                                         </div>
@@ -472,7 +473,7 @@ export default function TreeHole() {
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                 <input
                     type="text"
-                    placeholder="搜索历史对话..."
+                    placeholder={t('treehole.searchPlaceholder')}
                     value={searchKeyword}
                     onChange={e => setSearchKeyword(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -509,7 +510,7 @@ export default function TreeHole() {
                             padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)',
                         }}>
                             <span style={{ fontSize: 15, color: '#f1f5f9', fontWeight: 600 }}>
-                                {selectedResult ? '对话详情' : `搜索结果（${searchResults.length}）`}
+                                {selectedResult ? t('treehole.detailTitle') : `${t('treehole.searchResults')}（${searchResults.length}）`}
                             </span>
                             <button onClick={() => { setShowSearch(false); setSelectedResult(null) }}
                                 style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -525,7 +526,7 @@ export default function TreeHole() {
                                             background: 'rgba(255,255,255,0.08)', color: '#e2e8f0',
                                             border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
                                             padding: '6px 14px', cursor: 'pointer', fontSize: 13, marginBottom: 12,
-                                        }}>← 返回列表</button>
+                                        }}>{t('common.backToList')}</button>
                                     {selectedResult.messages.map((m, i) => (
                                         <div key={i} style={{
                                             marginBottom: 10,
@@ -545,7 +546,7 @@ export default function TreeHole() {
                             ) : (
                                 /* 列表视图 */
                                 searchResults.length === 0 ? (
-                                    <p style={{ fontSize: 14, color: '#cbd5e1', textAlign: 'center', padding: 20 }}>无匹配结果</p>
+                                    <p style={{ fontSize: 14, color: '#cbd5e1', textAlign: 'center', padding: 20 }}>{t('common.noMatch')}</p>
                                 ) : (
                                     searchResults.map((item, i) => (
                                         <div key={i} onClick={() => loadSearchResult(item)}
@@ -565,10 +566,10 @@ export default function TreeHole() {
                             {!selectedResult && searchTotalPages > 1 && (
                                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, padding: '10px 0 4px' }}>
                                     <button onClick={() => handleSearch(searchPage - 1)} disabled={searchPage <= 1}
-                                        style={{ background: 'rgba(255,255,255,0.08)', color: searchPage <= 1 ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage <= 1 ? 'default' : 'pointer', fontSize: 13 }}>上一页</button>
-                                    <span style={{ fontSize: 13, color: '#cbd5e1' }}>{searchPage} / {searchTotalPages}（共{searchTotal}条）</span>
+                                        style={{ background: 'rgba(255,255,255,0.08)', color: searchPage <= 1 ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage <= 1 ? 'default' : 'pointer', fontSize: 13 }}>{t('common.prevPage')}</button>
+                                    <span style={{ fontSize: 13, color: '#cbd5e1' }}>{searchPage} / {searchTotalPages}{t('treehole.total', { count: searchTotal })}</span>
                                     <button onClick={() => handleSearch(searchPage + 1)} disabled={searchPage >= searchTotalPages}
-                                        style={{ background: 'rgba(255,255,255,0.08)', color: searchPage >= searchTotalPages ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage >= searchTotalPages ? 'default' : 'pointer', fontSize: 13 }}>下一页</button>
+                                        style={{ background: 'rgba(255,255,255,0.08)', color: searchPage >= searchTotalPages ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', cursor: searchPage >= searchTotalPages ? 'default' : 'pointer', fontSize: 13 }}>{t('common.nextPage')}</button>
                                 </div>
                             )}
                         </div>
@@ -598,7 +599,7 @@ export default function TreeHole() {
                         ref={textareaRef}
                         className="treehole-textarea"
                         rows={1}
-                        placeholder="把心里话说给树洞听…"
+                        placeholder={t('treehole.placeholder')}
                         defaultValue=""
                         onChange={() => setHasInput(!!textareaRef.current?.value?.trim())}
                         onKeyDown={handleKeyDown}
@@ -608,7 +609,7 @@ export default function TreeHole() {
                         type="button"
                         className="attach-btn"
                         onClick={() => fileInputRef.current?.click()}
-                        title="上传文件（智谱解析）"
+                        title={t('treehole.uploadTitle')}
                         style={{ marginRight: 4 }}
                     >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -620,7 +621,7 @@ export default function TreeHole() {
                             type="button"
                             className="treehole-send-btn stop-btn"
                             onClick={stopGeneration}
-                            title="停止生成"
+                            title={t('treehole.stop')}
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <rect x="6" y="6" width="12" height="12" rx="2"/>
@@ -631,7 +632,7 @@ export default function TreeHole() {
                             className="treehole-send-btn"
                             onClick={handleSend}
                             disabled={(!hasInput && !selectedFile) || typing}
-                            title="发送"
+                            title={t('treehole.send')}
                         >
                             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -639,21 +640,22 @@ export default function TreeHole() {
                         </button>
                     )}
                 </div>
-                <div className="treehole-hint">按 Enter 发送 · Shift+Enter 换行 · 可上传文件由智谱解析 · 你的对话仅自己可见</div>
+                <div className="treehole-hint">{t('treehole.hint')}</div>
             </div>
         </div>
     )
 }
 
 function TreeHoleHeader() {
+    const { t } = useLanguage()
     return (
         <div className="treehole-header">
-            <Link to="/home" className="btn-back-home">← 返回首页</Link>
+            <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
             <div className="treehole-header-main">
                 <div className="treehole-icon">🌳</div>
                 <div className="treehole-header-text">
-                    <h1>情绪树洞</h1>
-                    <p>这里是你的私密情绪空间，说出心里话，树洞会温暖地倾听</p>
+                    <h1>{t('treehole.title')}</h1>
+                    <p>{t('treehole.subtitle')}</p>
                 </div>
             </div>
         </div>

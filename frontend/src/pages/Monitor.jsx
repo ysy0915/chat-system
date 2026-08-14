@@ -3,6 +3,7 @@ import apiClient from '../config/http'
 import { Link } from 'react-router-dom'
 import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const PAGE_COLORS = {
   landing: '#22d3ee',
@@ -44,10 +45,6 @@ function getColor(page) {
   return PAGE_COLORS[page] || '#' + ((parseInt(page, 36) * 2654435761 >>> 0) % 0xFFFFFF).toString(16).padStart(6, '0')
 }
 
-function getLabel(page) {
-  return PAGE_LABELS[page] || page
-}
-
 function toDateStr(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -56,6 +53,12 @@ function toDateStr(d) {
 }
 
 export default function Monitor() {
+  const { t } = useLanguage()
+  const getLabel = useCallback((page) => {
+    const key = 'monitor.page.' + page
+    const label = t(key)
+    return label !== key ? label : (PAGE_LABELS[page] || page)
+  }, [t])
   const [authed, setAuthed] = useState(() => sessionStorage.getItem('monitor_authed') === '1')
   const [pwd, setPwd] = useState('')
   const [loginErr, setLoginErr] = useState('')
@@ -276,11 +279,11 @@ export default function Monitor() {
     ctx.fillStyle = '#64748b'
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('日期', pad.left + chartW / 2, H - 8)
+    ctx.fillText(t('monitor.date'), pad.left + chartW / 2, H - 8)
     ctx.save()
     ctx.translate(12, pad.top + chartH / 2)
     ctx.rotate(-Math.PI / 2)
-    ctx.fillText('访问量', 0, 0)
+    ctx.fillText(t('monitor.visits'), 0, 0)
     ctx.restore()
 
     // 画各页面的曲线
@@ -423,7 +426,7 @@ export default function Monitor() {
       ctx.globalAlpha = 1
       ctx.fillStyle = '#f1f5f9'
       ctx.textAlign = 'left'
-      ctx.fillText(`总访问量 (${totalToday})`, legendX + 14, y + 5)
+      ctx.fillText(t('monitor.totalVisits', { count: totalToday }), legendX + 14, y + 5)
     }
 
     // 画 tooltip
@@ -451,8 +454,8 @@ export default function Monitor() {
 
       ctx.fillStyle = '#cbd5e1'
       ctx.font = '12px sans-serif'
-      ctx.fillText(`日期: ${tip.dateStr}`, tx + 10, ty + 36)
-      ctx.fillText(`访问量: ${tip.count}`, tx + 10, ty + 52)
+      ctx.fillText(t('monitor.tooltipDate', { date: tip.dateStr }), tx + 10, ty + 36)
+      ctx.fillText(t('monitor.tooltipCount', { count: tip.count }), tx + 10, ty + 52)
     }
   }
 
@@ -469,8 +472,8 @@ export default function Monitor() {
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
             </svg>
           </div>
-          <h2>在线人数监控</h2>
-          <p className="sql-login-sub">输入访问密码以继续</p>
+          <h2>{t('monitor.loginTitle')}</h2>
+          <p className="sql-login-sub">{t('monitor.passwordPrompt')}</p>
           <form onSubmit={async (e) => {
             e.preventDefault()
             try {
@@ -479,16 +482,16 @@ export default function Monitor() {
               sessionStorage.setItem('monitor_authed', '1')
               setLoginErr('')
             } catch {
-              setLoginErr('密码错误，请重新输入')
+              setLoginErr(t('monitor.wrongPassword'))
             }
           }}>
             <div className="sql-login-field">
               <input type="password" value={pwd} onChange={e => setPwd(e.target.value)}
-                     placeholder="请输入访问密码" autoFocus className="sql-login-input" />
+                     placeholder={t('monitor.passwordPlaceholder')} autoFocus className="sql-login-input" />
               {loginErr && <div className="sql-login-error">{loginErr}</div>}
             </div>
             <button type="submit" className="sql-login-btn">
-              <span>验证并进入</span>
+              <span>{t('monitor.verifyEnter')}</span>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M5 12h14M12 5l7 7-7 7"/>
               </svg>
@@ -501,21 +504,21 @@ export default function Monitor() {
 
   return (
     <div className="monitor-page">
-      <Link to="/home" className="btn-back-home">← 返回首页</Link>
-      <h2 className="monitor-title">📊 在线人数监控</h2>
-      <p className="monitor-subtitle">查看各页面访问量趋势 · 每60秒自动更新</p>
+      <Link to="/home" className="btn-back-home">{t('common.backHome')}</Link>
+      <h2 className="monitor-title">{t('monitor.title')}</h2>
+      <p className="monitor-subtitle">{t('monitor.subtitle')}</p>
 
       <div className="monitor-stats">
         <div className="monitor-stat-card">
-          <div className="monitor-stat-label">今日累计在线人数</div>
+          <div className="monitor-stat-label">{t('monitor.todayTotal')}</div>
           <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{hourlyTotal}</div>
         </div>
         <div className="monitor-stat-card">
-          <div className="monitor-stat-label">1小时内在线人数</div>
+          <div className="monitor-stat-label">{t('monitor.hourTotal')}</div>
           <div className="monitor-stat-value" style={{ color: '#38bdf8' }}>{hourlyActive}</div>
         </div>
         <div className="monitor-stat-card">
-          <div className="monitor-stat-label">环比前日 ({prevDate.slice(5)})</div>
+          <div className="monitor-stat-label">{t('monitor.comparePrev', { date: prevDate.slice(5) })}</div>
           <div className="monitor-stat-value" style={{ color: diff > 0 ? '#22c55e' : diff < 0 ? '#ef4444' : '#94a3b8' }}>
             {diff > 0 ? '+' : ''}{diff}
             {diffPct !== null && (
@@ -528,7 +531,7 @@ export default function Monitor() {
       </div>
 
       <div className="monitor-controls">
-        <label className="monitor-controls-label">选择日期：</label>
+        <label className="monitor-controls-label">{t('monitor.selectDate')}</label>
         <label className="monitor-date-picker-wrap" htmlFor="monitor-date-picker">
           <input
             id="monitor-date-picker"
@@ -539,11 +542,11 @@ export default function Monitor() {
           />
         </label>
         <span style={{ color: '#64748b', fontSize: 12, marginLeft: 8 }}>
-          显示该日期及前7天各页面访问曲线
+          {t('monitor.rangeHint')}
         </span>
       </div>
 
-      {loading && <div className="monitor-loading">加载中…</div>}
+      {loading && <div className="monitor-loading">{t('common.loading')}</div>}
 
       <div className="monitor-chart-container" ref={containerRef}>
         <canvas ref={canvasRef}

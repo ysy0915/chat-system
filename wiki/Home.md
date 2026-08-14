@@ -63,6 +63,7 @@ chat-system-project/
 - **Agent 工具调用** — Calculator、Weather、Time、KnowledgeSearch 四工具
 - **知识库 RAG** — Milvus 向量检索 + 文档解析 + 对话记忆融合（已迁移至 chat-llm）
 - **知识图谱** — Neo4j 实体/关系存储 + LLM 三元组抽取（已迁移至 chat-llm）
+- **多语言（i18n）** — 全站一键中英文切换，600+ 词条；游戏 / 管理后台 / 私聊动态文本同步翻译
 
 ---
 

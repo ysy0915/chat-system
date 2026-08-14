@@ -4,6 +4,44 @@
 
 ---
 
+## 〇〇〇〇〇、前端全站中英文翻译（i18n）上线（2026-08-15）
+
+### 1. 背景
+
+产品面向多语言用户，此前前端文案全部硬编码中文。本次上线全站 i18n：首页、聊天、辩论、树洞、私聊、管理后台、游戏等全部页面支持一键中英文切换，覆盖 600+ 词条。
+
+### 2. 变更内容
+
+| 项 | 内容 |
+|----|------|
+| i18n 基础设施 | 新增 `frontend/src/i18n/`：`LanguageContext.jsx`（`useLanguage()` → `{ t, lang, toggle }`，`t(key, vars)` 支持 `{var}` 插值，fallback 返回 key）+ `translations.js`（扁平键 `'namespace.key': '文案'`，zh/en 各 616 键完全对称） |
+| 全站接入 | 首页、聊天、个人对话、辩论、树洞、多模态、知识库、监控、个人中心等全部页面 JSX 文本替换为 `t()` |
+| 游戏翻译 | 蛇王争霸 / 城堡围攻 / 乒乓球动态文本同步翻译（击杀、复活、道具、领主排行榜、兵种、城堡名、玩家状态等），模块级函数用 `T()` 代理 `_t` 规避闭包旧值 |
+| 管理后台 | AdminModels 模型管理页（提供商 / 模型配置 / 密码解锁）全量翻译 |
+| 私聊与语音 | PersonalChat（限流 / 熔断 / 连接状态）、useVoiceInput / useSpeechSynthesis 提示、OnlinePresenceTracker 在线状态 |
+| UI 收纳 | 电脑端首页 hero 顶部语言切换横条移除（统一收纳至 NavBar）；手机端中英文切换按钮移至公告喇叭左侧 |
+| 公告栏 | 公告更新为 8 月 15 日 6 条变更（全站翻译 / 游戏翻译 / 后台翻译 / 私聊语音 / 首页优化 / 手机端优化），zh/en 同步 |
+| 质量校验 | Node 脚本校验 zh/en 键完全对称（无重复无缺失）；ESLint 0 错误 |
+
+### 3. 关键设计
+
+- 插值：`t('castlesiege.killMsg', { killer: 'A', target: 'B' })` → "A 击败了 B"
+- **模块级函数翻译模式**（游戏循环 / 模块级 toast 不得用 useState 旧值）：
+  ```js
+  let _t = (key) => key   // 默认返回 key，避免未渲染时报错
+  function T(key, vars) { return _t(key, vars) }
+  // 组件内渲染时同步：_t = t
+  ```
+- 类组件 ErrorBoundary 用 `static contextType = LanguageContext`；品牌名用 `nameKey` 字段动态翻译
+- 后端消息判断改字段语义（`last.action === 'home'`），不依赖中文文案匹配
+
+### 4. 验证与部署
+
+- `npm run build` 成功，scp 上传主服务器 `/opt/app/static/chat/`，`index.html` hash 验证一致
+- 纯前端改动，无后端代码 / 配置变更，无需重启 Java 服务
+
+---
+
 ## 〇〇〇〇、chat-llm `@MapperScan` bean 冲突修复（2026-08-15）
 
 ### 1. 现象

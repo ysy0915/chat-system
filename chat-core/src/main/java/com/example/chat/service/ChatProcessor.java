@@ -354,8 +354,9 @@ public class ChatProcessor {
                         effectiveHistory = new java.util.ArrayList<>(history);
                     }
                     effectiveHistory.add(0, new LLMMessage("system",
-                            "请在回答前必须先用 <thinking>...</thinking> 标签写出你的推理分析过程。"
-                            + "即使是简单问题也要简要说明你的思考逻辑，然后再给出最终回答。"));
+                            "请在回答前必须先用 <thinking>...</thinking> 标签（注意是 thinking 不是 taking 或其他拼写）"
+                            + "写出你的推理分析过程。即使是简单问题也要简要说明你的思考逻辑，"
+                            + "然后再在标签外给出最终回答。"));
                 }
 
                 // Step2: 长期事实记忆召回注入（Milvus user_memory），让回答贴合用户偏好

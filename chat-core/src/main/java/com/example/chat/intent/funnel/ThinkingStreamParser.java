@@ -35,6 +35,10 @@ public class ThinkingStreamParser {
     private static final String THINKING_OPEN  = "<thinking>";
     private static final String THINKING_CLOSE = "</thinking>";
 
+    /** 容错：常见拼写错误或别名（LLM 偶尔会输出 taking/reasoning/analysis 等）。匹配规则：标签名以 "<" 开头 + 单词字符 + ">"。 */
+    private static final java.util.regex.Pattern OPEN_PATTERN  = java.util.regex.Pattern.compile("<(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern CLOSE_PATTERN = java.util.regex.Pattern.compile("</(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
+
     private State state = State.AWAIT_THINKING;
     @SuppressWarnings("PMD.AvoidStringBufferField") // 有状态流解析器：跨多次 token 调用持续 append/reset，字段级 buffer 是设计需要
     private final StringBuilder buf = new StringBuilder();
@@ -121,31 +125,33 @@ public class ThinkingStreamParser {
             if (s.isEmpty()) return;
 
             if (state == State.AWAIT_THINKING) {
-                int idx = s.indexOf(THINKING_OPEN);
-                if (idx < 0) {
-                    emitSafe(s, THINKING_OPEN, onAnswer);
+                java.util.regex.Matcher m = OPEN_PATTERN.matcher(s);
+                if (!m.find()) {
+                    emitSafe(s, onAnswer);
                     return;
                 }
-                // 找到 <thinking> 标签
+                int idx = m.start();
+                int tagLen = m.end() - m.start();
                 if (idx > 0) onAnswer.accept(s.substring(0, idx));
                 state = State.IN_THINKING;
                 if (onThinkingStart != null) onThinkingStart.run();
                 buf.setLength(0);
-                buf.append(s.substring(idx + THINKING_OPEN.length()));
+                buf.append(s.substring(idx + tagLen));
                 continue;
             }
 
             if (state == State.IN_THINKING) {
-                int idx = s.indexOf(THINKING_CLOSE);
-                if (idx < 0) {
-                    emitSafe(s, THINKING_CLOSE, onThinking);
+                java.util.regex.Matcher m = CLOSE_PATTERN.matcher(s);
+                if (!m.find()) {
+                    emitSafe(s, onThinking);
                     return;
                 }
-                // 找到 </thinking>
+                int idx = m.start();
+                int tagLen = m.end() - m.start();
                 if (idx > 0) onThinking.accept(s.substring(0, idx));
                 state = State.IN_ANSWER;
                 buf.setLength(0);
-                buf.append(s.substring(idx + THINKING_CLOSE.length()));
+                buf.append(s.substring(idx + tagLen));
                 continue;
             }
 
@@ -158,23 +164,21 @@ public class ThinkingStreamParser {
     }
 
     /**
-     * 安全地 emit：保留尾部的可能标签前缀，只 emit 确定安全的部分。
+     * 安全地 emit：保留尾部的可能标签前缀（"\<" 或 "\</"），只 emit 确定安全的部分。
      */
     @SuppressWarnings("PMD.ConfusingTernary") // if-else 非对称分支为流式解析的语义要求（if 全量 flush / else 安全部分+缓存尾部）
-    private void emitSafe(String s, String tag, Consumer<String> consumer) {
-        // 短于 tag 长度的内容保留到下次
-        if (s.length() <= tag.length()) return;
+    private void emitSafe(String s, Consumer<String> consumer) {
+        // 保留尾部最后 9 个字符以兼容 "<" / "</" 前缀以及可能的标签名首字母
+        int keep = Math.min(9, s.length() - 1);
+        if (keep <= 0) return;
 
-        int keep = tag.length() - 1;
         int safeLen = s.length() - keep;
         String tail = s.substring(safeLen);
-
-        if (!tag.startsWith(tail)) {
-            // 尾部不可能是标签的前缀 → 全量 flush
+        // 仅当尾部以 "<" 开头才可能是标签前缀
+        if (!tail.startsWith("<")) {
             consumer.accept(s);
             buf.setLength(0);
         } else {
-            // 尾部可能是标签前缀 → 只 flush 安全部分
             if (safeLen > 0) consumer.accept(s.substring(0, safeLen));
             buf.setLength(0);
             buf.append(tail);

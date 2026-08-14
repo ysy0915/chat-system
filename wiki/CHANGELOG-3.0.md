@@ -4,6 +4,45 @@
 
 ---
 
+## 〇〇〇、chat-llm standalone 纯内存模式（2026-08-14）
+
+### 1. 背景
+
+chat-llm 原 standalone profile 仅作 LLM 网关，RAG / 对话记忆 / 知识图谱 / 模型管理面均依赖外部组件（MySQL/Redis/Neo4j/Milvus），本地演示或单机验证必须搭整套中间件。
+
+### 2. 改造内容
+
+standalone 模式升级为**四大能力全部纯内存实现（零外部依赖）**，通过独立开关切换，生产默认仍走 Milvus/Neo4j 不回归：
+
+| 能力 | 内存实现 | 开关 |
+|------|---------|------|
+| 模型管理面 | `InMemoryLlmRoutingRepository` | `app.llm.admin.memory=true`（standalone 默认开） |
+| RAG 检索 | `InMemoryVectorStoreService`（余弦相似度 TopK）+ `InMemoryRAGRepository` | `app.rag.backend=memory` |
+| 对话记忆 | `InMemoryMemoryKVStore`（短/长期）+ `InMemoryUserFactMemoryService` + `FactExtractor`（LLM 抽取事实） | `app.rag.backend=memory` |
+| 知识图谱 | `InMemoryKnowledgeGraphService`（`ConcurrentHashMap` 图存储） | `app.knowledge-graph.backend=memory` |
+
+### 3. 配套改动
+
+- 新增抽象接口：`VectorStoreLegacy` / `MemoryKVStore` / `UserFactMemory` / `KnowledgeGraphFacade`，Milvus/Neo4j 版与内存版共用
+- 条件装配改布尔开关（`app.llm.admin.enabled` / `app.mapper-scan.enabled`），避免 SpEL 解析含 `&`/`=` 的 JDBC URL 崩溃
+- standalone 排除 `Neo4jAutoConfiguration`，`/actuator/health` 正常 UP
+- `KnowledgeController` / `LegacyRagController` 在 `securityEnabled=false` 时放行（standalone 无需 Authorization 头）
+- `EMBEDDING_API_KEY` 可单独配置向量化 Key，缺省回退 `QWEN_API_KEY`
+
+### 4. 启动与验证
+
+```bash
+export DEEPSEEK_API_KEY=sk-xxx   # 需要哪个厂商配哪个
+java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=standalone --server.port=9095
+```
+
+冒烟通过：health UP；provider CRUD；RAG 建库/检索；记忆保存 + 上下文；事实记忆召回 `["用户是Java开发者","用户喜欢微服务架构"]`；图谱 stats `{"entityCount":0,"relationCount":0}`。
+
+> 注意：内存数据**重启即清空**，仅演示/验证用；生产请保持 `milvus`/`neo4j` backend + MySQL。完整 curl 示例见 `chat-llm/STANDALONE.md`。
+
+---
+
 ## 〇〇、观点辩论场多模型化 + 树状博弈提速（2026-08-14）
 
 ### 1. 辩论模型从「固定三方」升级为「随机组队」

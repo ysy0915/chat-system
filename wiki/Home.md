@@ -88,6 +88,12 @@ mvn clean install -DskipTests
 java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=local --server.port=9095
 
+#   仅体验 chat-llm 四大能力（模型管理面/RAG/对话记忆/知识图谱）可用 standalone：
+#   零外部依赖（免 MySQL/Redis/Neo4j/Milvus），纯内存实现，数据重启即清空：
+#   export DEEPSEEK_API_KEY=sk-xxx
+#   java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
+#     --spring.profiles.active=standalone --server.port=9095
+
 # 4. 启动 chat-core（核心 AI 服务）
 java -jar chat-core/target/chat-core-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=local --server.port=9090

@@ -145,6 +145,8 @@ LlmBundleClient (统一多模型调用)
 
 接入一个厂商的完整路径（零代码）：管理页新增提供商（类型下拉选 `rest`/`sdk`）→ 填 baseUrl + apiKey + 模型列表 → 保存即时生效。apiKey 存 `llm_provider_props`（SECRET），列表仅回脱敏值。
 
+**Standalone 内存版（2026-08-14）**：`app.llm.admin.memory=true`（standalone profile 默认开启，同时 `app.mapper-scan.enabled=false` 关闭 MyBatis）时，管理面改用 `InMemoryLlmRoutingRepository`——provider 存内存 Map，API 语义与 DB 版一致（`/api/v1/llm/admin/providers` 增删改查、无 apiKey 不入路由、列表不回传 apiKey 仅 `hasApiKey`），**重启即清空**，适合本地演示/单机验证；生产保持 DB 三表实现。
+
 ---
 
 ## 五、容错机制

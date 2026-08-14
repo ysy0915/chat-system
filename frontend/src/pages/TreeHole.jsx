@@ -164,7 +164,7 @@ export default function TreeHole() {
                                     const updated = [...prev]
                                     updated[updated.length - 1] = {
                                         role: 'ai', text: answer || last.text, streaming: false,
-                                        thinking: last.thinking,
+                                        thinking: '',
                                         time: new Date().toISOString(),
                                         latency: payload.latency, tokens: payload.tokens,
                                         reqId: last.reqId
@@ -396,6 +396,19 @@ export default function TreeHole() {
                                 ) : (
                                     <>
                                         <div className="treehole-bubble-ai">
+                                            {msg.streaming && msg.thinking && (
+                                                <div style={{
+                                                    color: 'var(--text-tertiary, #6b7280)',
+                                                    fontSize: '0.85em',
+                                                    fontStyle: 'italic',
+                                                    marginBottom: 6,
+                                                    opacity: 0.7,
+                                                    borderLeft: '2px solid rgba(129, 140, 248, 0.3)',
+                                                    paddingLeft: 8,
+                                                }}>
+                                                    {msg.thinking}
+                                                </div>
+                                            )}
                                             {formatAnswer(msg.text).map((line, i) => (
                                                 <p key={i}>{line}</p>
                                             ))}

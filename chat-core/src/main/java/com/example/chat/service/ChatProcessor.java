@@ -383,38 +383,21 @@ public class ChatProcessor {
 
                 String fullAnswer;
                 if (enableThinking) {
-                    // 思考链模式：推理过程用（）标注，合并到回答流式输出
-                    final boolean[] thinkingStarted = {false};
-                    final boolean[] thinkingEnded = {false};
+                    // 思考链模式：思考过程走 thinking_token 事件（前端灰色展示，done 后清除）
+                    // 回答走 stream_token 事件（正常颜色展示）
                     ThinkingStreamParser parser = new ThinkingStreamParser(
                             thinkingToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
-                                answerCollector.append(thinkingToken);
                                 broadcastService.broadcast(topic,
-                                        WsMessage.streamToken(thinkingToken).withReqId(reqId).toMap());
+                                        WsMessage.thinkingToken(thinkingToken).withReqId(reqId).toMap());
                             },
                             answerToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
-                                // 思考结束时插入分隔
-                                if (thinkingStarted[0] && !thinkingEnded[0]) {
-                                    thinkingEnded[0] = true;
-                                    String sep = "）";
-                                    answerCollector.append(sep);
-                                    broadcastService.broadcast(topic,
-                                            WsMessage.streamToken(sep).withReqId(reqId).toMap());
-                                }
                                 answerCollector.append(answerToken);
                                 broadcastService.broadcast(topic,
                                         WsMessage.streamToken(answerToken).withReqId(reqId).toMap());
                             },
-                            () -> {
-                                // 思考开始：先推送"（"标注
-                                thinkingStarted[0] = true;
-                                String prefix = "（推理过程：";
-                                answerCollector.append(prefix);
-                                broadcastService.broadcast(topic,
-                                        WsMessage.streamToken(prefix).withReqId(reqId).toMap());
-                            }
+                            () -> {}
                     );
 
                     fullAnswer = llmInvoker.invokeStream(config, effectiveHistory, temperature,
@@ -424,13 +407,6 @@ public class ChatProcessor {
                                 parser.feed(token);
                             });
                     parser.flush();
-                    // 如果思考已开始但未正常结束（LLM 未闭合标签），补上右括号
-                    if (thinkingStarted[0] && !thinkingEnded[0]) {
-                        String close = "）";
-                        answerCollector.append(close);
-                        broadcastService.broadcast(topic,
-                                WsMessage.streamToken(close).withReqId(reqId).toMap());
-                    }
                 } else {
                     // 非思考链模式：直接流式输出（无延迟）
                     fullAnswer = llmInvoker.invokeStream(config, effectiveHistory, temperature,

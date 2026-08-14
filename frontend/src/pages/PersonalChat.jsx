@@ -365,7 +365,7 @@ export default function PersonalChat() {
               const updated = [...prev]
               updated[updated.length - 1] = {
                 role: 'ai', content: answer || last.content, streaming: false,
-                thinking: last.thinking,
+                thinking: '',  // 输出完成后清除思考过程
                 latency: payload.latency, tokens: payload.tokens, model: payload.model,
                 reqId: last.reqId
               }
@@ -387,7 +387,7 @@ export default function PersonalChat() {
               const updated = [...prev]
               updated[updated.length - 1] = {
                 role: 'ai', content: answer || last.content, streaming: false, stopped: true,
-                thinking: last.thinking,
+                thinking: '',
                 reqId: last.reqId
               }
               return updated

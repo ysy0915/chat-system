@@ -827,8 +827,7 @@ public class ChatProcessor {
 
     /** 构建长期记忆注入 prompt */
     private String buildFactMemoryPrompt(java.util.List<String> facts) {
-        return "以下是你对该用户的长期记忆事实（来自历史对话的提炼），回答时参考但不要逐字复述：\n"
-                + String.join("\n- ", facts);
+        return "用户记忆：\n- " + String.join("\n- ", facts);
     }
 
     /**

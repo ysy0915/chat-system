@@ -40,8 +40,8 @@ public class ChatRagEnhancer {
     @Value("${app.rag.chat.score-threshold:0.3}")
     private float chatRagScoreThreshold;
 
-    /** 对话自动 RAG 参考资料的字符上限 */
-    @Value("${app.rag.chat.max-chars:2000}")
+    /** 对话自动 RAG 参考资料的字符上限（总预算，不截断单条，通过 MMR 在预算内选最优组合） */
+    @Value("${app.rag.chat.max-chars:1500}")
     private int chatRagMaxChars;
 
     /** 实时数据类问题：知识库无此类内容，跳过检索（由工具/模型实时回答） */
@@ -98,20 +98,36 @@ public class ChatRagEnhancer {
 
     /**
      * 检索默认知识库，构建 RAG 参考资料（无命中返回 null，检索失败不影响主流程）。
+     *
+     * <p>三步精选策略，在不截断内容、不摘要压缩的前提下最大化信息密度：</p>
+     * <ol>
+     *   <li>动态阈值过滤：根据分数分布自动过滤低质量结果（非固定阈值）</li>
+     *   <li>去冗余去重：基于 Jaccard 相似度移除因滑动窗口重叠导致的高度重复 chunk</li>
+     *   <li>MMR 多样性选择：在相关性和多样性之间取平衡，避免 top-k 全在说同一件事</li>
+     * </ol>
      */
     public String buildContext(String question) {
         if (question == null || question.isBlank()) return null;
         try {
             List<RagClient.SearchResult> results = ragClient.search(chatRagKbId, question, chatRagTopK);
             if (results == null || results.isEmpty()) return null;
+
+            // 1. 动态阈值过滤
+            List<RagClient.SearchResult> filtered = filterByDynamicThreshold(results);
+            if (filtered.isEmpty()) return null;
+
+            // 2. 去冗余去重（Jaccard 相似度 > 0.7 视为重复，保留分数高的）
+            List<RagClient.SearchResult> deduped = deduplicate(filtered);
+            if (deduped.isEmpty()) return null;
+
+            // 3. MMR 多样性选择（在 maxChars 预算内选覆盖面最广的 chunk 组合）
+            List<RagClient.SearchResult> selected = mmrSelect(deduped, chatRagMaxChars);
+            if (selected.isEmpty()) return null;
+
             StringBuilder sb = new StringBuilder();
-            int total = 0;
-            for (RagClient.SearchResult r : results) {
-                if (r.score() < chatRagScoreThreshold) continue;
-                if (total + r.text().length() > chatRagMaxChars) break;
+            for (RagClient.SearchResult r : selected) {
                 sb.append("--- 资料（相似度 ").append(String.format("%.2f", r.score())).append("）---\n");
                 sb.append(r.text()).append("\n\n");
-                total += r.text().length();
             }
             return sb.length() > 0 ? sb.toString() : null;
         } catch (Exception e) {
@@ -120,10 +136,118 @@ public class ChatRagEnhancer {
         }
     }
 
+    /**
+     * 动态阈值过滤：如果最高分远高于次高分（差 > 0.2），只保留高分结果；
+     * 否则用固定阈值兜底。避免低质量 chunk 混入稀释信息密度。
+     */
+    private List<RagClient.SearchResult> filterByDynamicThreshold(List<RagClient.SearchResult> results) {
+        List<RagClient.SearchResult> filtered = new java.util.ArrayList<>();
+        for (RagClient.SearchResult r : results) {
+            if (r.score() >= chatRagScoreThreshold) {
+                filtered.add(r);
+            }
+        }
+        if (filtered.isEmpty()) return filtered;
+
+        // 如果 top1 和 top2 分差过大，说明只有 top1 真正相关
+        if (filtered.size() > 1) {
+            float top1 = filtered.get(0).score();
+            float top2 = filtered.get(1).score();
+            if (top1 - top2 > 0.25f) {
+                log.info("[ChatRAG] 动态阈值：top1={}, top2={}, 分差>0.25 只保留 top1", top1, top2);
+                return List.of(filtered.get(0));
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 去冗余去重：基于字符级 Jaccard 相似度，移除因滑动窗口重叠导致的高度重复 chunk。
+     * 保留分数更高的那条。
+     */
+    private List<RagClient.SearchResult> deduplicate(List<RagClient.SearchResult> results) {
+        List<RagClient.SearchResult> deduped = new java.util.ArrayList<>();
+        for (RagClient.SearchResult r : results) {
+            boolean isDup = false;
+            for (int i = 0; i < deduped.size(); i++) {
+                RagClient.SearchResult existing = deduped.get(i);
+                if (jaccardSimilarity(r.text(), existing.text()) > 0.7f) {
+                    isDup = true;
+                    break;
+                }
+            }
+            if (!isDup) {
+                deduped.add(r);
+            }
+        }
+        if (deduped.size() < results.size()) {
+            log.info("[ChatRAG] 去重：{} → {}", results.size(), deduped.size());
+        }
+        return deduped;
+    }
+
+    /**
+     * MMR（Maximal Marginal Relevance）多样性选择：在 maxChars 预算内，
+     * 兼顾 chunk 与问题的相关性和 chunk 之间的差异性，避免选入内容高度相似的 chunk。
+     */
+    private List<RagClient.SearchResult> mmrSelect(List<RagClient.SearchResult> candidates, int maxChars) {
+        if (candidates.size() <= 1) return candidates;
+
+        List<RagClient.SearchResult> selected = new java.util.ArrayList<>();
+        selected.add(candidates.get(0)); // 分数最高的直接选入
+        int totalChars = candidates.get(0).text().length();
+
+        while (selected.size() < candidates.size()) {
+            RagClient.SearchResult best = null;
+            double bestScore = -1;
+            for (RagClient.SearchResult candidate : candidates) {
+                if (selected.contains(candidate)) continue;
+                // MMR score = λ * relevance - (1-λ) * max_similarity_to_selected
+                double relevance = candidate.score();
+                double maxSim = 0;
+                for (RagClient.SearchResult s : selected) {
+                    double sim = jaccardSimilarity(candidate.text(), s.text());
+                    if (sim > maxSim) maxSim = sim;
+                }
+                double mmrScore = 0.7 * relevance - 0.3 * maxSim;
+                if (mmrScore > bestScore) {
+                    bestScore = mmrScore;
+                    best = candidate;
+                }
+                if (totalChars + best.text().length() > maxChars) break;
+            }
+            if (best == null || totalChars + best.text().length() > maxChars) break;
+            selected.add(best);
+            totalChars += best.text().length();
+        }
+        log.info("[ChatRAG] MMR 选择：{} 候选 → {} 选中，总字符={}", candidates.size(), selected.size(), totalChars);
+        return selected;
+    }
+
+    /**
+     * 计算两段文本的 Jaccard 相似度（基于字符 bigram 集合）。
+     * 用于去重和 MMR 中的多样性度量。
+     */
+    private double jaccardSimilarity(String a, String b) {
+        if (a == null || b == null || a.length() < 2 || b.length() < 2) return 0;
+        java.util.Set<String> setA = new java.util.HashSet<>();
+        for (int i = 0; i < a.length() - 1; i++) {
+            setA.add(a.substring(i, i + 2));
+        }
+        java.util.Set<String> setB = new java.util.HashSet<>();
+        for (int i = 0; i < b.length() - 1; i++) {
+            setB.add(b.substring(i, i + 2));
+        }
+        java.util.Set<String> intersection = new java.util.HashSet<>(setA);
+        intersection.retainAll(setB);
+        java.util.Set<String> union = new java.util.HashSet<>(setA);
+        union.addAll(setB);
+        return union.isEmpty() ? 0 : (double) intersection.size() / union.size();
+    }
+
     /** 构建 RAG 增强的 system prompt（引导依据知识库资料作答） */
     public String buildSystemPrompt(String context) {
-        return "以下是用户知识库中检索到的参考资料。回答时请优先依据参考资料作答，"
-                + "如果参考资料不足以回答，可结合你的知识回答并简要说明。\n\n"
+        return "依据以下参考资料回答问题，资料不足时结合自身知识补充。\n\n"
                 + "【参考资料】\n" + context;
     }
 }

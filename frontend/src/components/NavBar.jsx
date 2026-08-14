@@ -43,9 +43,9 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [announcementOpen, setAnnouncementOpen] = useState(false)
 
-    // 公告未读红点：用户首次看到公告前显示（v2：8月14日公告更新，重置未读红点）
+    // 公告未读红点：用户首次看到公告前显示（v3：8月14日第二次更新，重置未读红点）
     const userId = authUser?.id || localStorage.getItem('online_presence_guest_id') || 'guest'
-    const seenKey = `announcement_seen_v2_${userId}`
+    const seenKey = `announcement_seen_v3_${userId}`
     const [announcementUnread, setAnnouncementUnread] = useState(() => !localStorage.getItem(seenKey))
 
     const handleOpenAnnouncement = () => {
@@ -157,20 +157,20 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                         <div className="announcement-content">
                             <p><strong>博思AI智能体 · 最近更新</strong></p>
 
-                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🔐 8月14日 · 注册验证码上线</p>
-                            <p>注册需填写算术题验证码（5 分钟有效、一次性使用），有效防止自动化批量注册与账号扫描。</p>
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🧠 AI 推理过程透明化</p>
+                            <p>个人对话空间与情绪树洞每条回答均展示推理过程（括号标注），流式输出，思考逻辑一目了然。</p>
 
-                            <p style={{ fontWeight: 700 }}>🛡️ 登录防暴力破解</p>
-                            <p>连续输错密码 5 次锁定 15 分钟，统一提示"用户名或密码错误"，账号更安全。</p>
+                            <p style={{ fontWeight: 700 }}>⚡ 流式输出恢复</p>
+                            <p>修复工具调度拦截导致个人对话非流式一次性返回的问题，AI 回答重新逐字呈现。</p>
 
-                            <p style={{ fontWeight: 700 }}>🌐 WebSocket 连接修复</p>
-                            <p>修复通过 IP:端口 访问时 WebSocket 连接及登录/注册请求被误拦截的问题，聊天推送更稳定。</p>
+                            <p style={{ fontWeight: 700 }}>🔧 工具调度优化</p>
+                            <p>LLM 未触发工具调用时不再拦截流式路径，工具调用与流式回答各司其职，响应更流畅。</p>
 
-                            <p style={{ fontWeight: 700 }}>⚡ AI 响应提速</p>
-                            <p>观点辩论场、个人对话、群聊默认模型切换为豆包 Lite 2.0，回答响应明显加快。</p>
+                            <p style={{ fontWeight: 700 }}>📦 前端架构重构</p>
+                            <p>App.jsx 拆分为独立组件（NavBar/AuthModal/AnnouncementModal/OnlinePresenceTracker），WebSocket 连接统一复用，聊天 UI 组件抽象。</p>
 
-                            <p style={{ fontWeight: 700 }}>🧰 服务安全加固全面上线</p>
-                            <p>监控面板访问鉴权、敏感文件权限收紧、SSH 仅密钥登录，系统整体更安全。</p>
+                            <p style={{ fontWeight: 700 }}>🌐 开源提交</p>
+                            <p>项目已提交至 GitHub awesome-ai 开源列表，README 更新为产品说明风格，在线体验地址更新。</p>
 
                             <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月14日 · 博思AI团队</p>
                         </div>

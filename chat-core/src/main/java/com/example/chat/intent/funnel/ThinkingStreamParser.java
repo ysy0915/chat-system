@@ -1,66 +1,55 @@
 package com.example.chat.intent.funnel;
 
-import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
- * LLM 思考过程流解析器。
+ * 流式思考内容解析器。
  *
- * <p>解析 LLM 流式输出中的 {@code <thinking>...</thinking>} 标签，
- * 将思考过程与最终回答分离成两个独立的 token 流。</p>
- *
- * <h3>状态机</h3>
+ * <p>LLM 输出格式：</p>
  * <pre>
- * AWAIT_THINKING ──检测到 <thinking>──▶ IN_THINKING
- * IN_THINKING    ──检测到 </thinking>──▶ IN_ANSWER
+ * [思考过程自然语言直接输出]
+ *
+ * ---answer---
+ *
+ * [最终回答内容]
  * </pre>
  *
- * <h3>使用方式</h3>
- * <pre>{@code
- *   ThinkingStreamParser parser = new ThinkingStreamParser(
- *       thinkingToken -> sendThinkingToken(thinkingToken),
- *       answerToken   -> sendStreamToken(answerToken)
- *   );
- *   // 非思考模式判定
- *   parser.markAsNonThinking();
+ * <p>解析规则：</p>
+ * <ol>
+ *   <li>解析器启动时处于 {@link State#IN_THINKING} 状态（LLM 先输出思考）</li>
+ *   <li>在 IN_THINKING 状态下遇到 {@code \n\n---answer---\n\n} 分隔符 → 切换到 IN_ANSWER</li>
+ *   <li>在 IN_ANSWER 状态下所有 token 直接 emit 为 answer</li>
+ *   <li>兼容旧 XML 标签：{@code <thinking>...</thinking>}/{@code <taking>...</taking>} 等也作为思考容器</li>
+ * </ol>
  *
- *   llmInvoker.invokeStream(..., token -> parser.feed(token));
- *   parser.flush();
- * }</pre>
+ * <p>流式安全：每次 {@link #feed(String)} 累积到内部 buffer，按状态匹配分隔符，未匹配部分保留到下次。</p>
  */
 public class ThinkingStreamParser {
 
-    enum State { AWAIT_THINKING, IN_THINKING, IN_ANSWER }
+    /** 主分隔符（首选）：空行包裹的 ---answer--- */
+    private static final String ANSWER_DELIM_PRIMARY = "\n\n---answer---\n\n";
 
-    private static final String THINKING_OPEN  = "<thinking>";
-    private static final String THINKING_CLOSE = "</thinking>";
+    /** 兼容：单行 ---answer--- */
+    private static final String ANSWER_DELIM_LF = "\n---answer---\n";
 
-    /** 容错：常见拼写错误或别名（LLM 偶尔会输出 taking/reasoning/analysis 等）。匹配规则：标签名以 "<" 开头 + 单词字符 + ">"。 */
-    private static final java.util.regex.Pattern OPEN_PATTERN  = java.util.regex.Pattern.compile("<(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
-    private static final java.util.regex.Pattern CLOSE_PATTERN = java.util.regex.Pattern.compile("</(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
+    /** 兼容：单行 ---answer---（CRLF 或无换行） */
+    private static final String ANSWER_DELIM_BARE = "---answer---";
 
-    private State state = State.AWAIT_THINKING;
-    @SuppressWarnings("PMD.AvoidStringBufferField") // 有状态流解析器：跨多次 token 调用持续 append/reset，字段级 buffer 是设计需要
+    /** 兼容：旧 XML 思考标签（taking/reasoning 等 typo） */
+    private static final java.util.regex.Pattern OPEN_PATTERN  =
+            java.util.regex.Pattern.compile("<(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern CLOSE_PATTERN =
+            java.util.regex.Pattern.compile("</(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    enum State { IN_THINKING, IN_ANSWER }
+
     private final StringBuilder buf = new StringBuilder();
-    private int receivedChars;
-
     private final Consumer<String> onThinking;
     private final Consumer<String> onAnswer;
     private final Runnable onThinkingStart;
+    private State state = State.IN_THINKING;
+    private boolean started;
 
-    /** 是否 LLM 没有输出 thinking 标签（非思考模式）。一旦标记，所有后续 token 直接走 answer。 */
-    private boolean nonThinkingMode;
-
-    /**
-     * 超过此字符数仍未检测到 {@code <thinking>} 则自动切为非思考模式。
-     */
-    private static final int AUTO_NON_THINKING_THRESHOLD = 300;
-
-    /**
-     * @param onThinking      思考过程 token 回调
-     * @param onAnswer        回答 token 回调
-     * @param onThinkingStart 思考开始时回调（仅回调一次，用于发送 thinking_start 消息）
-     */
     public ThinkingStreamParser(Consumer<String> onThinking,
                                 Consumer<String> onAnswer,
                                 Runnable onThinkingStart) {
@@ -69,119 +58,148 @@ public class ThinkingStreamParser {
         this.onThinkingStart = onThinkingStart;
     }
 
-    /** 标记为非思考模式：后续所有输入直接走 answer 通道。 */
-    public void markAsNonThinking() {
-        this.nonThinkingMode = true;
-        // 把已缓冲内容全部刷到 answer
-        if (!buf.isEmpty()) {
-            onAnswer.accept(buf.toString());
-            buf.setLength(0);
-        }
-    }
-
-    /** 喂入一个 token chunk。 */
-    public void feed(String chunk) {
-        if (chunk == null || chunk.isEmpty()) return;
-        if (nonThinkingMode) {
-            onAnswer.accept(chunk);
-            return;
-        }
-
-        receivedChars += chunk.length();
-        buf.append(chunk);
+    /** 流式输入 token */
+    public void feed(String token) {
+        if (token == null || token.isEmpty()) return;
+        buf.append(token);
         process();
-
-        // 自动降级：超过阈值仍未见到 thinking 标签 → 标记非思考模式
-        if (state == State.AWAIT_THINKING && receivedChars >= AUTO_NON_THINKING_THRESHOLD) {
-            markAsNonThinking();
-        }
     }
 
-    /** 流结束后调用，刷掉缓冲区剩余内容。 */
+    /** 流式结束后调用，处理残余 buffer */
     public void flush() {
-        if (nonThinkingMode) return;
-        String remaining = buf.toString();
-        buf.setLength(0);
-        if (!remaining.isEmpty()) {
-            switch (state) {
-                case AWAIT_THINKING:  onAnswer.accept(remaining);  break;
-                case IN_THINKING:     onThinking.accept(remaining); break;
-                case IN_ANSWER:       onAnswer.accept(remaining);   break;
-            }
+        if (buf.length() == 0) return;
+        if (state == State.IN_THINKING) {
+            // 流式结束后没有出现分隔符，整个 buffer 视为思考内容
+            onThinking.accept(buf.toString());
+        } else {
+            onAnswer.accept(buf.toString());
         }
+        buf.setLength(0);
     }
 
-    /** 流结束后的状态描述（用于调试）。 */
-    public String stateDescription() {
-        if (nonThinkingMode) return "non-thinking";
-        return state.name().toLowerCase(Locale.ROOT) + " (chars=" + receivedChars + ")";
-    }
-
-    // ──────── 内部 ────────
-
+    /** 状态机主循环 */
     private void process() {
         while (true) {
             String s = buf.toString();
             if (s.isEmpty()) return;
 
-            if (state == State.AWAIT_THINKING) {
-                java.util.regex.Matcher m = OPEN_PATTERN.matcher(s);
-                if (!m.find()) {
-                    emitSafe(s, onAnswer);
-                    return;
-                }
-                int idx = m.start();
-                int tagLen = m.end() - m.start();
-                if (idx > 0) onAnswer.accept(s.substring(0, idx));
-                state = State.IN_THINKING;
-                if (onThinkingStart != null) onThinkingStart.run();
-                buf.setLength(0);
-                buf.append(s.substring(idx + tagLen));
-                continue;
-            }
-
             if (state == State.IN_THINKING) {
-                java.util.regex.Matcher m = CLOSE_PATTERN.matcher(s);
-                if (!m.find()) {
-                    emitSafe(s, onThinking);
+                // 1. 优先匹配主分隔符（"\n\n---answer---\n\n"）
+                int idx = findAnswerDelim(s);
+                if (idx >= 0) {
+                    int delimLen = matchDelimLength(s, idx);
+                    if (!started && onThinkingStart != null) onThinkingStart.run();
+                    started = true;
+                    if (idx > 0) onThinking.accept(s.substring(0, idx));
+                    state = State.IN_ANSWER;
+                    buf.setLength(0);
+                    // 跳过分隔符 + 可能的尾部空白
+                    String rest = s.substring(idx + delimLen);
+                    if (!rest.isEmpty()) {
+                        buf.append(rest);
+                        continue;  // 立即处理 ANSWER 部分
+                    }
                     return;
                 }
-                int idx = m.start();
-                int tagLen = m.end() - m.start();
-                if (idx > 0) onThinking.accept(s.substring(0, idx));
-                state = State.IN_ANSWER;
-                buf.setLength(0);
-                buf.append(s.substring(idx + tagLen));
-                continue;
-            }
 
-            if (state == State.IN_ANSWER) {
-                onAnswer.accept(s);
-                buf.setLength(0);
+                // 2. 兼容旧 XML 开标签（如 LLM 仍输出 <thinking>）
+                java.util.regex.Matcher openM = OPEN_PATTERN.matcher(s);
+                if (openM.find()) {
+                    int openIdx = openM.start();
+                    int tagLen = openM.end() - openM.start();
+                    String beforeTag = s.substring(0, openIdx);
+                    String afterTag = s.substring(openIdx + tagLen);
+                    if (!started && onThinkingStart != null) onThinkingStart.run();
+                    started = true;
+                    if (!beforeTag.isEmpty()) onThinking.accept(beforeTag);
+                    // 跳过开标签，进入"寻找闭标签"子模式：把内容视为思考 + 闭标签切换到 ANSWER
+                    state = State.IN_THINKING; // 保持 IN_THINKING，等待闭标签
+                    buf.setLength(0);
+                    buf.append(afterTag);
+                    // 内部循环尝试匹配闭标签
+                    consumeThinkingWithCloseTag();
+                    return;
+                }
+
+                // 3. 未匹配任何分隔符，安全 emit（保留尾部避免切断可能的分隔符前缀）
+                emitThinkingSafe(s);
                 return;
             }
+
+            // IN_ANSWER 状态：所有内容直接 emit 为 answer
+            onAnswer.accept(s);
+            buf.setLength(0);
+            return;
         }
     }
 
     /**
-     * 安全地 emit：保留尾部的可能标签前缀（"\<" 或 "\</"），只 emit 确定安全的部分。
+     * 在 IN_THINKING 状态下，尝试匹配闭标签；匹配前安全 emit 思考内容。
      */
-    @SuppressWarnings("PMD.ConfusingTernary") // if-else 非对称分支为流式解析的语义要求（if 全量 flush / else 安全部分+缓存尾部）
-    private void emitSafe(String s, Consumer<String> consumer) {
-        // 保留尾部最后 9 个字符以兼容 "<" / "</" 前缀以及可能的标签名首字母
-        int keep = Math.min(9, s.length() - 1);
-        if (keep <= 0) return;
+    private void consumeThinkingWithCloseTag() {
+        while (true) {
+            String s = buf.toString();
+            if (s.isEmpty()) return;
+            java.util.regex.Matcher closeM = CLOSE_PATTERN.matcher(s);
+            if (closeM.find()) {
+                int idx = closeM.start();
+                int tagLen = closeM.end() - closeM.start();
+                if (idx > 0) onThinking.accept(s.substring(0, idx));
+                state = State.IN_ANSWER;
+                buf.setLength(0);
+                buf.append(s.substring(idx + tagLen));
+                return;
+            }
+            emitThinkingSafe(s);
+            return;
+        }
+    }
 
+    /**
+     * 在 buffer 中查找 answer 分隔符位置（支持三种形式）。
+     */
+    private int findAnswerDelim(String s) {
+        int idx = s.indexOf(ANSWER_DELIM_PRIMARY);
+        if (idx >= 0) return idx;
+        idx = s.indexOf(ANSWER_DELIM_LF);
+        if (idx >= 0) return idx;
+        idx = s.indexOf(ANSWER_DELIM_BARE);
+        return idx;
+    }
+
+    /**
+     * 根据 {@link #findAnswerDelim} 命中的位置，反推实际匹配的分隔符长度。
+     */
+    private int matchDelimLength(String s, int idx) {
+        if (s.startsWith(ANSWER_DELIM_PRIMARY, idx)) return ANSWER_DELIM_PRIMARY.length();
+        if (s.startsWith(ANSWER_DELIM_LF, idx)) return ANSWER_DELIM_LF.length();
+        if (s.startsWith(ANSWER_DELIM_BARE, idx)) return ANSWER_DELIM_BARE.length();
+        return 0;
+    }
+
+    /**
+     * 流式安全 emit：保留尾部"\\n\\n---" 或 "<" 前缀，避免切断正在流入的分隔符。
+     */
+    private void emitThinkingSafe(String s) {
+        int keep = Math.min(20, s.length() - 1);  // 20 字符足以覆盖 "\n\n---answer---\n\n"
+        if (keep <= 0) {
+            // 短内容全保留（可能是分隔符前缀的累积）
+            return;
+        }
         int safeLen = s.length() - keep;
         String tail = s.substring(safeLen);
-        // 仅当尾部以 "<" 开头才可能是标签前缀
-        if (!tail.startsWith("<")) {
-            consumer.accept(s);
-            buf.setLength(0);
-        } else {
-            if (safeLen > 0) consumer.accept(s.substring(0, safeLen));
-            buf.setLength(0);
-            buf.append(tail);
+        String head = s.substring(0, safeLen);
+        if (!head.isEmpty()) {
+            if (!started && onThinkingStart != null) onThinkingStart.run();
+            started = true;
+            onThinking.accept(head);
         }
+        buf.setLength(0);
+        buf.append(tail);
+    }
+
+    /** 当前状态（调试用） */
+    public String stateDescription() {
+        return state.toString();
     }
 }

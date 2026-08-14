@@ -354,9 +354,14 @@ public class ChatProcessor {
                         effectiveHistory = new java.util.ArrayList<>(history);
                     }
                     effectiveHistory.add(0, new LLMMessage("system",
-                            "请在回答前必须先用 <thinking>...</thinking> 标签（注意是 thinking 不是 taking 或其他拼写）"
-                            + "写出你的推理分析过程。即使是简单问题也要简要说明你的思考逻辑，"
-                            + "然后再在标签外给出最终回答。"));
+                            "回答格式要求：\n"
+                            + "1. 先直接写出你的思考过程（推理逻辑、分析依据等），用自然语言描述，不要用任何标签包裹\n"
+                            + "2. 思考结束后另起一行，单独输出 '---answer---' 作为分隔\n"
+                            + "3. 分隔后输出最终给用户的回答内容\n"
+                            + "示例：\n"
+                            + "用户问天气，我先判断这是实时数据查询类问题，然后参考对话历史...（思考过程）\n\n"
+                            + "---answer---\n\n"
+                            + "你好，我是 AI 助手，无法获取实时天气..."));
                 }
 
                 // Step2: 长期事实记忆召回注入（Milvus user_memory），让回答贴合用户偏好

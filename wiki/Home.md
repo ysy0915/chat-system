@@ -88,12 +88,6 @@ mvn clean install -DskipTests
 java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=local --server.port=9095
 
-#   仅体验 chat-llm 四大能力（模型管理面/RAG/对话记忆/知识图谱）可用 standalone：
-#   零外部依赖（免 MySQL/Redis/Neo4j/Milvus），纯内存实现，数据重启即清空：
-#   export DEEPSEEK_API_KEY=sk-xxx
-#   java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
-#     --spring.profiles.active=standalone --server.port=9095
-
 # 4. 启动 chat-core（核心 AI 服务）
 java -jar chat-core/target/chat-core-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=local --server.port=9090
@@ -111,6 +105,45 @@ cd frontend && npm install && npm run dev
 - 前端：http://localhost:5173
 - API：http://localhost:8080/api/v1/*
 - Core 内部 API：http://localhost:9090/internal/*
+
+### LLM 独立部署（standalone 纯内存模式）
+
+chat-llm 支持**零外部依赖独立部署**：无需 MySQL/Redis/Neo4j/Milvus，模型管理面、RAG 检索、对话记忆、知识图谱四大能力全部使用纯内存实现，单个进程即可完整体验。
+
+```bash
+# 1. 打包
+mvn clean install -DskipTests
+
+# 2. 配置 API Key（需要哪个厂商配哪个，不配则该厂商不可用但应用正常启动）
+export DEEPSEEK_API_KEY=sk-xxx      # DeepSeek
+export QWEN_API_KEY=sk-xxx          # 千问（RAG 向量化缺省也复用此 Key）
+export DOUBAO_API_KEY=sk-xxx        # 豆包
+# 可选：单独指定向量化 Key（缺省回退 QWEN_API_KEY）
+export EMBEDDING_API_KEY=sk-xxx
+
+# 3. 启动 standalone（默认端口 9095）
+java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=standalone --server.port=9095
+```
+
+验证：
+
+```bash
+# 健康检查
+curl http://localhost:9095/actuator/health
+
+# 模型管理面：动态添加 Provider（apiKey 直接写入，存内存）
+curl -X POST http://localhost:9095/api/v1/llm/admin/providers \
+  -H "Content-Type: application/json" \
+  -d '{"providerName":"ollama","providerType":"rest","baseUrl":"http://localhost:11434/v1","apiKey":"","models":[{"modelName":"llama3","displayName":"Llama 3"}]}'
+
+# LLM 对话（provider/model 在请求体指定，非启动参数）
+curl -X POST http://localhost:9095/api/v1/chain/invoke \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"qwen","model":"qwen-plus","messages":[{"role":"user","content":"你好"}]}'
+```
+
+> **注意**：内存数据**重启即清空**，仅适合本地演示 / 单机验证；生产请使用默认 `local` profile 并接入 MySQL/Redis/Milvus/Neo4j。完整说明与全部 curl 示例见 `chat-llm/STANDALONE.md`。
 
 ### Docker 部署
 

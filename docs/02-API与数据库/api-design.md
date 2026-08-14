@@ -1,8 +1,278 @@
-# V1.0 系统 — ER 与 API 设计文档
+# 系统设计文档 — ER 与 API 设计
 
-本文档包含 MySQL DDL、OpenAPI 概要、Redis 键设计、MQ 消息格式、WebSocket 流示例、示例请求/响应、索引与运维/安全建议。可直接用于实现或生成开发任务。
+> **版本演进**：§1-§15 为 V1.0 初始设计（历史存档），§16+ 为 V3.0 实际上线 API 全量清单（2026-08-15 更新）。
+>
+> 本文档包含 MySQL DDL、OpenAPI 概要、Redis 键设计、MQ 消息格式、WebSocket 流示例、完整 API 端点清单（146 个）、索引与运维/安全建议。
 
-## 1 高层概览
+## 0 V3.0 完整 API 端点清单（2026-08-15）
+
+> Base URL: `/api/v1`（chat-web 对外） / `/internal`（chat-core/chat-llm 内部）
+> Security: `bearerAuth`（JWT），部分管理接口需 `X-Admin-Password` 或 `X-Admin-Pass` 头
+> 统一错误响应：`{"ok":false,"code":<HTTP状态码>,"error":"<错误信息>"}`
+
+### 0.1 chat-web（对外 REST API 网关，端口 8081）
+
+#### 认证模块 `/api/v1/auth`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/auth/captcha` | 获取注册验证码（算术题，5分钟有效） | 公开 |
+| POST | `/api/v1/auth/login` | 登录（连续5次失败锁15分钟） | 公开 |
+| POST | `/api/v1/auth/register` | 注册（需验证码 token + answer） | 公开 |
+
+#### 消息模块 `/api/v1/messages`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/messages` | 创建消息（AI 群聊/个人对话，触发流式回答） | JWT |
+| POST | `/api/v1/messages/with-file` | 带文件上传的消息（multipart） | JWT |
+| GET | `/api/v1/messages` | 消息列表 | JWT |
+| GET | `/api/v1/messages/recent` | 最近私聊消息 | JWT |
+| GET | `/api/v1/messages/search?keyword=` | 搜索私聊消息（全文索引） | JWT |
+| GET | `/api/v1/messages/context?msg_id=` | 获取消息上下文 | JWT |
+| GET | `/api/v1/messages/online-count?page=` | 在线人数（按页面） | 公开 |
+| POST | `/api/v1/messages/regenerate` | 重新生成回答 | JWT |
+| POST | `/api/v1/messages/stop` | 停止流式生成（广播到所有 core 实例） | JWT |
+
+#### 情绪树洞 `/api/v1/treehole`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/treehole/history` | 树洞历史 | JWT |
+| GET | `/api/v1/treehole/recent` | 最近树洞 | JWT |
+| GET | `/api/v1/treehole/search?keyword=` | 搜索树洞 | JWT |
+| GET | `/api/v1/treehole/context?msg_id=` | 树洞上下文 | JWT |
+| POST | `/api/v1/treehole/ask` | 树洞提问（Memory 记忆增强） | JWT |
+| POST | `/api/v1/treehole/ask-with-file` | 带文件树洞提问 | JWT |
+| POST | `/api/v1/treehole/regenerate` | 重新生成树洞回答 | JWT |
+| POST | `/api/v1/treehole/stop` | 停止树洞流式 | JWT |
+
+#### 辩论模块 `/api/v1/debate`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/debate` | 启动辩论 `{topic, rounds, model_count, mode}` | JWT |
+
+> `mode`: `standard`（线性）/ `tree`（树状）；`rounds` 1~10 默认 3；`model_count` 3~6 默认 3
+
+#### 用户资料 `/api/v1/users`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/users` | 获取当前用户资料 | JWT |
+| PUT | `/api/v1/users` | 更新用户资料 | JWT |
+
+#### 模型列表 `/api/v1/models`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/models` | 可用模型列表（前端模型选择器/辩论组队） | 公开 |
+
+#### 附件 `/api/v1/attachments`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/attachments` | 上传文件（multipart，≤10MB） | JWT |
+
+#### 知识库 RAG `/api/v1/rag`（代理到 chat-llm）
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/rag/kb` | 知识库列表 | admin |
+| POST | `/api/v1/rag/kb` | 创建知识库 | admin |
+| DELETE | `/api/v1/rag/kb/{id}` | 删除知识库 | admin |
+| GET | `/api/v1/rag/kb/{id}/docs` | 文档列表 | admin |
+| POST | `/api/v1/rag/kb/{id}/docs` | 上传文档（异步解析，返回 202） | admin |
+| DELETE | `/api/v1/rag/documents/{docId}` | 删除文档 | admin |
+
+#### 知识图谱 `/api/v1/graph`（代理到 chat-core → chat-llm）
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/graph` | 获取图谱（节点+边，支持权重过滤） | JWT |
+| GET | `/api/v1/graph/search?keyword=` | 搜索图谱 | JWT |
+| GET | `/api/v1/graph/stats` | 图谱统计（实体数/关系数） | JWT |
+| POST | `/api/v1/graph/import` | 触发批量导入 | JWT |
+| GET | `/api/v1/graph/import/status` | 导入进度 | JWT |
+
+#### 模型管理面 `/api/v1/llm/admin`（代理到 chat-llm）
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/llm/admin/login` | 管理员登录 | 公开 |
+| GET | `/api/v1/llm/admin/providers` | Provider 列表（apiKey 脱敏） | 公开 |
+| GET | `/api/v1/llm/admin/providers/types` | 策略工厂 supportedTypes | 公开 |
+| POST | `/api/v1/llm/admin/providers` | 新增 Provider | X-Admin-Pass |
+| PUT | `/api/v1/llm/admin/providers/{id}` | 更新 Provider | X-Admin-Pass |
+| DELETE | `/api/v1/llm/admin/providers/{id}` | 删除 Provider（级联+路由卸载） | X-Admin-Pass |
+| POST | `/api/v1/llm/admin/providers/reload` | 全量热重载 | X-Admin-Pass |
+
+#### 监控面板 `/api/v1/monitor`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/monitor/login` | 监控面板登录 | 公开 |
+| GET | `/api/v1/monitor/online-history?days=` | 在线人数历史 | X-Admin-Password |
+| GET | `/api/v1/monitor/current` | 当前在线人数 | X-Admin-Password |
+| POST | `/api/v1/monitor/record` | 记录当前在线快照 | X-Admin-Password |
+| GET | `/api/v1/monitor/llm-stats?date=` | LLM 调用统计 | X-Admin-Password |
+| GET | `/api/v1/monitor/total-usage` | 总使用量 | X-Admin-Password |
+| GET | `/api/v1/monitor/traces?n=` | 最近调用链 | X-Admin-Password |
+| GET | `/api/v1/monitor/errors` | 错误统计 | X-Admin-Password |
+| GET | `/api/v1/monitor/traces/search?keyword=` | 搜索调用链 | X-Admin-Password |
+
+#### IP 管理 `/api/v1/admin/ip`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/admin/ip/blacklist` | 黑名单列表 | X-Admin-Password |
+| POST | `/api/v1/admin/ip/blacklist/{ip}` | 拉黑 IP | X-Admin-Password |
+| DELETE | `/api/v1/admin/ip/blacklist/{ip}` | 解封 IP | X-Admin-Password |
+| GET | `/api/v1/admin/ip/stats/{ip}` | IP 请求统计 | X-Admin-Password |
+
+#### 服务健康 `/api/v1/health`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/health/games` | 游戏服务健康检查 | 公开 |
+
+#### 前端错误上报 `/api/v1/frontend-error`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/frontend-error` | 前端异常上报 | 公开 |
+
+---
+
+### 0.2 chat-llm（AI 能力层，端口 9095 / gRPC 9195）
+
+#### LLM 对话 `/api/v1/chain`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/chain/invoke` | 非流式调用 `{provider, model, messages}` | 公开 |
+| POST | `/api/v1/chain/stream` | SSE 流式调用 | 公开 |
+| POST | `/api/v1/chain/graph/invoke` | 图执行引擎非流式 | 公开 |
+| POST | `/api/v1/chain/graph/stream` | 图执行引擎 SSE 流式 | 公开 |
+
+#### LangGraph 引擎 `/api/v1/graph`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/graph/execute` | 图执行（同步） | 公开 |
+| POST | `/api/v1/graph/stream` | 图执行（SSE 流式） | 公开 |
+| GET | `/api/v1/graph/health` | 图引擎健康检查 | 公开 |
+
+#### 模型管理面（直连） `/api/v1/llm/admin/providers`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/llm/admin/providers` | Provider 列表 | 公开 |
+| GET | `/api/v1/llm/admin/providers/types` | 策略类型列表 | 公开 |
+| POST | `/api/v1/llm/admin/providers` | 新增 | X-Admin-Pass |
+| PUT | `/api/v1/llm/admin/providers/{id}` | 更新 | X-Admin-Pass |
+| DELETE | `/api/v1/llm/admin/providers/{id}` | 删除 | X-Admin-Pass |
+| POST | `/api/v1/llm/admin/providers/reload` | 热重载 | X-Admin-Pass |
+
+#### RAG 知识库（直连） `/api/v1/rag`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/rag/kb` | 知识库列表 | Authorization |
+| POST | `/api/v1/rag/kb` | 创建知识库 | Authorization |
+| DELETE | `/api/v1/rag/kb/{id}` | 删除知识库 | Authorization |
+| GET | `/api/v1/rag/kb/{kbId}/documents` | 文档列表 | Authorization |
+| POST | `/api/v1/rag/kb/{kbId}/documents` | 上传文档（异步 202） | Authorization |
+| DELETE | `/api/v1/rag/documents/{id}` | 删除文档 | Authorization |
+| POST | `/api/v1/rag/search` | 向量检索测试 | Authorization |
+
+#### 内部 RAG 接口 `/internal/rag`（chat-core 经 RagClient 调用）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/internal/rag/search` | 知识库语义检索 |
+| POST | `/internal/rag/embed` | 文本向量化 |
+| POST | `/internal/rag/memory/save` | 保存对话记忆（短期+长期+画像） |
+| POST | `/internal/rag/memory/context` | 构建记忆上下文 |
+| POST | `/internal/rag/memory/facts/save` | 保存用户事实 |
+| POST | `/internal/rag/memory/facts/recall` | 召回用户事实 |
+| POST | `/internal/rag/invoke` | RAG 增强回答（非流式） |
+| POST | `/internal/rag/invoke-stream` | RAG 增强回答（SSE 流式） |
+
+#### 内部知识图谱接口 `/internal/graph`（chat-core 经 GraphClient 调用）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/internal/graph` | 获取图谱 |
+| GET | `/internal/graph/search` | 搜索图谱 |
+| GET | `/internal/graph/stats` | 图谱统计 |
+| POST | `/internal/graph/import` | 批量导入 |
+| GET | `/internal/graph/import/status` | 导入进度 |
+| POST | `/internal/graph/extract` | 三元组抽取 |
+
+---
+
+### 0.3 chat-games（游戏服务，端口 8083）
+
+#### 城堡围攻 `/api/v1/games/castlesiege/lords`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| GET | `/api/v1/games/castlesiege/lords` | 领主排行榜 | 公开 |
+| POST | `/api/v1/games/castlesiege/lords/sync` | 同步排行榜 | JWT |
+
+#### SQL 执行台 `/api/v1/sql`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/sql/login` | SQL 台登录（5次失败锁15分钟） | 公开 |
+| POST | `/api/v1/sql/execute` | 执行 SQL（限频 30次/分钟，禁多语句） | X-Admin-Token |
+
+---
+
+### 0.4 chat-media（多模态服务，端口 8084）
+
+#### 媒体生成 `/api/v1/media`
+
+| 方法 | 路径 | 说明 | 鉴权 |
+|------|------|------|------|
+| POST | `/api/v1/media/generate` | 生成（文生图/文生视频/图生3D） | JWT（用户级限流） |
+| GET | `/api/v1/media/status/{id}` | 生成状态查询 | JWT |
+| GET | `/api/v1/media/history?type=` | 生成历史 | JWT |
+| GET | `/api/v1/media/3d-access` | 3D 生成权限检查 | JWT |
+
+---
+
+### 0.5 WebSocket `/ws/chat`
+
+| 事件类型 | 方向 | 说明 |
+|----------|------|------|
+| `chunk` | S→C | 流式文本片段 `{type, req_id, seq, content}` |
+| `done` | S→C | 流式完成 `{type, req_id, answer, metadata}` |
+| `cache_hit` | S→C | 缓存命中 `{type, req_id, answer}` |
+| `error` | S→C | 错误 `{type, req_id, code, message}` |
+| `round_start` | S→C | 辩论轮次开始 `{type, round, model_ids}` |
+| `round_response` | S→C | 辩论轮次响应 |
+| `round_end` | S→C | 辩论轮次结束 |
+| `synthesis` | S→C | 辩论汇总 |
+
+---
+
+### 0.6 API 统计
+
+| 维度 | 数量 |
+|------|------|
+| chat-web 对外端点 | **52** |
+| chat-llm 对外端点 | **20** |
+| chat-llm 内部端点 | **15** |
+| chat-games 端点 | **4** |
+| chat-media 端点 | **4** |
+| WebSocket 事件 | **8** |
+| **合计** | **~103 个端点 + 8 个 WS 事件** |
+
+---
+
+## 1 高层概览（V1.0 初始设计）
 - 功能边界：
   - 管理模块：ModelConfig 管理（provider、model、apiKey、优先级、启用/禁用）
   - 用户模块：注册/登录（JWT），用户资料

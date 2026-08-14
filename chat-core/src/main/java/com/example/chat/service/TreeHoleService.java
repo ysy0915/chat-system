@@ -280,33 +280,17 @@ public class TreeHoleService {
                                    Long fUserId, String question, TreeHoleMessage m, long startTime) {
         StringBuilder answerCollector = new StringBuilder();
         String topic = "/topic/treehole." + fUserId;
-        final boolean[] thinkingStarted = {false};
-        final boolean[] thinkingEnded = {false};
         ThinkingStreamParser parser = new ThinkingStreamParser(
                 t -> {
-                    answerCollector.append(t);
                     broadcastService.broadcast(topic,
-                            WsMessage.streamToken(t).withReqId(reqId).toMap());
+                            WsMessage.thinkingToken(t).withReqId(reqId).toMap());
                 },
                 t -> {
-                    if (thinkingStarted[0] && !thinkingEnded[0]) {
-                        thinkingEnded[0] = true;
-                        String sep = "）";
-                        answerCollector.append(sep);
-                        broadcastService.broadcast(topic,
-                                WsMessage.streamToken(sep).withReqId(reqId).toMap());
-                    }
                     answerCollector.append(t);
                     broadcastService.broadcast(topic,
                             WsMessage.streamToken(t).withReqId(reqId).toMap());
                 },
-                () -> {
-                    thinkingStarted[0] = true;
-                    String prefix = "（推理过程：";
-                    answerCollector.append(prefix);
-                    broadcastService.broadcast(topic,
-                            WsMessage.streamToken(prefix).withReqId(reqId).toMap());
-                }
+                () -> {}
         );
 
         try {
@@ -321,12 +305,6 @@ public class TreeHoleService {
                         token -> parser.feed(token));
             }
             parser.flush();
-            if (thinkingStarted[0] && !thinkingEnded[0]) {
-                String close = "）";
-                answerCollector.append(close);
-                broadcastService.broadcast(topic,
-                        WsMessage.streamToken(close).withReqId(reqId).toMap());
-            }
 
             String answer;
             if (answerCollector.isEmpty()) {

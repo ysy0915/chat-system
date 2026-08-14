@@ -99,6 +99,18 @@ public class DebateGraphService {
         final Long uid = userId;
         final String rid = reqId;
 
+        // 广播模型信息（编号体系：辩论 1/2/3 = pro/neutral/con，整合 = 4；
+        // 与前端「models 数组最后一个为整合模型」约定一致，确保整合流式 token 落入最终结论而非辩论轮次）
+        if (uid != null && uid != 0) {
+            broadcastService.broadcast("/topic/debate." + uid,
+                    WsMessage.of("start").withReqId(rid).with("models", List.of(
+                            Map.of("id", 1, "name", providerName(proModel)),
+                            Map.of("id", 2, "name", providerName(summaryModel)),
+                            Map.of("id", 3, "name", providerName(conModel)),
+                            Map.of("id", 4, "name", providerName(summaryModel))
+                    )).toMap());
+        }
+
         boolean success = llmBundleClient.graphStream(graphReq, event -> {
             switch (event.getType()) {
                 case GraphStreamEventDto.TYPE_NODE_START -> {
@@ -106,7 +118,8 @@ public class DebateGraphService {
                         round.incrementAndGet();
                         if (uid != null && uid != 0) {
                             broadcastService.broadcast("/topic/debate." + uid,
-                                    WsMessage.of("round_start").withReqId(rid).with("round", round.get()).toMap());
+                                    WsMessage.of("round_start").withReqId(rid).with("round", round.get())
+                                            .with("model_ids", List.of(1, 2, 3)).toMap());
                         }
                     } else if ("summary".equals(event.getNodeId()) && uid != null && uid != 0) {
                         broadcastService.broadcast("/topic/debate." + uid,
@@ -219,9 +232,16 @@ public class DebateGraphService {
         // debate：三方并行分支
         LangGraphRequest.GraphNode debate = node("debate");
         debate.setBranches(List.of(
-                branch("pro", proModel, "你是辩论的正方。话题：「{{state.topic}}」\n请用 100 字以内阐述你的观点。反方上一轮观点：{{state.conArguments[-1]}}"),
-                branch("con", conModel, "你是辩论的反方。话题：「{{state.topic}}」\n请用 100 字以内阐述你的观点。正方上一轮观点：{{state.proArguments[-1]}}"),
-                branch("neutral", summaryModel, "你是辩论的中立方评论员。话题：「{{state.topic}}」\n请用 100 字以内给出你的客观分析。正方上一轮观点：{{state.proArguments[-1]}} 反方上一轮观点：{{state.conArguments[-1]}}")
+                branch("pro", proModel, "你是辩论的正方。话题：「{{state.topic}}」\n" +
+                        "反方上一轮观点：{{state.conArguments[-1]}}（若为空，说明是首轮，请直接阐述正方观点，无需反驳）\n" +
+                        "请用 100 字以内给出你的观点。"),
+                branch("con", conModel, "你是辩论的反方。话题：「{{state.topic}}」\n" +
+                        "正方上一轮观点：{{state.proArguments[-1]}}（若为空，说明是首轮，请直接阐述反方观点，无需反驳）\n" +
+                        "请用 100 字以内给出你的观点。"),
+                branch("neutral", summaryModel, "你是辩论的中立方评论员。话题：「{{state.topic}}」\n" +
+                        "正方上一轮观点：{{state.proArguments[-1]}}；反方上一轮观点：{{state.conArguments[-1]}}\n" +
+                        "（若以上观点为空，说明是首轮，请直接针对话题给出 100 字以内的客观分析，无需评价双方）\n" +
+                        "请用 100 字以内给出你的客观分析。")
         ));
         debate.getBranches().get(0).setSink("proArguments");
         debate.getBranches().get(0).setSinkAppend(true);

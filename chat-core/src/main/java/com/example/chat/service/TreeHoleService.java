@@ -6,7 +6,6 @@ import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.TreeHoleMessage;
-import com.example.chat.intent.funnel.ThinkingStreamParser;
 import com.example.chat.repository.TreeHoleRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -240,9 +239,7 @@ public class TreeHoleService {
         // 构建历史上下文
         TreeHoleHistoryBuilder.HistoryContext ctx = historyBuilder.build(userId, question);
         List<LLMMessage> messages = new ArrayList<>();
-        messages.add(LLMMessage.system(ctx.systemPrompt()
-                + "\n\n请在回应前必须先用 <thinking>...</thinking> 标签写出你的推理分析过程。"
-                + "即使是简单问题也要简要说明你的思考逻辑，然后再给出最终回应。"));
+        messages.add(LLMMessage.system(ctx.systemPrompt()));
         messages.addAll(ctx.messages());
 
         String fullQuestion = (mood != null && !mood.isBlank())
@@ -274,37 +271,31 @@ public class TreeHoleService {
     }
 
     /** 流式调用核心逻辑 */
-    @SuppressWarnings("PMD.NPathComplexity") // 流式回调/思考链剥离/停止判定/落库多分支，拆分引入大量跨回调状态
+    @SuppressWarnings("PMD.NPathComplexity") // 流式回调/停止判定/落库多分支，拆分引入大量跨回调状态
     private void executeStreamCall(ModelConfig config, String effectiveApiKey,
                                    List<LLMMessage> messages, String reqId,
                                    Long fUserId, String question, TreeHoleMessage m, long startTime) {
         StringBuilder answerCollector = new StringBuilder();
         String topic = "/topic/treehole." + fUserId;
-        ThinkingStreamParser parser = new ThinkingStreamParser(
-                t -> {
-                    broadcastService.broadcast(topic,
-                            WsMessage.thinkingToken(t).withReqId(reqId).toMap());
-                },
-                t -> {
-                    answerCollector.append(t);
-                    broadcastService.broadcast(topic,
-                            WsMessage.streamToken(t).withReqId(reqId).toMap());
-                },
-                () -> {}
-        );
-
         try {
             String rawAnswer;
             if (ragClient != null && treeholeKbId > 0) {
                 rawAnswer = ragClient.ragInvokeStream(treeholeKbId, question, messages,
                         0.85, config.provider, config.model,
-                        token -> parser.feed(token));
+                        token -> {
+                            answerCollector.append(token);
+                            broadcastService.broadcast(topic,
+                                    WsMessage.streamToken(token).withReqId(reqId).toMap());
+                        });
             } else {
                 rawAnswer = llmInvoker.invokeStream(config, messages, 0.85, "treehole",
                         llmConfig.getBaseUrl(), effectiveApiKey,
-                        token -> parser.feed(token));
+                        token -> {
+                            answerCollector.append(token);
+                            broadcastService.broadcast(topic,
+                                    WsMessage.streamToken(token).withReqId(reqId).toMap());
+                        });
             }
-            parser.flush();
 
             String answer;
             if (answerCollector.isEmpty()) {
@@ -401,9 +392,7 @@ public class TreeHoleService {
         // 构建历史上下文
         TreeHoleHistoryBuilder.HistoryContext ctx = historyBuilder.build(userId, question);
         List<LLMMessage> messages = new ArrayList<>();
-        messages.add(LLMMessage.system(ctx.systemPrompt()
-                + "\n\n请在回应前必须先用 <thinking>...</thinking> 标签写出你的推理分析过程。"
-                + "即使是简单问题也要简要说明你的思考逻辑，然后再给出最终回应。"));
+        messages.add(LLMMessage.system(ctx.systemPrompt()));
         messages.addAll(ctx.messages());
 
         String fullQuestion = (mood != null && !mood.isBlank())

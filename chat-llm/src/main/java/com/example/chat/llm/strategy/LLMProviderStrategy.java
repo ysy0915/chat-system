@@ -13,6 +13,9 @@ import com.example.chat.dto.LangChainResponse;
  * </ul>
  */
 public interface LLMProviderStrategy {
+    /** 流式透传思考过程的前缀标记（仅 request.streamReasoning=true 时使用）。
+     *  调用方收到该前缀开头的 chunk 即为 reasoning_content，需剥离前缀后单独处理。 */
+    String REASONING_STREAM_PREFIX = "\u0001R:";
 
     /** 调用方式: rest / sdk */
     String INVOKE_TYPE_REST = "rest";

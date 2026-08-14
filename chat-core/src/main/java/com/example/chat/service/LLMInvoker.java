@@ -302,9 +302,20 @@ public class LLMInvoker {
                                                     double temperature, String scene,
                                                     String defaultBaseUrl, String defaultApiKey,
                                                     String traceId, Consumer<String> callback) {
+        return invokeViaBundleStream(config, messages, temperature, scene,
+                defaultBaseUrl, defaultApiKey, traceId, callback, null);
+    }
+
+    private LangChainResponse invokeViaBundleStream(ModelConfig config, List<LLMMessage> messages,
+                                                    double temperature, String scene,
+                                                    String defaultBaseUrl, String defaultApiKey,
+                                                    String traceId, Consumer<String> callback,
+                                                    Consumer<String> reasoningCallback) {
         LangChainRequest req = buildBundleRequest(config, messages, temperature, scene,
                 defaultBaseUrl, defaultApiKey, traceId, null);
-        return llmBundleClient.invokeStream(req, callback);
+        // 思考链透传：仅在需要 reasoning 回调时开启，避免普通场景引入额外解析
+        req.setStreamReasoning(reasoningCallback != null);
+        return llmBundleClient.invokeStream(req, callback, reasoningCallback);
     }
 
     /**
@@ -334,6 +345,27 @@ public class LLMInvoker {
                                double temperature, String scene,
                                String defaultBaseUrl, String defaultApiKey,
                                Consumer<String> callback) throws Exception {
+        return invokeStream(config, messages, temperature, scene,
+                defaultBaseUrl, defaultApiKey, callback, null);
+    }
+
+    /**
+     * 流式调用（思考链透传重载）
+     * @param config 模型配置
+     * @param messages 消息列表
+     * @param temperature 温度
+     * @param scene 调用场景
+     * @param defaultBaseUrl 默认 baseUrl（config 中无 meta 时使用）
+     * @param defaultApiKey 默认 API Key
+     * @param callback 流式回调（每收到一段回答文本触发）
+     * @param reasoningCallback 思考过程回调（原生 reasoning_content，经 {@code \u0001R:} 前缀透传；可为 null）
+     * @return 完整回答（不含思考过程）
+     */
+    public String invokeStream(ModelConfig config, List<LLMMessage> messages,
+                               double temperature, String scene,
+                               String defaultBaseUrl, String defaultApiKey,
+                               Consumer<String> callback,
+                               Consumer<String> reasoningCallback) throws Exception {
         // 熔断检查
         checkCircuitBreaker(config);
 
@@ -344,7 +376,7 @@ public class LLMInvoker {
         if (bundleEnabled()) {
             try {
                 LangChainResponse resp = invokeViaBundleStream(config, messages, temperature, scene,
-                        defaultBaseUrl, defaultApiKey, trace.traceId, callback);
+                        defaultBaseUrl, defaultApiKey, trace.traceId, callback, reasoningCallback);
                 if (resp.isSuccess()) {
                     recordStreamSuccess(scene, config, startTime, resp.getContent(), trace);
                     clearTraceIfNeeded(trace);

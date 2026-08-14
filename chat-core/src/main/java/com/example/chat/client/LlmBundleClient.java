@@ -39,6 +39,12 @@ public class LlmBundleClient {
     private static final String STREAM_PATH = "/api/v1/chain/stream";
     private static final String GRAPH_STREAM_PATH = "/api/v1/chain/graph/stream";
 
+    /**
+     * 思考链透传前缀：与 chat-llm LLMProviderStrategy.REASONING_STREAM_PREFIX 保持一致。
+     * SSE data 以该前缀开头时表示 chunk 为思考过程（reasoning_content），剥离前缀后交给 reasoning 回调。
+     */
+    private static final String REASONING_PREFIX = "\u0001R:";
+
     private final BundleLlmProperties props;
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
@@ -85,6 +91,19 @@ public class LlmBundleClient {
      * @return 成功时返回累积的完整回答；失败时返回 fail 响应
      */
     public LangChainResponse invokeStream(LangChainRequest request, Consumer<String> chunkConsumer) {
+        return invokeStream(request, chunkConsumer, null);
+    }
+
+    /**
+     * 流式调用 chat-llm：解析 SSE {@code data: <chunk>} 行。
+     *
+     * <p>带思考链透传：data 以 {@link #REASONING_PREFIX} 开头时剥离前缀，交给 reasoningConsumer
+     * （不计入完整回答）；否则视为回答 token 交给 chunkConsumer 并累积。</p>
+     *
+     * @return 成功时返回累积的完整回答（不含思考过程）；失败时返回 fail 响应
+     */
+    public LangChainResponse invokeStream(LangChainRequest request, Consumer<String> chunkConsumer,
+                                          Consumer<String> reasoningConsumer) {
         long start = System.currentTimeMillis();
         StringBuilder full = new StringBuilder();
         try {
@@ -114,8 +133,15 @@ public class LlmBundleClient {
                     if (line != null && line.startsWith("data:")) {
                         String data = line.substring(5).trim();
                         if (!data.isEmpty()) {
-                            full.append(data);
-                            chunkConsumer.accept(data);
+                            if (data.startsWith(REASONING_PREFIX)) {
+                                // 思考链 chunk：剥离前缀，只交给 reasoning 回调，不进回答全文
+                                if (reasoningConsumer != null) {
+                                    reasoningConsumer.accept(data.substring(REASONING_PREFIX.length()));
+                                }
+                            } else {
+                                full.append(data);
+                                chunkConsumer.accept(data);
+                            }
                         }
                     }
                 }

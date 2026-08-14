@@ -9,6 +9,7 @@ import com.example.chat.llm.llm.routing.ProviderRoute;
 import com.example.chat.llm.metrics.LlmMetrics;
 import com.example.chat.llm.strategy.LLMProviderStrategy;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
@@ -72,7 +73,7 @@ class LLMInvokeServiceTest {
                 .timeoutDuration(Duration.ofSeconds(1))
                 .build());
         service = new LLMInvokeService(registry, cbRegistry,
-                retryRegistry, rateLimiterRegistry, new LlmMetrics());
+                retryRegistry, rateLimiterRegistry, new LlmMetrics(new SimpleMeterRegistry()));
     }
 
     // ============ 基本调用 ============
@@ -122,7 +123,7 @@ class LLMInvokeServiceTest {
                 .retryOnException(e -> true)
                 .build());
         service = new LLMInvokeService(registry, cbRegistry,
-                retryRegistry, rateLimiterRegistry, new LlmMetrics());
+                retryRegistry, rateLimiterRegistry, new LlmMetrics(new SimpleMeterRegistry()));
         when(mainStrategy.invoke(any()))
                 .thenThrow(new RuntimeException("first"))
                 .thenReturn(LangChainResponse.ok("ok", "deepseek", "deepseek-chat"));
@@ -143,7 +144,7 @@ class LLMInvokeServiceTest {
                 .failAfterMaxAttempts(true)
                 .build());
         service = new LLMInvokeService(registry, cbRegistry,
-                retryRegistry, rateLimiterRegistry, new LlmMetrics());
+                retryRegistry, rateLimiterRegistry, new LlmMetrics(new SimpleMeterRegistry()));
         when(mainStrategy.invoke(any())).thenThrow(new RuntimeException("boom"));
         when(altStrategy.invoke(any()))
                 .thenReturn(LangChainResponse.ok("备用回复", "qwen", "qwen-plus"));
@@ -201,7 +202,7 @@ class LLMInvokeServiceTest {
                 .waitDurationInOpenState(Duration.ofMinutes(1))
                 .build());
         service = new LLMInvokeService(registry, cbRegistry,
-                retryRegistry, rateLimiterRegistry, new LlmMetrics());
+                retryRegistry, rateLimiterRegistry, new LlmMetrics(new SimpleMeterRegistry()));
         when(mainStrategy.invoke(any())).thenThrow(new RuntimeException("boom"));
 
         LangChainResponse r1 = service.invoke(request("deepseek", "deepseek-chat"));
@@ -227,7 +228,7 @@ class LLMInvokeServiceTest {
                 .timeoutDuration(Duration.ZERO)
                 .build());
         service = new LLMInvokeService(registry, cbRegistry,
-                retryRegistry, rateLimiterRegistry, new LlmMetrics());
+                retryRegistry, rateLimiterRegistry, new LlmMetrics(new SimpleMeterRegistry()));
         when(mainStrategy.invoke(any()))
                 .thenReturn(LangChainResponse.ok("ok", "deepseek", "deepseek-chat"));
 

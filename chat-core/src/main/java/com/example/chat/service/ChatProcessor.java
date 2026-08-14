@@ -323,10 +323,25 @@ public class ChatProcessor {
                     }
                 }
 
-                // LLM 流式调用（意图驱动温度 + 思考链展示）
-                // 个人对话强制开启思考链：每句问题都展示推理过程
+                // LLM 流式调用（意图驱动温度）
+                // 个人对话保留思考链：原生思考模型经 reasoning 透传，无原生思考的模型经 ---answer--- 分隔提示词解析，统一前端灰色折叠展示
                 boolean enableThinking = true;
                 List<LLMMessage> effectiveHistory = history;
+                if (enableThinking) {
+                    // 思考链模式：提示模型先输出思考过程，再用 ---answer--- 分隔后输出最终回答（解析器剥离分隔符，用户只见思考+回答）
+                    if (effectiveHistory == history) {
+                        effectiveHistory = new java.util.ArrayList<>(history);
+                    }
+                    effectiveHistory.add(0, new LLMMessage("system",
+                            "回答格式要求：\n"
+                            + "1. 先直接写出你的思考过程（推理逻辑、分析依据等），用自然语言描述，不要用任何标签包裹\n"
+                            + "2. 思考结束后另起一行，单独输出 '---answer---' 作为分隔\n"
+                            + "3. 分隔后输出最终给用户的回答内容\n"
+                            + "示例：\n"
+                            + "用户问天气，我先判断这是实时数据查询类问题，然后参考对话历史...（思考过程）\n\n"
+                            + "---answer---\n\n"
+                            + "你好，我是 AI 助手，无法获取实时天气..."));
+                }
                 // 实时数据类问题拦截：注入 system prompt 明确告知 LLM 无法获取实时数据
                 // 避免带历史上下文时 LLM 把"天气怎样"误解为上下文相关话题
                 if (chatRagEnhancer.isRealTimeOrPersonalQuery(question)) {
@@ -348,20 +363,6 @@ public class ChatProcessor {
                         log.info("[doPersonalStream] req_id={} 知识库RAG增强命中 kb={} ctxLen={}",
                                 reqId, chatRagEnhancer.getKbId(), ragContext.length());
                     }
-                }
-                if (enableThinking) {
-                    if (effectiveHistory == history) {
-                        effectiveHistory = new java.util.ArrayList<>(history);
-                    }
-                    effectiveHistory.add(0, new LLMMessage("system",
-                            "回答格式要求：\n"
-                            + "1. 先直接写出你的思考过程（推理逻辑、分析依据等），用自然语言描述，不要用任何标签包裹\n"
-                            + "2. 思考结束后另起一行，单独输出 '---answer---' 作为分隔\n"
-                            + "3. 分隔后输出最终给用户的回答内容\n"
-                            + "示例：\n"
-                            + "用户问天气，我先判断这是实时数据查询类问题，然后参考对话历史...（思考过程）\n\n"
-                            + "---answer---\n\n"
-                            + "你好，我是 AI 助手，无法获取实时天气..."));
                 }
 
                 // Step2: 长期事实记忆召回注入（Milvus user_memory），让回答贴合用户偏好
@@ -389,8 +390,10 @@ public class ChatProcessor {
 
                 String fullAnswer;
                 if (enableThinking) {
-                    // 思考链模式：思考过程走 thinking_token 事件（前端灰色展示，done 后清除）
-                    // 回答走 stream_token 事件（正常颜色展示）
+                    // 思考链模式（双通道）：
+                    //  1) 原生思考（deepseek-reasoner 等）：reasoning_content 经 \u0001R: 前缀走 thinking_token（前端灰色展示），content 即最终回答
+                    //  2) 无原生思考的模型：回退 ---answer--- 分隔提示词，由 ThinkingStreamParser 状态机拆出思考/回答
+                    AtomicBoolean nativeReasoning = new AtomicBoolean(false);
                     ThinkingStreamParser parser = new ThinkingStreamParser(
                             thinkingToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
@@ -410,7 +413,20 @@ public class ChatProcessor {
                             "personal", llmConfig.getBaseUrl(), llmConfig.getApiKey(),
                             token -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
-                                parser.feed(token);
+                                if (nativeReasoning.get()) {
+                                    // 已有原生思考：content 即最终回答，直接透传
+                                    answerCollector.append(token);
+                                    broadcastService.broadcast(topic,
+                                            WsMessage.streamToken(token).withReqId(reqId).toMap());
+                                } else {
+                                    parser.feed(token);
+                                }
+                            },
+                            reasoningToken -> {
+                                if (streamStopManager.getOrDefault(reqId).get()) return;
+                                nativeReasoning.set(true);
+                                broadcastService.broadcast(topic,
+                                        WsMessage.thinkingToken(reasoningToken).withReqId(reqId).toMap());
                             });
                     parser.flush();
                 } else {
@@ -425,9 +441,10 @@ public class ChatProcessor {
                             });
                 }
 
-                // 思考链模式下 fullAnswer 含 <thinking> 标签，用 answerCollector 获取纯净回答
+                // 思考链模式下 fullAnswer 可能含思考内容/分隔符；优先用 answerCollector 的纯净回答，
+                // 否则对 fullAnswer 兜底剥离 ---answer--- 及之前内容，确保最终回答不含思考过程与分隔符
                 String cleanAnswer = answerCollector.isEmpty()
-                        ? fullAnswer
+                        ? stripAnswerDelim(fullAnswer)
                         : answerCollector.toString();
 
                 if (isStopped(reqId)) {
@@ -446,6 +463,22 @@ public class ChatProcessor {
                 streamStopManager.remove(reqId);
             }
         }, modelExecutor);
+    }
+
+    private static final java.util.regex.Pattern ANSWER_DELIM_PATTERN =
+            java.util.regex.Pattern.compile("---\\s*answer\\s*---", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 兜底剥离思考链分隔符：取最后一个 {@code ---answer---}（容忍 {@code --- answer ---} 等变体）
+     * 之后的文本作为纯净回答；无分隔符时原样返回（模型未走思考链格式，content 即回答）。
+     */
+    private static String stripAnswerDelim(String raw) {
+        if (raw == null) return "";
+        java.util.regex.Matcher m = ANSWER_DELIM_PATTERN.matcher(raw);
+        int lastEnd = -1;
+        while (m.find()) lastEnd = m.end();
+        if (lastEnd < 0) return raw;
+        return raw.substring(lastEnd).trim();
     }
 
     /**

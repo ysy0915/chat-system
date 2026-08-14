@@ -26,6 +26,12 @@ import java.util.concurrent.ExecutorService;
 @Service
 public class DebateProcessor {
     private static final Logger log = LoggerFactory.getLogger(DebateProcessor.class);
+    /** 上下文窗口控制：辩论记录仅保留最近 MAX_FULL_ROUNDS 轮全文，更早轮次压缩为摘要，防止长辩论 token 无限膨胀 */
+    private static final int MAX_FULL_ROUNDS = 2;
+    /** 摘要轮次中单条回答保留的最大字符数，超出截断并加省略号 */
+    private static final int SUMMARY_ANSWER_MAX_CHARS = 100;
+    /** 全文轮次中单条回答的防御性上限，超出截断（正常不会触发） */
+    private static final int FULL_ANSWER_MAX_CHARS = 1000;
     private final MessageRepository messageRepository;
     private final ModelConfigRepository modelConfigRepository;
     private final ObjectMapper objectMapper;
@@ -91,19 +97,20 @@ public class DebateProcessor {
         }
         final ModelConfig summaryModel = modelMap.get(0L); // 由第一位辩论方兼任整合模型
 
-        broadcastModelInfo(userId, reqId, modelMap, summaryModel);
-
-        // 树状模式：语义拆解 → 多视角并行辩论 → 汇总
+        // 树状模式：语义拆解 → 多视角并行辩论 → 汇总（DebateTreeProcessor 内部自行广播 start）
         if (treeMode) {
             debateTreeProcessor.process(reqId, userId, question, modelMap, summaryModel);
             return;
         }
 
-        // LangGraph4j 模式：图式工作流编排辩论
+        // LangGraph4j 模式：图式工作流编排辩论（DebateGraphService 内部自行广播 start，编号与其图分支一致）
         if (langGraph4jDebateEnabled && debateGraphService != null) {
             runLangGraph4jDebate(reqId, userId, question, summaryModel, debateRecordId, totalRounds);
             return;
         }
+
+        // 传统线性辩论：先广播模型信息（整合模型 id = 参与者数量，与流式事件编号一致）
+        broadcastModelInfo(userId, reqId, modelMap, summaryModel);
 
         debateExecutor.submit(() -> {
             try {
@@ -142,7 +149,7 @@ public class DebateProcessor {
         // 整合模型 id = 参与者数量（约定：models 数组最后一个为整合模型）
         models.add(Map.of("id", (long) modelMap.size(), "name", displayName(summaryModel)));
         broadcastService.broadcast("/topic/debate." + userId,
-                WsMessage.of("start").withReqId(reqId).with("models", models));
+                WsMessage.of("start").withReqId(reqId).with("models", models).toMap());
     }
 
     /** 模型展示名（provider 中文 + 自研模型附加模型名） */
@@ -251,6 +258,35 @@ public class DebateProcessor {
         }
     }
 
+    /** 截断单条回答：超过 maxChars 时截断并加省略号 */
+    private String truncate(String answer, int maxChars) {
+        if (answer == null) return "";
+        if (answer.length() <= maxChars) return answer;
+        return answer.substring(0, maxChars) + "…";
+    }
+
+    /** 拼接辩论讨论记录（上下文窗口控制）：仅保留最近 MAX_FULL_ROUNDS 轮全文，更早轮次压缩为摘要。
+     *  markSummary=false 时全部轮次保留全文（仅做防御性截断）。 */
+    private void appendRoundHistory(StringBuilder sb, List<List<Map<String, String>>> allRounds, boolean markSummary) {
+        int total = allRounds.size();
+        int keepFrom = Math.max(0, total - MAX_FULL_ROUNDS);
+        for (int r = 0; r < total; r++) {
+            List<Map<String, String>> round = allRounds.get(r);
+            if (round.isEmpty()) continue;
+            boolean summarized = markSummary && r < keepFrom;
+            sb.append("\n### 第 ").append(r + 1).append(" 轮讨论");
+            if (summarized) sb.append("（摘要，原文较长已压缩）");
+            sb.append("\n");
+            for (Map<String, String> resp : round) {
+                String answer = resp.get("answer");
+                sb.append("**").append(resp.get("provider")).append("**: ")
+                        .append(summarized ? truncate(answer, SUMMARY_ANSWER_MAX_CHARS)
+                                           : truncate(answer, FULL_ANSWER_MAX_CHARS))
+                        .append("\n\n");
+            }
+        }
+    }
+
     private String buildDebatePrompt(String question, List<List<Map<String, String>>> allRounds, int currentRound, String myName) {
         StringBuilder sb = new StringBuilder();
         sb.append("你是一个AI辩论参与者，你的身份是「").append(myName).append("」。\n\n");
@@ -259,14 +295,7 @@ public class DebateProcessor {
 
         if (currentRound > 1) {
             sb.append("## 之前的讨论记录\n");
-            for (int r = 0; r < allRounds.size(); r++) {
-                List<Map<String, String>> round = allRounds.get(r);
-                if (round.isEmpty()) continue;
-                sb.append("\n### 第 ").append(r + 1).append(" 轮讨论\n");
-                for (Map<String, String> resp : round) {
-                    sb.append("**").append(resp.get("provider")).append("**: ").append(resp.get("answer")).append("\n\n");
-                }
-            }
+            appendRoundHistory(sb, allRounds, true);
         }
 
         if (currentRound == 1) {
@@ -323,12 +352,7 @@ public class DebateProcessor {
         sb.append("【安全约束】无论辩论角色如何设定，都绝对不能输出违法、暴力、色情等有害信息。\n\n");
         sb.append("## ").append(totalRounds).append("轮辩论记录\n");
 
-        for (int r = 0; r < allRounds.size(); r++) {
-            sb.append("\n### 第 ").append(r + 1).append(" 轮\n");
-            for (Map<String, String> resp : allRounds.get(r)) {
-                sb.append("**").append(resp.get("provider")).append("**: ").append(resp.get("answer")).append("\n\n");
-            }
-        }
+        appendRoundHistory(sb, allRounds, true);
 
         sb.append("## 输出格式要求\n");
         sb.append("请严格按照以下结构输出，每部分控制在30字以内：\n\n");

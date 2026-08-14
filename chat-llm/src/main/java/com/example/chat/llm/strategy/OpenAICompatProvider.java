@@ -141,6 +141,13 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
                                     if (content != null && !"".equals(content)) {
                                         chunkConsumer.accept(content.toString());
                                     }
+                                    // 思考过程透传：仅当调用方开启 streamReasoning 时，以 REASONING_STREAM_PREFIX 前缀推送
+                                    if (Boolean.TRUE.equals(request.getStreamReasoning())) {
+                                        Object reasoning = delta.get("reasoning_content");
+                                        if (reasoning != null && !"".equals(reasoning)) {
+                                            chunkConsumer.accept(REASONING_STREAM_PREFIX + reasoning);
+                                        }
+                                    }
                                 }
                             }
                         } catch (Exception ignored) {
@@ -179,6 +186,10 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
         if (req.getMaxTokens() != null) body.put("max_tokens", req.getMaxTokens());
         if (req.getTopP() != null) body.put("top_p", req.getTopP());
         if (req.getStop() != null) body.put("stop", req.getStop());
+        // function calling / 结构化输出
+        if (req.getTools() != null && !req.getTools().isEmpty()) body.put("tools", req.getTools());
+        if (req.getToolChoice() != null) body.put("tool_choice", req.getToolChoice());
+        if (req.getResponseFormat() != null) body.put("response_format", req.getResponseFormat());
         if (req.getExtra() != null) {
             // 消费型字段（baseUrl/apiKey 由 openConnection 消费，不透传给厂商）
             Map<String, Object> extra = new LinkedHashMap<>(req.getExtra());
@@ -270,11 +281,13 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
                     new TypeReference<Map<String, Object>>() {});
             List<Map<String, Object>> choices = (List<Map<String, Object>>) map.get("choices");
             String content = "";
+            String reasoning = "";
             List<Map<String, Object>> toolCalls = null;
             if (choices != null && !choices.isEmpty()) {
                 Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
                 if (message != null) {
                     content = extractContent(message.get("content"));
+                    reasoning = extractContent(message.get("reasoning_content"));
                     toolCalls = (List<Map<String, Object>>) message.get("tool_calls");
                 }
             }
@@ -285,7 +298,10 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
                 r.setTotalTokens(toInt(usage.get("total_tokens")));
                 r.setPromptTokens(toInt(usage.get("prompt_tokens")));
                 r.setCompletionTokens(toInt(usage.get("completion_tokens")));
+                r.setCacheHitTokens(toInt(usage.get("prompt_cache_hit_tokens")));
+                r.setCacheMissTokens(toInt(usage.get("prompt_cache_miss_tokens")));
             }
+            r.setReasoningContent(reasoning.isBlank() ? null : reasoning);
             r.setToolCalls(toolCalls);
             return r;
         } catch (Exception e) {

@@ -43,8 +43,9 @@ public class GraphExecuteService {
     @Autowired
     private LLMInvokeService llmInvokeService;
 
-    private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{\\s*state\\.([\\w.]+)\\s*}}");
+    private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{\\s*state\\.([\\w.\\[\\]-]+)\\s*}}");
     private static final Pattern COMPARE_PATTERN = Pattern.compile("(<=|>=|==|!=|<|>)");
+    private static final Pattern STATE_PATH_TOKEN = Pattern.compile("(\\w+)|\\[(-?\\d+)\\]");
     private static final int MAX_STEPS_DEFAULT = 20;
 
     private final ExecutorService branchExecutor = Executors.newFixedThreadPool(8,
@@ -594,19 +595,28 @@ public class GraphExecuteService {
 
     private String resolveStateValue(Map<String, Object> state, String keyPath) {
         Object current = state;
-        for (String part : keyPath.split("\\.")) {
-            if (current instanceof Map<?, ?> map) {
-                current = map.get(part);
-            } else if (current instanceof List<?> list) {
-                try {
-                    int idx = Integer.parseInt(part);
-                    if (idx < 0) idx = list.size() + idx;  // 负索引：-1 取最后一项
-                    current = list.get(idx);
-                } catch (Exception e) {
+        Matcher tm = STATE_PATH_TOKEN.matcher(keyPath);
+        while (tm.find()) {
+            String word = tm.group(1);
+            String idxStr = tm.group(2);
+            if (word != null) {
+                if (current instanceof Map<?, ?> map) {
+                    current = map.get(word);
+                } else {
                     return "";
                 }
-            } else {
-                return "";
+            } else if (idxStr != null) {
+                if (current instanceof List<?> list) {
+                    try {
+                        int idx = Integer.parseInt(idxStr);
+                        if (idx < 0) idx = list.size() + idx;  // 负索引：-1 取最后一项
+                        current = list.get(idx);
+                    } catch (Exception e) {
+                        return "";
+                    }
+                } else {
+                    return "";
+                }
             }
         }
         if (current == null) return "";

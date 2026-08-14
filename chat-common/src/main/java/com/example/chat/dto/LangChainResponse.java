@@ -46,6 +46,18 @@ public class LangChainResponse {
     @Schema(description = "是否来自回退（熔断/降级后）")
     private boolean fallback;
 
+    @Schema(description = "思考过程 (reasoning_content, deepseek-reasoner 等模型非流式返回)")
+    private String reasoningContent;
+
+    @Schema(description = "上下文缓存命中 token (prompt_cache_hit_tokens)")
+    private Integer cacheHitTokens;
+
+    @Schema(description = "上下文缓存未命中 token (prompt_cache_miss_tokens)")
+    private Integer cacheMissTokens;
+
+    @Schema(description = "首 token 延迟 (毫秒, 流式)")
+    private long ttftMs = -1;
+
     @Schema(description = "业务域 (回显)", example = "CHAT")
     private String bizType;
 
@@ -106,4 +118,16 @@ public class LangChainResponse {
 
     public String getBizType() { return bizType; }
     public void setBizType(String bizType) { this.bizType = bizType; }
+
+    public String getReasoningContent() { return reasoningContent; }
+    public void setReasoningContent(String reasoningContent) { this.reasoningContent = reasoningContent; }
+
+    public Integer getCacheHitTokens() { return cacheHitTokens; }
+    public void setCacheHitTokens(Integer cacheHitTokens) { this.cacheHitTokens = cacheHitTokens; }
+
+    public Integer getCacheMissTokens() { return cacheMissTokens; }
+    public void setCacheMissTokens(Integer cacheMissTokens) { this.cacheMissTokens = cacheMissTokens; }
+
+    public long getTtftMs() { return ttftMs; }
+    public void setTtftMs(long ttftMs) { this.ttftMs = ttftMs; }
 }

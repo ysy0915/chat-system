@@ -5,7 +5,6 @@ import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.micrometer.core.instrument.binder.MeterBinder;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -32,11 +31,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * </pre>
  */
 @Component
-public class LlmMetrics implements MeterBinder {
+public class LlmMetrics {
 
-    // 注册表引用（bindTo 时注入）
-    private MeterRegistry registry;
+    // 注册表引用（构造器注入，保证非空）
+    private final MeterRegistry registry;
     private final AtomicLong circuitStateGauge = new AtomicLong(0);
+
+    public LlmMetrics(MeterRegistry registry) {
+        this.registry = registry;
+    }
 
     // ── Counter ─────────────────────────────────────────────
 
@@ -71,6 +74,34 @@ public class LlmMetrics implements MeterBinder {
                 .tags("biz", nvl(bizType), "provider", nvl(provider), "model", nvl(model), "type", "completion")
                 .register(registry)
                 .increment(completionTokens);
+    }
+
+    /** 上下文缓存 token 用量 (prompt_cache_hit/miss_tokens，type=cache_hit/cache_miss) */
+    public void recordCacheTokens(String bizType, String provider, String model, int cacheHitTokens, int cacheMissTokens) {
+        if (registry == null) return;
+        if (cacheHitTokens > 0) {
+            Counter.builder("llm.invoke.tokens")
+                    .description("LLM token usage")
+                    .tags("biz", nvl(bizType), "provider", nvl(provider), "model", nvl(model), "type", "cache_hit")
+                    .register(registry)
+                    .increment(cacheHitTokens);
+        }
+        if (cacheMissTokens > 0) {
+            Counter.builder("llm.invoke.tokens")
+                    .tags("biz", nvl(bizType), "provider", nvl(provider), "model", nvl(model), "type", "cache_miss")
+                    .register(registry)
+                    .increment(cacheMissTokens);
+        }
+    }
+
+    /** 首 token 延迟 (TTFT, 流式) */
+    public void recordTtft(String bizType, String provider, String model, long ttftMs) {
+        if (registry == null) return;
+        Timer.builder("llm.invoke.ttft")
+                .description("LLM time to first token (streaming)")
+                .tags("biz", nvl(bizType), "provider", nvl(provider), "model", nvl(model))
+                .register(registry)
+                .record(ttftMs, TimeUnit.MILLISECONDS);
     }
 
     // ── Graph ───────────────────────────────────────────────
@@ -122,13 +153,6 @@ public class LlmMetrics implements MeterBinder {
                 .description("Provider health status")
                 .tags("provider", nvl(provider))
                 .register(registry);
-    }
-
-    // ── MeterBinder ─────────────────────────────────────────
-
-    @Override
-    public void bindTo(MeterRegistry meterRegistry) {
-        this.registry = meterRegistry;
     }
 
     private static String nvl(String s) {

@@ -37,6 +37,18 @@ public class LangChainRequest {
     @Schema(description = "是否流式输出", example = "false")
     private Boolean stream = false;
 
+    @Schema(description = "工具定义列表 (function calling)")
+    private List<Map<String, Object>> tools;
+
+    @Schema(description = "工具选择策略 (auto/none/required 或 {type:function,function:{name}})")
+    private Object toolChoice;
+
+    @Schema(description = "结构化输出 (如 {\"type\":\"json_object\"})")
+    private Map<String, Object> responseFormat;
+
+    @Schema(description = "是否流式透传思考过程 reasoning_content (默认 false)")
+    private Boolean streamReasoning = false;
+
     @Schema(description = "system prompt (可选，会自动前置插入 messages)")
     private String systemPrompt;
 
@@ -74,6 +86,18 @@ public class LangChainRequest {
 
     public Boolean getStream() { return stream; }
     public void setStream(Boolean stream) { this.stream = stream; }
+
+    public List<Map<String, Object>> getTools() { return tools; }
+    public void setTools(List<Map<String, Object>> tools) { this.tools = tools; }
+
+    public Object getToolChoice() { return toolChoice; }
+    public void setToolChoice(Object toolChoice) { this.toolChoice = toolChoice; }
+
+    public Map<String, Object> getResponseFormat() { return responseFormat; }
+    public void setResponseFormat(Map<String, Object> responseFormat) { this.responseFormat = responseFormat; }
+
+    public Boolean getStreamReasoning() { return streamReasoning; }
+    public void setStreamReasoning(Boolean streamReasoning) { this.streamReasoning = streamReasoning; }
 
     public String getSystemPrompt() { return systemPrompt; }
     public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }

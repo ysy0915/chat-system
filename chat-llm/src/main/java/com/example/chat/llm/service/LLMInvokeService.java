@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -133,6 +134,12 @@ public class LLMInvokeService {
                 int completion = result.getCompletionTokens() != null ? result.getCompletionTokens() : 0;
                 metrics.recordTokens(bizType.name(), route.providerName(), route.modelName(), prompt, completion);
             }
+            // 上下文缓存指标
+            if (success && (result.getCacheHitTokens() != null || result.getCacheMissTokens() != null)) {
+                int hit = result.getCacheHitTokens() != null ? result.getCacheHitTokens() : 0;
+                int miss = result.getCacheMissTokens() != null ? result.getCacheMissTokens() : 0;
+                metrics.recordCacheTokens(bizType.name(), route.providerName(), route.modelName(), hit, miss);
+            }
 
             log.debug("[LLMInvoke] biz={} {} / {} → {} ({}ms) cb={} retryOK",
                     bizType, route.providerName(), route.modelName(),
@@ -204,8 +211,22 @@ public class LLMInvokeService {
         }
 
         long start = System.currentTimeMillis();
+        // 流式包装：统计 TTFT（首个 chunk 到达时间）并补记成功指标
+        final AtomicLong ttft = new AtomicLong(-1);
+        java.util.function.Consumer<String> wrappedChunk = chunk -> {
+            if (ttft.get() < 0) {
+                ttft.set(System.currentTimeMillis() - start);
+                metrics.recordTtft(bizType.name(), route.providerName(), route.modelName(), ttft.get());
+            }
+            chunkConsumer.accept(chunk);
+        };
+        Runnable wrappedComplete = () -> {
+            long elapsed = System.currentTimeMillis() - start;
+            metrics.recordInvoke(bizType.name(), route.providerName(), route.modelName(), true, elapsed);
+            onComplete.run();
+        };
         try {
-            route.strategy().invokeStream(request, chunkConsumer, onComplete,
+            route.strategy().invokeStream(request, wrappedChunk, wrappedComplete,
                     throwable -> {
                         long elapsed = System.currentTimeMillis() - start;
                         metrics.recordInvoke(bizType.name(), route.providerName(), route.modelName(), false, elapsed);
@@ -283,6 +304,10 @@ public class LLMInvokeService {
                         altReq.setMaxTokens(request.getMaxTokens());
                         altReq.setTopP(request.getTopP());
                         altReq.setStop(request.getStop());
+                        altReq.setTools(request.getTools());
+                        altReq.setToolChoice(request.getToolChoice());
+                        altReq.setResponseFormat(request.getResponseFormat());
+                        altReq.setStreamReasoning(request.getStreamReasoning());
                         altReq.setExtra(request.getExtra());
                         altReq.setStream(request.getStream());
                         altReq.setTraceId(request.getTraceId());

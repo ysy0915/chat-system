@@ -35,6 +35,10 @@ public class ThinkingStreamParser {
     /** 兼容：单行 ---answer---（CRLF 或无换行） */
     private static final String ANSWER_DELIM_BARE = "---answer---";
 
+    /** 兜底：容忍模型输出 --- answer --- / ---answer --- 等横线间带空格的变体 */
+    private static final java.util.regex.Pattern ANSWER_PATTERN =
+            java.util.regex.Pattern.compile("---\\s*answer\\s*---", java.util.regex.Pattern.CASE_INSENSITIVE);
+
     /** 兼容：旧 XML 思考标签（taking/reasoning 等 typo） */
     private static final java.util.regex.Pattern OPEN_PATTERN  =
             java.util.regex.Pattern.compile("<(thinking|taking|reasoning|analysis|reason|think|thought)>", java.util.regex.Pattern.CASE_INSENSITIVE);
@@ -156,7 +160,7 @@ public class ThinkingStreamParser {
     }
 
     /**
-     * 在 buffer 中查找 answer 分隔符位置（支持三种形式）。
+     * 在 buffer 中查找 answer 分隔符位置（支持三种固定形式 + 正则变体）。
      */
     private int findAnswerDelim(String s) {
         int idx = s.indexOf(ANSWER_DELIM_PRIMARY);
@@ -164,7 +168,9 @@ public class ThinkingStreamParser {
         idx = s.indexOf(ANSWER_DELIM_LF);
         if (idx >= 0) return idx;
         idx = s.indexOf(ANSWER_DELIM_BARE);
-        return idx;
+        if (idx >= 0) return idx;
+        java.util.regex.Matcher m = ANSWER_PATTERN.matcher(s);
+        return m.find() ? m.start() : -1;
     }
 
     /**
@@ -174,7 +180,8 @@ public class ThinkingStreamParser {
         if (s.startsWith(ANSWER_DELIM_PRIMARY, idx)) return ANSWER_DELIM_PRIMARY.length();
         if (s.startsWith(ANSWER_DELIM_LF, idx)) return ANSWER_DELIM_LF.length();
         if (s.startsWith(ANSWER_DELIM_BARE, idx)) return ANSWER_DELIM_BARE.length();
-        return 0;
+        java.util.regex.Matcher m = ANSWER_PATTERN.matcher(s.substring(idx));
+        return (m.find() && m.start() == 0) ? m.end() : 0;
     }
 
     /**

@@ -136,7 +136,7 @@ export default function ChatPage(){
     setMessages(prev => [...prev, { role: 'user', content: text, reqId }])
     setQuestion('')
     if (aiAnswer) setTyping(true)
-    const payload = { req_id: reqId, question: text, user_id: userId, preferred_model_config_id: 2, ai_answer: aiAnswer }
+    const payload = { req_id: reqId, question: text, user_id: userId, ai_answer: aiAnswer }
     try {
       const res = await apiClient.post('/api/v1/messages', payload)
       const resolvedId = res.data?.user_id

@@ -50,7 +50,6 @@ export default function PersonalChat() {
   const [speechSupported] = useState(() => voiceSupported ?? !!(window.SpeechRecognition || window.webkitSpeechRecognition))
   const userIdResolved = useRef(false)
   const connectedRef = useRef(false)
-  const [currentModel, setCurrentModel] = useState('AI')
   const [showModelMenu, setShowModelMenu] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -110,11 +109,24 @@ export default function PersonalChat() {
   }
   const streamingReqIdRef = useRef(null)
 
-  const MODEL_LIST = [
-    { label: '豆包', keyword: '切换豆包', provider: 'doubao' },
-    { label: 'DeepSeek', keyword: '切换deepseek', provider: 'deepseek' },
-    { label: '千问', keyword: '切换千问', provider: 'qwen' },
-  ]
+  const [modelList, setModelList] = useState([])
+  const [currentModel, setCurrentModel] = useState('AI')
+  const [currentModelId, setCurrentModelId] = useState(null)
+
+  // 从 API 动态获取模型列表（数据驱动，非硬编码）
+  useEffect(() => {
+    apiClient.get('/api/v1/models')
+      .then(res => {
+        const models = (res.data || []).filter(m => m.enabled !== false && (m.modelType || 'chat') === 'chat')
+        setModelList(models.map(m => ({
+          id: m.id,
+          label: m.model || m.provider || '未知',
+          provider: m.provider,
+          model: m.model,
+        })))
+      })
+      .catch(() => {})
+  }, [])
 
   // 等待WebSocket连接就绪（断线重连后自动恢复）
   const connectingRef = useRef(false)  // 防止并发重连
@@ -161,34 +173,9 @@ export default function PersonalChat() {
   const switchModel = async (model) => {
     setShowModelMenu(false)
     if (circuitOpen) return
-    if (disconnectedRef.current) {
-      if (redirectCountdown === 0) showDisconnectMsg()
-      return
-    }
-    setMessages(prev => [...prev, { role: 'user', content: model.keyword }])
-    setTyping(true)
-    const connected = await ensureConnected()
-    if (!connected) {
-      setTyping(false)
-      disconnectedRef.current = true
-      showDisconnectMsg()
-      return
-    }
-    const reqId = generateId()
-    try {
-      await apiClient.post('/api/v1/messages', {
-        req_id: reqId,
-        question: model.keyword,
-        user_id: userId,
-        private: 'true',
-        ai_answer: true
-      }, { timeout: 120000 })
-      setCurrentModel(model.label)
-    } catch {
-      setTyping(false)
-      // 切换模型失败不触发熔断（不是LLM调用失败，只是消息传递问题）
-      setMessages(prev => [...prev, { role: 'system', content: '切换失败，请重试' }])
-    }
+    setCurrentModel(model.label)
+    setCurrentModelId(model.id)
+    setMessages(prev => [...prev, { role: 'system', content: `已切换到 ${model.label}` }])
   }
 
   useEffect(() => {
@@ -284,7 +271,8 @@ export default function PersonalChat() {
           question: text,
           user_id: userId,
           private: 'true',
-          ai_answer: true
+          ai_answer: true,
+          preferred_model_config_id: currentModelId
         }, { timeout: timeoutMs })
         const resolvedId = res.data?.user_id
         if (resolvedId && resolvedId !== userId && !userIdResolved.current) {
@@ -758,7 +746,7 @@ export default function PersonalChat() {
                 minWidth: 130,
                 backdropFilter: 'blur(12px)',
               }}>
-                {MODEL_LIST.map(m => (
+                {modelList.map(m => (
                   <div
                     key={m.provider}
                     onClick={() => switchModel(m)}

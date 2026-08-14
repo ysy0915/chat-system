@@ -396,14 +396,6 @@ export default function TreeHole() {
                                 ) : (
                                     <>
                                         <div className="treehole-bubble-ai">
-                                            {msg.thinking && (
-                                                <div className="thinking-block">
-                                                    {stripMarkdownSymbols(msg.thinking)}
-                                                    {msg.streaming && msg.thinking && !msg.text && (
-                                                        <span className="streaming-cursor" style={{display:'inline-block', marginLeft:2, color:'#6b7280'}}>▋</span>
-                                                    )}
-                                                </div>
-                                            )}
                                             {formatAnswer(msg.text).map((line, i) => (
                                                 <p key={i}>{line}</p>
                                             ))}

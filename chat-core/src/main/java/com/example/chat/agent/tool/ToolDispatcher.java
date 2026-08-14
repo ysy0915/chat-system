@@ -75,10 +75,10 @@ public class ToolDispatcher {
                            List<LLMMessage> messages,
                            double temperature, String scene,
                            String defaultBaseUrl, String defaultApiKey) throws Exception {
-        // 没有注册工具：直接走普通 LLM 调用，保持原行为
+        // 没有注册工具：返回 null，让调用方走正常流式路径
         if (!toolRegistry.hasTools()) {
-            log.debug("[ToolDispatcher] 无可用工具，直接调用 LLM");
-            return llmInvoker.invoke(config, messages, temperature, scene, defaultBaseUrl, defaultApiKey);
+            log.debug("[ToolDispatcher] 无可用工具，走流式路径");
+            return null;
         }
 
         List<Map<String, Object>> toolsSchema = toolRegistry.getToolsSchema();
@@ -102,9 +102,9 @@ public class ToolDispatcher {
             String assistantContent = llmToolInvoker.extractContent(llmResp);
 
             if (toolCalls == null || toolCalls.isEmpty()) {
-                // LLM 未请求工具，直接返回内容
-                log.info("[ToolDispatcher] LLM 未触发工具调用，直接返回 (callCount={}, scene={})", callCount, scene);
-                return assistantContent != null ? assistantContent : "";
+                // LLM 未请求工具：返回 null，让调用方走正常流式路径（含思考链）
+                log.info("[ToolDispatcher] LLM 未触发工具调用，走流式路径 (callCount={}, scene={})", callCount, scene);
+                return null;
             }
 
             // 把 assistant 这条带 tool_calls 的消息加入 messages

@@ -321,7 +321,8 @@ public class ChatProcessor {
                 }
 
                 // LLM 流式调用（意图驱动温度 + 思考链展示）
-                boolean enableThinking = isComplexIntent(intent);
+                // 个人对话强制开启思考链：每句问题都展示推理过程
+                boolean enableThinking = true;
                 List<LLMMessage> effectiveHistory = history;
                 // 知识问答/任务类问题：自动检索知识库，RAG 索引增强生成
                 if (chatRagEnhancer.shouldAutoRag(intent, question)) {
@@ -338,8 +339,8 @@ public class ChatProcessor {
                         effectiveHistory = new java.util.ArrayList<>(history);
                     }
                     effectiveHistory.add(0, new LLMMessage("system",
-                            "如果问题复杂需要推理分析，请先把分析路径写在 <thinking>...</thinking> 标签中，"
-                            + "再给出最终回答。简单问题直接回答即可，不需要 <thinking> 标签。"));
+                            "请在回答前必须先用 <thinking>...</thinking> 标签写出你的推理分析过程。"
+                            + "即使是简单问题也要简要说明你的思考逻辑，然后再给出最终回答。"));
                 }
 
                 // Step2: 长期事实记忆召回注入（Milvus user_memory），让回答贴合用户偏好
@@ -367,22 +368,37 @@ public class ChatProcessor {
 
                 String fullAnswer;
                 if (enableThinking) {
-                    // 思考链模式：用 ThinkingStreamParser 分离思考过程与回答
+                    // 思考链模式：推理过程用（）标注，合并到回答流式输出
+                    final boolean[] thinkingStarted = {false};
+                    final boolean[] thinkingEnded = {false};
                     ThinkingStreamParser parser = new ThinkingStreamParser(
                             thinkingToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
+                                answerCollector.append(thinkingToken);
                                 broadcastService.broadcast(topic,
-                                        WsMessage.thinkingToken(thinkingToken).withReqId(reqId).toMap());
+                                        WsMessage.streamToken(thinkingToken).withReqId(reqId).toMap());
                             },
                             answerToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
+                                // 思考结束时插入分隔
+                                if (thinkingStarted[0] && !thinkingEnded[0]) {
+                                    thinkingEnded[0] = true;
+                                    String sep = "）";
+                                    answerCollector.append(sep);
+                                    broadcastService.broadcast(topic,
+                                            WsMessage.streamToken(sep).withReqId(reqId).toMap());
+                                }
                                 answerCollector.append(answerToken);
                                 broadcastService.broadcast(topic,
                                         WsMessage.streamToken(answerToken).withReqId(reqId).toMap());
                             },
                             () -> {
+                                // 思考开始：先推送"（"标注
+                                thinkingStarted[0] = true;
+                                String prefix = "（推理过程：";
+                                answerCollector.append(prefix);
                                 broadcastService.broadcast(topic,
-                                        WsMessage.thinkingStart().withReqId(reqId).toMap());
+                                        WsMessage.streamToken(prefix).withReqId(reqId).toMap());
                             }
                     );
 
@@ -393,6 +409,13 @@ public class ChatProcessor {
                                 parser.feed(token);
                             });
                     parser.flush();
+                    // 如果思考已开始但未正常结束（LLM 未闭合标签），补上右括号
+                    if (thinkingStarted[0] && !thinkingEnded[0]) {
+                        String close = "）";
+                        answerCollector.append(close);
+                        broadcastService.broadcast(topic,
+                                WsMessage.streamToken(close).withReqId(reqId).toMap());
+                    }
                 } else {
                     // 非思考链模式：直接流式输出（无延迟）
                     fullAnswer = llmInvoker.invokeStream(config, effectiveHistory, temperature,

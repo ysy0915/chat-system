@@ -237,7 +237,8 @@ public class TreeHoleService {
         TreeHoleHistoryBuilder.HistoryContext ctx = historyBuilder.build(userId, question);
         List<LLMMessage> messages = new ArrayList<>();
         messages.add(LLMMessage.system(ctx.systemPrompt()
-                + "\n\n如果问题复杂需要分析，先把分析推理写在 <thinking>...</thinking> 标签中，再给出最终回应。简单问题直接回应。"));
+                + "\n\n请在回应前必须先用 <thinking>...</thinking> 标签写出你的推理分析过程。"
+                + "即使是简单问题也要简要说明你的思考逻辑，然后再给出最终回应。"));
         messages.addAll(ctx.messages());
 
         String fullQuestion = (mood != null && !mood.isBlank())
@@ -274,16 +275,33 @@ public class TreeHoleService {
                                     Long fUserId, String question, TreeHoleMessage m, long startTime) {
         StringBuilder answerCollector = new StringBuilder();
         String topic = "/topic/treehole." + fUserId;
+        final boolean[] thinkingStarted = {false};
+        final boolean[] thinkingEnded = {false};
         ThinkingStreamParser parser = new ThinkingStreamParser(
-                t -> broadcastService.broadcast(topic,
-                        WsMessage.thinkingToken(t).withReqId(reqId).toMap()),
                 t -> {
                     answerCollector.append(t);
                     broadcastService.broadcast(topic,
                             WsMessage.streamToken(t).withReqId(reqId).toMap());
                 },
-                () -> broadcastService.broadcast(topic,
-                        WsMessage.thinkingStart().withReqId(reqId).toMap())
+                t -> {
+                    if (thinkingStarted[0] && !thinkingEnded[0]) {
+                        thinkingEnded[0] = true;
+                        String sep = "）";
+                        answerCollector.append(sep);
+                        broadcastService.broadcast(topic,
+                                WsMessage.streamToken(sep).withReqId(reqId).toMap());
+                    }
+                    answerCollector.append(t);
+                    broadcastService.broadcast(topic,
+                            WsMessage.streamToken(t).withReqId(reqId).toMap());
+                },
+                () -> {
+                    thinkingStarted[0] = true;
+                    String prefix = "（推理过程：";
+                    answerCollector.append(prefix);
+                    broadcastService.broadcast(topic,
+                            WsMessage.streamToken(prefix).withReqId(reqId).toMap());
+                }
         );
 
         try {
@@ -298,8 +316,13 @@ public class TreeHoleService {
                         token -> parser.feed(token));
             }
             parser.flush();
+            if (thinkingStarted[0] && !thinkingEnded[0]) {
+                String close = "）";
+                answerCollector.append(close);
+                broadcastService.broadcast(topic,
+                        WsMessage.streamToken(close).withReqId(reqId).toMap());
+            }
 
-            // 使用只含回答部分的文本（不含思考过程）
             String answer = (!answerCollector.isEmpty())
                     ? answerCollector.toString()
                     : (rawAnswer != null ? rawAnswer : "");
@@ -399,7 +422,8 @@ public class TreeHoleService {
         TreeHoleHistoryBuilder.HistoryContext ctx = historyBuilder.build(userId, question);
         List<LLMMessage> messages = new ArrayList<>();
         messages.add(LLMMessage.system(ctx.systemPrompt()
-                + "\n\n如果问题复杂需要分析，先把分析推理写在 <thinking>...</thinking> 标签中，再给出最终回应。简单问题直接回应。"));
+                + "\n\n请在回应前必须先用 <thinking>...</thinking> 标签写出你的推理分析过程。"
+                + "即使是简单问题也要简要说明你的思考逻辑，然后再给出最终回应。"));
         messages.addAll(ctx.messages());
 
         String fullQuestion = (mood != null && !mood.isBlank())

@@ -159,3 +159,13 @@
 - **背景**：ADR-021 的业务指标采集为手写埋点，`IntentFunnelEngine` / `AgentWorkflowOrchestrator` 内直接调用 `CoreBusinessMetrics`，业务类掺杂可观测性逻辑，监控目标变更需改业务代码。
 - **决策**：chat-core 引入 `spring-boot-starter-aop`，新增 `CoreBusinessMetricsAspect`（`@Aspect @Component`）承载全部业务埋点：`@Around` 三个切点（`recognize` → 漏斗命中/耗时、`tryParallelWorkflow` → 工作流启动、`converge` → 收敛成功/失败）从返回值/异常取数，回退业务类内全部手写埋点；`converge` 原 catch 吞异常改为抛出后由切面记 failed 不重抛（对外语义不变）。
 - **后果**：✅ 业务类零侵入，指标采集收敛为横切关注点（增减指标只改切面一处）；✅ 指标名与 4 条业务告警不变，Prometheus 侧零影响；✅ `CoreBusinessMetricsAspectTest` 9 例，chat-core 212 例全绿；⚠️ Spring AOP 仅拦截外部 Bean 调用，新增切点需保证跨类调用（同类自调用会绕代理）。
+
+## ADR-023 辩论场多模型化 + 树状博弈提速（2026-08-14）
+
+- **状态**：Accepted（2026-08-14 上线）
+- **背景**：辩论场固定豆包/DeepSeek/千问三方组队，模型池固化无选择余地；树状模式随机全池抽取导致 2/5 概率抽中本地 Ollama 慢模型（单次 10-12s），每视角 3 轮串行拖慢整体体验。
+- **决策**：
+  1. **标准辩论多模型化**：`DebateProcessor.resolveDebateModels(chatModels, modelCount, excludeLocal)` 从已配置 chat 模型随机抽取 N 个（`model_count` 透传，默认 3，限 3~6），动态分配参与者 id 0..N-1、整合模型 id=N；`round_start` 携带 `model_ids`，流式 token 按 `model_id` 路由
+  2. **模型名中文展示**：`ModelRouter.modelDisplayName(provider, model)`（doubao→豆包、qwen→千问、deepseek→DeepSeek、ollama→自研、moonshot→Kimi 等），前端 `toCnModel` 渲染
+  3. **树状模式固定快模型**：树状辩论 `excludeLocal=true` 排除 ollama，仅从豆包/DeepSeek/千问等快模型随机 3 个；`TreePerspectiveGraphService` 用 `Map<String, BranchInfo>` 动态映射正方/中立/反方分支，替代硬编码模型 id
+- **后果**：✅ 辩论模型可自选（上限随已配置 chat 模型数，3~6）、随机组队多样性提升；✅ 树状博弈单次响应从 10s+ 降至 ~1s，卡顿根除；✅ 前端 `modelType === 'chat'` 过滤动态展示可用模型数；⚠️ 树状模式不再包含自研 Ollama 模型（若需纳入需优化其推理速度）。

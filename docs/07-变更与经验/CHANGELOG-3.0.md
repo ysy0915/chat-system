@@ -4,6 +4,43 @@
 
 ---
 
+## 〇〇、观点辩论场多模型化 + 树状博弈提速（2026-08-14）
+
+### 1. 辩论模型从「固定三方」升级为「随机组队」
+
+观点辩论场（标准辩论）不再固定豆包/DeepSeek/千问三方，改为**从已配置 chat 模型随机抽取 N 个模型组队**：
+
+- **模型数可自选**：前端「模型数」选择器（3~6 可选，上限 = 已配置 chat 模型个数），请求体带 `model_count`（后端默认 3，钳制 3~6）
+- **随机组队**：`DebateProcessor.resolveDebateModels(chatModels, modelCount, excludeLocal)` 从 `llm_model_config` 已启用 chat 模型 `Collections.shuffle` 随机抽取，动态分配参与者 id 0..N-1、整合模型 id=N
+- **模型名中文展示**：`ModelRouter.modelDisplayName(provider, model)`（豆包/千问/DeepSeek/Kimi/自研 hermes3 等），`round_start` 事件携带 `model_ids`，前端按 `model_id` 路由流式 token 与整合汇总
+- **前端动态上限**：`GET /api/v1/models` 返回全部类型，前端按 `modelType === 'chat'` 过滤后计算可选模型数
+
+### 2. 树状博弈提速（排除本地慢模型）
+
+- **现象**：树状博弈卡顿，单视角等待 10s+（豆包 10.5s / Ollama qwen2.5:3b 12s / deepseek、qwen-plus 0.8s）
+- **根因**：树状模式全池随机，2/5 概率抽中本地 Ollama 慢模型，每视角 3 轮串行被最慢者拖累
+- **修复**：树状辩论 `resolveDebateModels(excludeLocal=true)` **排除 ollama**，仅从豆包/DeepSeek/千问等快模型随机 3 个；`TreePerspectiveGraphService` 用 `Map<String, BranchInfo>` 动态映射正方/中立/反方分支，删除硬编码 `branchInfo()`
+- **效果**：单视角响应从 10s+ 降至 ~1s，仅需重新打包 chat-core 并重启 core 双实例（前端无改动）
+
+### 3. 实现清单
+
+| 文件 | 改动 |
+|------|------|
+| `chat-core/ModelRouter.java` | `toDisplayName` 补 ollama→自研、moonshot→Kimi、openai→GPT、anthropic→Claude；新增 `modelDisplayName(provider, model)` |
+| `chat-core/DebateProcessor.java` | `parseModelCount`（默认 3，限 3~6）+ `resolveDebateModels`（随机抽取、树状排除 ollama）+ 动态 id + `round_start` 带 `model_ids` + 整合 token 带 `model_id` |
+| `chat-core/DebateTreeProcessor.java` | 动态角色（debaters.get(0)=正方 / get(2)=反方 / get(1)=中立）+ `displayName(cfg)` |
+| `chat-core/TreePerspectiveGraphService.java` | 删除硬编码 `branchInfo`，改 `Map<String, BranchInfo>` 动态分支映射 |
+| `chat-web/DebateController.java` | 透传 `model_count`（默认 3，限 3~6） |
+| `frontend/Debate.jsx` | `modelCount` state + 「模型数」选择器（样式与场次选择器一致）+ `availableModels` 过滤 chat + 动态模型标签/预览/占位符 |
+| `frontend/DebateTreeView.jsx` | `roleModelNames` 动态角色名 + 图例动态化 |
+
+### 4. 验证
+
+- 生产部署：core 9090/9092 双实例重启健康（HTTP 200），前端重新 build 上传 Nginx
+- 树状博弈实测不再抽中 Ollama，单视角响应 ~1s
+
+---
+
 ## 〇、B 档架构重构（2026-08-13）
 
 ### 1. RAG 双体系二选一 → 保留 legacy，退役新版
@@ -65,7 +102,7 @@
               ┌───────────────┼───────────────┐
               ▼               ▼               ▼
             视角A           视角B           视角C
-         (豆包×DeepSeek×千问 3轮辩论, LangGraph 编排)
+         (N 个快模型随机组队 3轮辩论, LangGraph 编排)
               │               │               │
               ▼               ▼               ▼
            视角结论        视角结论        视角结论
@@ -77,7 +114,7 @@
 ### 特性
 
 - **智能拆解**：LLM 按问题语义自动生成 2~3 个分析角度，异常时回退默认视角
-- **多方辩论**：每视角豆包（正方）× DeepSeek（反方）× 千问（中立）3 轮交锋
+- **多方辩论**：每视角 N 个快模型（随机组队，名称中文展示）3 轮交锋
 - **LangGraph 混合编排**：视角内用 `StateGraph` 做图式循环编排，视角间用 Java 并行调度
 - **可拖拽画布**：暗色主题 DAG 树图，支持鼠标拖拽 / 滚轮缩放 / 双指缩放
 - **逐句换行**：最终结论的理由按句自动分割展示，阅读更清晰
@@ -489,11 +526,11 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 
 ## 十六、辩论引入 Reflection 反思循环（功能）
 
-标准辩论与树状辩论加入 **Reflection（批判性反思）** 节点，解决"对抗但不迭代"的质量短板——每轮辩论后三方不再直接堆叠观点，而是审视对方反驳后修正立场。
+标准辩论与树状辩论加入 **Reflection（批判性反思）** 节点，解决"对抗但不迭代"的质量短板——每轮辩论后 N 方不再直接堆叠观点，而是审视对方反驳后修正立场。
 
 ### 特性
 
-- **reflect 反思节点**：每轮 `debate` 之后新增三方并行反思分支，各自读取「本轮自己观点 + 对方观点」，输出：1) 被反驳得有道理的点 2) 是否修正 3) 修正后的立场（≤100 字）
+- **reflect 反思节点**：每轮 `debate` 之后新增 N 方并行反思分支，各自读取「本轮自己观点 + 对方观点」，输出：1) 被反驳得有道理的点 2) 是否修正 3) 修正后的立场（≤100 字）
 - **裁决式汇总**：`summary` 基于反思后的最终立场（`{{state.proReflections[-1]}}` 等）输出【正方强调 / 反方强调 / 中立评价 / 关键分歧 / 共识结论】，替代机械归纳
 - **对前端无感**：reflect 节点事件（nodeId=`reflect`）不匹配现有 WS 协议分支，静默执行；前端看到的仍是 `round_start → round_response → round_end`，无协议变更
 - **成本**：每轮辩论 LLM 调用从 3 次增至 6 次（3 辩论 + 3 反思），`maxSteps` 相应调整为 `rounds*4+2`
@@ -502,7 +539,7 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 
 | 文件 | 改动 |
 |------|------|
-| `DebateGraphService.java` | 图增加 `reflect` 节点（三方分支 sink 到 `proReflections/conReflections/neutralReflections`）；`summary` 提示词改为基于反思后立场裁决；边 `debate → reflect → shouldContinue` |
+| `DebateGraphService.java` | 图增加 `reflect` 节点（N 方分支 sink 到 `proReflections/conReflections/neutralReflections`）；`summary` 提示词改为基于反思后立场裁决；边 `debate → reflect → shouldContinue` |
 | `TreePerspectiveGraphService.java` | 同上（sink 到 `model1Reflections/model2Reflections/model3Reflections`，50 字限制） |
 
 ### 验证

@@ -199,12 +199,13 @@ Fluent API风格统一：
 5.1 标准辩论：LangGraph状态图编排
 ------------------------
 
-  START → debate(三方并行) → reflect(三方批判性反思)
+  START → debate(N 方并行) → reflect(N 方批判性反思)
     → shouldContinue → debate/summary → END
 
 关键设计：
+  - 模型数由参数透传（默认3个，可选3-6个，从已配置 chat 模型随机组队）
   - 轮数由参数透传（默认3轮，可选1-10轮）
-  - Reflection反思：每轮辩论后三方批判性审视，修正立场
+  - Reflection反思：每轮辩论后 N 方批判性审视，修正立场
   - 裁决式汇总：基于反思后的最终立场输出，替代机械归纳
 
 5.2 树状辩论：Plan-and-Execute混合模式

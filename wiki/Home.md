@@ -56,7 +56,7 @@ chat-system-project/
 
 - **AI 伙伴群聊** — 多 AI 模型同时参与公开对话，支持流式输出
 - **个人对话空间** — JWT 认证私密对话，历史持久化，知识问答自动触发 RAG
-- **观点辩论场** — LangGraph4j 三 AI 并行辩论（豆包/千问/DeepSeek），每轮反思修正
+- **观点辩论场** — 多模型随机组队辩论（3~6 个可自选，名称中文展示），每轮反思修正
 - **Multi-Agent 并行工作流** — 超长请求拆解 ≤9 子任务，RabbitMQ 分发双 core 10 并发 Worker 并行执行，Redis Lua 原子限流，DLX 死信重试 + Reconciler 对账兜底
 - **情绪树洞** — 匿名倾诉 + AI 共情回复 + Memory 用户画像记忆
 - **多模态生成** — 文生图 / 文生视频 / 图生 3D（GLB/OBJ/STL）
@@ -124,7 +124,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d   # 生产
 | 架构设计 | 双 core/双 web 高可用 + Multi-Agent 并行工作流（DLX 死信重试 + Reconciler 对账） |
 | 模型抽象 | SPI 策略工厂 + 动态路由 + 工具平台化 + 存储 SPI 热插拔 |
 | 可观测性 | Prometheus 监控栈（12 条告警规则）+ 全链路追踪 |
-| 文档 | 7 类文档中心 + ADR 22 条 + Swagger |
+| 文档 | 7 类文档中心 + ADR 23 条 + Swagger |
 | CI/CD | GitHub Actions CI + Deploy + Security + OWASP |
 | 安全性 | JWT 弱密钥校验 + 三层限流 + 内容安全过滤 |
 

@@ -6,6 +6,7 @@ import com.example.chat.dto.LangGraphRequest;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.service.BroadcastService;
+import com.example.chat.service.ModelRouter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,6 +78,13 @@ public class TreePerspectiveGraphService {
         final String rid = reqId;
         final String pid = perspectiveId;
 
+        // 分支角色信息动态化（provider 为中文展示名）
+        Map<String, BranchInfo> branchInfos = Map.of(
+                "pro", new BranchInfo("正方", 0, ModelRouter.modelDisplayName(proModel.provider, proModel.model)),
+                "neutral", new BranchInfo("中立", 1, ModelRouter.modelDisplayName(neutralModel.provider, neutralModel.model)),
+                "con", new BranchInfo("反方", 2, ModelRouter.modelDisplayName(conModel.provider, conModel.model))
+        );
+
         boolean success = llmBundleClient.graphStream(graphReq, event -> {
             switch (event.getType()) {
                 case GraphStreamEventDto.TYPE_NODE_START -> {
@@ -91,7 +99,7 @@ public class TreePerspectiveGraphService {
                 }
                 case GraphStreamEventDto.TYPE_DELTA -> {
                     if ("debate".equals(event.getNodeId())) {
-                        BranchInfo info = branchInfo(event.getBranchId());
+                        BranchInfo info = branchInfos.get(event.getBranchId());
                         if (info != null) {
                             broadcast(uid, treeMsg("tree_stream_token", rid)
                                     .with("perspectiveId", pid).with("round", round.get())
@@ -108,7 +116,7 @@ public class TreePerspectiveGraphService {
                 case GraphStreamEventDto.TYPE_BRANCH_END -> {
                     if ("debate".equals(event.getNodeId()) && event.getBranchId() != null) {
                         String answer = event.getData() != null ? event.getData() : "";
-                        BranchInfo info = branchInfo(event.getBranchId());
+                        BranchInfo info = branchInfos.get(event.getBranchId());
                         if (info == null) break;
                         switch (event.getBranchId()) {
                             case "pro" -> m1.add(answer);
@@ -258,16 +266,6 @@ public class TreePerspectiveGraphService {
     // ---- 工具 ----
 
     private record BranchInfo(String role, int modelId, String provider) {}
-
-    private BranchInfo branchInfo(String branchId) {
-        if (branchId == null) return null;
-        return switch (branchId) {
-            case "pro" -> new BranchInfo("正方", 1, "doubao");
-            case "neutral" -> new BranchInfo("中立", 2, "qwen");
-            case "con" -> new BranchInfo("反方", 3, "deepseek");
-            default -> null;
-        };
-    }
 
     private LangGraphRequest.GraphNode node(String id) {
         LangGraphRequest.GraphNode n = new LangGraphRequest.GraphNode();

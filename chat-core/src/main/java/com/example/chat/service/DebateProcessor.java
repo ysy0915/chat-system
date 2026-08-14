@@ -77,19 +77,23 @@ public class DebateProcessor {
         String userName = payload.get("user_name") != null ? payload.get("user_name").toString() : "";
         String mode = payload.get("mode") != null ? payload.get("mode").toString() : "";
         int totalRounds = parseRounds(payload.get("rounds"));
+        int modelCount = parseModelCount(payload.get("model_count"));
+        boolean treeMode = "tree".equals(mode);
 
-        Map<Long, ModelConfig> modelMap = resolveDebateModels(modelConfigRepository.findAllEnabledByType("chat"));
+        // 树状模式排除本地自研(ollama)模型：多轮串行且每轮等最慢分支，本地推理(12s+/次)会拖垮整场
+        Map<Long, ModelConfig> modelMap = resolveDebateModels(
+                modelConfigRepository.findAllEnabledByType("chat"), modelCount, treeMode);
         if (modelMap.isEmpty()) {
             broadcastService.broadcast("/topic/debate." + userId,
-                    WsMessage.error("需要豆包、千问、DeepSeek 三个 chat 模型均已启用").withReqId(reqId).toMap());
+                    WsMessage.error("可用的 chat 模型不足 3 个，无法开启辩论").withReqId(reqId).toMap());
             return;
         }
-        final ModelConfig summaryModel = modelMap.get(2L); // 千问为整合模型
+        final ModelConfig summaryModel = modelMap.get(0L); // 由第一位辩论方兼任整合模型
 
         broadcastModelInfo(userId, reqId, modelMap, summaryModel);
 
         // 树状模式：语义拆解 → 多视角并行辩论 → 汇总
-        if ("tree".equals(mode)) {
+        if (treeMode) {
             debateTreeProcessor.process(reqId, userId, question, modelMap, summaryModel);
             return;
         }
@@ -111,29 +115,38 @@ public class DebateProcessor {
         });
     }
 
-    /** 解析辩论模型：1=豆包, 2=千问, 3=DeepSeek。任一缺失返回 null */
-    private Map<Long, ModelConfig> resolveDebateModels(List<ModelConfig> chatModels) {
-        ModelConfig doubao = chatModels.stream().filter(m -> "doubao".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
-        ModelConfig qwen = chatModels.stream().filter(m -> "qwen".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
-        ModelConfig deepseek = chatModels.stream().filter(m -> "deepseek".equalsIgnoreCase(m.provider)).findFirst().orElse(null);
-        if (doubao == null || qwen == null || deepseek == null) return Collections.emptyMap();
-
+    /** 从启用的 chat 模型中随机选取 modelCount 个作为辩论方，动态分配 id 0..N-1（随机多模型并行辩论）。可用模型不足 3 个返回空。
+     *  excludeLocal=true（树状模式）时排除本地自研(ollama)模型：本地推理慢，树状每视角多轮串行会被整体拖慢；排除后不足 3 个则回退全池。 */
+    private Map<Long, ModelConfig> resolveDebateModels(List<ModelConfig> chatModels, int modelCount, boolean excludeLocal) {
+        if (chatModels == null || chatModels.size() < 3) return Collections.emptyMap();
+        List<ModelConfig> pool = new ArrayList<>();
+        for (ModelConfig m : chatModels) {
+            if (!excludeLocal || !"ollama".equalsIgnoreCase(m.getProvider())) pool.add(m);
+        }
+        if (pool.size() < 3) pool = new ArrayList<>(chatModels); // 回退全池，保证能开辩论
+        List<ModelConfig> shuffled = new ArrayList<>(pool);
+        Collections.shuffle(shuffled); // 每场辩论随机抽取，避免固定阵容
+        int count = Math.max(3, Math.min(modelCount, shuffled.size()));
         Map<Long, ModelConfig> map = new LinkedHashMap<>();
-        map.put(1L, doubao);
-        map.put(2L, qwen);
-        map.put(3L, deepseek);
+        for (int i = 0; i < count; i++) {
+            map.put((long) i, shuffled.get(i));
+        }
         return map;
     }
 
     private void broadcastModelInfo(Long userId, String reqId, Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
+        List<Map<String, Object>> models = new ArrayList<>();
+        modelMap.forEach((id, cfg) ->
+                models.add(Map.of("id", id, "name", displayName(cfg))));
+        // 整合模型 id = 参与者数量（约定：models 数组最后一个为整合模型）
+        models.add(Map.of("id", (long) modelMap.size(), "name", displayName(summaryModel)));
         broadcastService.broadcast("/topic/debate." + userId,
-                WsMessage.of("start").withReqId(reqId)
-                        .with("models", List.of(
-                                Map.of("id", 1, "name", ModelRouter.toDisplayName(modelMap.get(1L).provider)),
-                                Map.of("id", 2, "name", ModelRouter.toDisplayName(modelMap.get(2L).provider)),
-                                Map.of("id", 3, "name", ModelRouter.toDisplayName(modelMap.get(3L).provider)),
-                                Map.of("id", 4, "name", ModelRouter.toDisplayName(summaryModel.provider))
-                        )));
+                WsMessage.of("start").withReqId(reqId).with("models", models));
+    }
+
+    /** 模型展示名（provider 中文 + 自研模型附加模型名） */
+    private String displayName(ModelConfig cfg) {
+        return ModelRouter.modelDisplayName(cfg.provider, cfg.model);
     }
 
     /** LangGraph4j 编排模式 */
@@ -155,7 +168,7 @@ public class DebateProcessor {
     private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap,
                            ModelConfig summaryModel, Long debateRecordId, String userName, int totalRounds) {
         List<List<Map<String, String>>> allRounds = new ArrayList<>();
-        List<Long> debateOrder = List.of(1L, 2L, 3L);
+        List<Long> debateOrder = new ArrayList<>(modelMap.keySet()); // 0..N-1 动态
 
         for (int round = 1; round <= totalRounds; round++) {
             final int currentRound = round;
@@ -163,12 +176,13 @@ public class DebateProcessor {
             allRounds.add(roundResponses);
 
             broadcastService.broadcast("/topic/debate." + userId,
-                    WsMessage.of("round_start").withReqId(reqId).with("round", round).toMap());
+                    WsMessage.of("round_start").withReqId(reqId).with("round", round)
+                            .with("model_ids", debateOrder).toMap());
 
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (Long modelId : debateOrder) {
                 ModelConfig config = modelMap.get(modelId);
-                String displayName = ModelRouter.toDisplayName(config.provider);
+                String displayName = displayName(config);
                 String prompt = buildDebatePrompt(question, allRounds, currentRound, displayName);
 
                 CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
@@ -210,9 +224,9 @@ public class DebateProcessor {
 
         broadcastService.broadcast("/topic/debate." + userId,
                 WsMessage.of("synthesizing").withReqId(reqId)
-                        .with("synthesizer", ModelRouter.toDisplayName(summaryModel.provider)).toMap());
+                        .with("synthesizer", displayName(summaryModel)).toMap());
 
-        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, ModelRouter.toDisplayName(summaryModel.provider), totalRounds);
+        String synthesisPrompt = buildSynthesisPrompt(question, allRounds, displayName(summaryModel), totalRounds);
 
         try {
             String finalAnswer = llmInvoker.invokeStream(summaryModel,
@@ -222,7 +236,7 @@ public class DebateProcessor {
                         if (userId != null && reqId != null) {
                             broadcastService.broadcast("/topic/debate." + userId,
                                             WsMessage.streamToken(token)
-                                                    .withReqId(reqId).with("model_id", 4).toMap());
+                                                    .withReqId(reqId).with("model_id", modelMap.size()).toMap());
                         }
                     });
 
@@ -323,6 +337,19 @@ public class DebateProcessor {
         sb.append("...\n\n");
         sb.append("供您参考。");
         return sb.toString();
+    }
+
+    /** 解析辩论模型数：默认 3，范围 3-6（实际可用数以 resolveDebateModels 再收紧） */
+    private int parseModelCount(Object v) {
+        int n = 3;
+        if (v != null) {
+            try {
+                n = Integer.parseInt(v.toString());
+            } catch (NumberFormatException ignored) {
+                // 非法值回退默认
+            }
+        }
+        return Math.max(3, Math.min(6, n));
     }
 
     /** 解析辩论轮数：默认 3，范围 1-10（防滥用） */

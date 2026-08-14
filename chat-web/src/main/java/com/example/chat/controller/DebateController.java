@@ -81,6 +81,16 @@ public class DebateController {
             }
         }
         debatePayload.put("rounds", Math.max(1, Math.min(10, rounds)));
+        // 辩论模型数：默认 3，范围 3-6（防滥用，与 chat-core 校验一致）
+        int modelCount = 3;
+        if (body.get("model_count") != null) {
+            try {
+                modelCount = Integer.parseInt(body.get("model_count").toString());
+            } catch (NumberFormatException ignored) {
+                // 非法值回退默认
+            }
+        }
+        debatePayload.put("model_count", Math.max(3, Math.min(6, modelCount)));
         coreClient.debateStart(debatePayload);
 
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "debating"));

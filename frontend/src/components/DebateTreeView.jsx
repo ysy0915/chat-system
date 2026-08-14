@@ -13,9 +13,9 @@ const SUMMARY_OFFSET = 50
 const FINAL_Y_OFFSET = 180  // 足够空隙，避免和视角汇总重叠
 
 const ROLE_COLORS = {
-  '正方': { border: 'role-zheng', accent: '#38bdf8', icon: '🟦', model: '豆包' },
-  '反方': { border: 'role-fan',  accent: '#ef4444', icon: '🟥', model: 'DeepSeek' },
-  '中立': { border: 'role-li',   accent: '#a855f7', icon: '🟪', model: '千问' },
+  '正方': { border: 'role-zheng', accent: '#38bdf8', icon: '🟦' },
+  '反方': { border: 'role-fan',  accent: '#ef4444', icon: '🟥' },
+  '中立': { border: 'role-li',   accent: '#a855f7', icon: '🟪' },
 }
 
 // 格式化管理：按行分割 + 按句号/分号额外分割 + 加粗标记 + 去掉开头的【最终结论】标签
@@ -51,6 +51,7 @@ export function formatFinalText(text) {
 
 export default function DebateTreeView({ websocketEvents, onDone }) {
   const [perspectives, setPerspectives] = useState([])  // [{id, label, focus, rounds:[], summary, status}]
+  const [roleModelNames, setRoleModelNames] = useState({})  // {正方/反方/中立: 模型中文名}
   const [rootQuestion, setRootQuestion] = useState('')
   const [finalAnswer, setFinalAnswer] = useState('')
   const [finalStreaming, setFinalStreaming] = useState(false)  // 最终汇总是否正在流式打印
@@ -123,6 +124,18 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
     if (!websocketEvents) return
     const handler = (msg) => {
       switch (msg.type) {
+        case 'start': {
+          // 模型列表顺序：0=正方, 1=中立, 2=反方, 3=整合（后端约定）
+          const list = msg.models || []
+          setRoleModelNames(prev => {
+            const next = { ...prev }
+            if (list[0]?.name) next['正方'] = list[0].name
+            if (list[1]?.name) next['中立'] = list[1].name
+            if (list[2]?.name) next['反方'] = list[2].name
+            return next
+          })
+          break
+        }
         case 'tree_decompose_start': {
           setRootQuestion(msg._question || '')
           break
@@ -471,7 +484,7 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
                           )                           : (
                             <>
                               <div className="arg-role" style={{ color: colors.accent }}>
-                                {colors.icon} R{rIdx + 1} · {colors.model || role}
+                                {colors.icon} R{rIdx + 1} · {arg?.provider || role}
                               </div>
                               <div className="arg-text">{arg.text}</div>
                             </>
@@ -525,11 +538,11 @@ export default function DebateTreeView({ websocketEvents, onDone }) {
         )}
       </div>
 
-      {/* 图例 */}
+      {/* 图例（模型名动态来自后端 start 事件） */}
       <div className="tree-legend">
-        <span><span className="dot" style={{ background: '#38bdf8' }} /> 豆包</span>
-        <span><span className="dot" style={{ background: '#ef4444' }} /> DeepSeek</span>
-        <span><span className="dot" style={{ background: '#a855f7' }} /> 千问</span>
+        <span><span className="dot" style={{ background: '#38bdf8' }} /> {roleModelNames['正方'] || '正方'}</span>
+        <span><span className="dot" style={{ background: '#ef4444' }} /> {roleModelNames['反方'] || '反方'}</span>
+        <span><span className="dot" style={{ background: '#a855f7' }} /> {roleModelNames['中立'] || '中立'}</span>
       </div>
 
       {/* 缩放控件 */}

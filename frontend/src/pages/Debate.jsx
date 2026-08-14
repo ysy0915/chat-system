@@ -7,15 +7,27 @@ import { useAutoScroll } from '../hooks/useAutoScroll'
 import { useStompConnection } from '../hooks/useStompConnection'
 import DebateTreeView, { formatFinalText } from '../components/DebateTreeView'
 
-const MODEL_COLORS = {
-  1: { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.3)', accent: '#38bdf8', icon: '🫧' },
-  2: { bg: 'rgba(168, 85, 247, 0.08)', border: 'rgba(168, 85, 247, 0.3)', accent: '#a855f7', icon: '🤖' },
-  3: { bg: 'rgba(239, 68, 68, 0.08)', border: 'rgba(239, 68, 68, 0.3)', accent: '#ef4444', icon: '🔥' },
-  4: { bg: 'rgba(52, 211, 153, 0.08)', border: 'rgba(52, 211, 153, 0.3)', accent: '#34d399', icon: '🧬' },
-}
+// 动态模型配色：按 modelId 取模循环使用（modelId 由后端动态分配 0..N-1，整合模型 id=N）
+const MODEL_COLOR_LIST = [
+  { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.3)', accent: '#38bdf8', icon: '🫧' },
+  { bg: 'rgba(168, 85, 247, 0.08)', border: 'rgba(168, 85, 247, 0.3)', accent: '#a855f7', icon: '🤖' },
+  { bg: 'rgba(239, 68, 68, 0.08)', border: 'rgba(239, 68, 68, 0.3)', accent: '#ef4444', icon: '🔥' },
+  { bg: 'rgba(52, 211, 153, 0.08)', border: 'rgba(52, 211, 153, 0.3)', accent: '#34d399', icon: '🧬' },
+  { bg: 'rgba(251, 191, 36, 0.08)', border: 'rgba(251, 191, 36, 0.3)', accent: '#fbbf24', icon: '💡' },
+  { bg: 'rgba(244, 114, 182, 0.08)', border: 'rgba(244, 114, 182, 0.3)', accent: '#f472b6', icon: '🌸' },
+  { bg: 'rgba(148, 163, 184, 0.08)', border: 'rgba(148, 163, 184, 0.3)', accent: '#94a3b8', icon: '⭐' },
+]
 
-// 辩论三方默认模型名（id=1 豆包、id=2 千问、id=3 DeepSeek、id=4 千问整合）
-const DEFAULT_MODEL_NAMES = { 1: '豆包', 2: '千问', 3: 'DeepSeek', 4: '千问' }
+// provider → 中文展示名（与后端 ModelRouter.toDisplayName 保持一致）
+const PROVIDER_CN = {
+  doubao: '豆包', qwen: '千问', deepseek: 'DeepSeek', zhipu: '智谱 GLM',
+  ollama: '自研', moonshot: 'Kimi', openai: 'GPT', anthropic: 'Claude',
+}
+const toCnModel = (m) => {
+  const p = (m?.provider || '').toLowerCase()
+  if (p === 'ollama' && m?.model) return `自研 ${m.model}`
+  return PROVIDER_CN[p] || m?.model || p || '模型'
+}
 
 export default function Debate() {
   const [question, setQuestion] = useState('')
@@ -23,6 +35,8 @@ export default function Debate() {
   const [rounds, setRounds] = useState([])
   const [currentRound, setCurrentRound] = useState(0)
   const [roundCount, setRoundCount] = useState(3)
+  const [modelCount, setModelCount] = useState(3)
+  const [availableModels, setAvailableModels] = useState([])
   const [thinking, setThinking] = useState([])
   const [finalAnswer, setFinalAnswer] = useState(null)
   const [synthesizing, setSynthesizing] = useState(false)
@@ -39,10 +53,25 @@ export default function Debate() {
 
   const currentRoundRef = useRef(0)
   const modelNamesRef = useRef({})
+  const summaryModelIdRef = useRef(null) // 整合模型 id = models 数组最后一个
   const scrollRef = useAutoScroll([rounds, finalAnswer, synthesizing])
 
   useEffect(() => { currentRoundRef.current = currentRound }, [currentRound])
   useEffect(() => { modelNamesRef.current = modelNames }, [modelNames])
+
+  // 挂载时拉取已启用的 chat 模型列表（过滤非 chat 类型），用于计算「模型数」选择上限与首页预览
+  useEffect(() => {
+    apiClient.get('/api/v1/models')
+      .then(res => {
+        const list = Array.isArray(res.data)
+          ? res.data.filter(m => m.modelType === 'chat')
+          : []
+        setAvailableModels(list)
+      })
+      .catch(() => { /* 拉取失败不影响使用，按默认 3 个展示 */ })
+  }, [])
+  // 可用模型上限（后端最多 6）
+  const maxModelCount = Math.min(Math.max(3, availableModels.length || 3), 6)
 
   const [userId] = useState(() => {
     try {
@@ -76,6 +105,7 @@ export default function Debate() {
         const names = {}
         p.models?.forEach(m => { names[m.id] = m.name })
         setModelNames(names)
+        if (p.models?.length) summaryModelIdRef.current = p.models[p.models.length - 1].id
       }
       // 树状最终结论区实时流式显示
       if (p.type === 'tree_stream_token' && p.role === 'aggregate') {
@@ -90,16 +120,18 @@ export default function Debate() {
       const names = {}
       p.models.forEach(m => { names[m.id] = m.name })
       setModelNames(names)
+      if (p.models?.length) summaryModelIdRef.current = p.models[p.models.length - 1].id
     } else if (p.type === 'round_start') {
       setCurrentRound(p.round)
-      setThinking([1, 2, 3])
+      // 每轮参与辩论的模型 id 由后端动态下发（0..N-1）；兼容旧版事件则回退为 [0..modelCount-1]
+      setThinking(p.model_ids?.length ? [...p.model_ids] : Array.from({ length: modelCount }, (_, i) => i))
       setRounds(prev => {
         const next = [...prev]
         next[p.round - 1] = next[p.round - 1] || []
         return next
       })
     } else if (p.type === 'stream_token') {
-      if (p.model_id === 4) {
+      if (p.model_id === summaryModelIdRef.current) {
         setFinalAnswer(prev => (prev || '') + p.token)
       } else {
         setRounds(prev => {
@@ -139,7 +171,7 @@ export default function Debate() {
     } else if (p.type === 'synthesizing') {
       setThinking([])
       setSynthesizing(true)
-      setSynthesizer(p.synthesizer || '千问')
+      setSynthesizer(p.synthesizer || modelNamesRef.current[summaryModelIdRef.current] || '整合')
     } else if (p.type === 'done') {
       if (!treeMode) {
         setFinalAnswer(extractAnswer(p.answer))
@@ -207,10 +239,12 @@ export default function Debate() {
     setTreeFinalAnswer(null)
 
     const reqId = generateId()
+    summaryModelIdRef.current = null
     try {
       await apiClient.post('/api/v1/debate', {
         req_id: reqId, question: text, user_id: userId,
         rounds: roundCount,
+        model_count: treeMode ? 3 : modelCount,
         ...(treeMode ? { mode: 'tree' } : {}),
       })
     } catch (err) {
@@ -230,10 +264,10 @@ export default function Debate() {
     }
   }
 
-  const getModelColor = (modelId) => MODEL_COLORS[modelId] || MODEL_COLORS[1]
+  const getModelColor = (modelId) => MODEL_COLOR_LIST[Number(modelId) % MODEL_COLOR_LIST.length]
   const getModelLabel = (modelId, provider) => {
     const color = getModelColor(modelId)
-    return `${color.icon} ${provider || DEFAULT_MODEL_NAMES[modelId] || ('模型' + modelId)}`
+    return `${color.icon} ${provider || modelNames[modelId] || ('模型' + (Number(modelId) + 1))}`
   }
 
   return (
@@ -245,18 +279,20 @@ export default function Debate() {
           <h1>{treeMode ? '🌳 树状观点博弈' : '⚔️ AI 博弈'}</h1>
           <p>{treeMode
             ? '语义拆解 → 多视角并行辩论 → DAG 汇总。可拖拽画布浏览全过程'
-            : `三个大模型围绕你的问题展开辩论，${roundCount}轮讨论后由千问整合结论`
+            : `${modelCount} 个大模型随机组成阵容展开辩论，${roundCount}轮讨论后由其中一位整合结论`
           }</p>
           <div className="debate-models-preview">
-            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[1].border, color: MODEL_COLORS[1].accent }}>
-              {MODEL_COLORS[1].icon} {modelNames[1] || DEFAULT_MODEL_NAMES[1]}
-            </span>
-            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[2].border, color: MODEL_COLORS[2].accent }}>
-              {MODEL_COLORS[2].icon} {modelNames[2] || DEFAULT_MODEL_NAMES[2]}
-            </span>
-            <span className="debate-model-tag" style={{ borderColor: MODEL_COLORS[3].border, color: MODEL_COLORS[3].accent }}>
-              {MODEL_COLORS[3].icon} {modelNames[3] || DEFAULT_MODEL_NAMES[3]}
-            </span>
+            {(availableModels.length
+              ? availableModels.slice(0, treeMode ? 3 : modelCount)
+              : Array.from({ length: treeMode ? 3 : modelCount }, (_, i) => ({ model: `模型${i + 1}` }))
+            ).map((m, i) => {
+              const color = getModelColor(i)
+              return (
+                <span key={m.id ?? i} className="debate-model-tag" style={{ borderColor: color.border, color: color.accent }}>
+                  {color.icon} {toCnModel(m)}
+                </span>
+              )
+            })}
           </div>
         </div>
       )}
@@ -333,7 +369,7 @@ export default function Debate() {
                   return (
                     <div key={'thinking-' + modelId} className="debate-response-card debate-thinking-card" style={{ borderColor: color.border, background: color.bg }}>
                       <div className="debate-response-header" style={{ color: color.accent }}>
-                        {getModelLabel(modelId, modelNames[modelId] || DEFAULT_MODEL_NAMES[modelId] || ('模型' + modelId))}
+                        {getModelLabel(modelId, modelNames[modelId])}
                       </div>
                       <div className="debate-thinking-body">
                         <span className="debate-thinking-dot"></span>
@@ -351,7 +387,7 @@ export default function Debate() {
           {synthesizing && (
             <div className="debate-synthesizing">
               <div className="debate-synth-spinner"></div>
-              <span>{synthesizer || '千问'} 正在整合各方观点，生成最终结论...</span>
+              <span>{synthesizer || '整合模型'} 正在整合各方观点，生成最终结论...</span>
             </div>
           )}
 
@@ -401,22 +437,38 @@ export default function Debate() {
         </button>
       </div>
 
-      {/* 场次选择 — 输入框上方（仅线性模式） */}
+      {/* 场次 & 模型数选择 — 输入框上方（仅线性模式） */}
       {!treeMode && (
-        <div className="debate-rounds-picker">
-          <span className="debate-rounds-label">场次</span>
-          {[1, 2, 3, 4, 5].map(n => (
-            <button
-              key={n}
-              type="button"
-              className={`debate-rounds-btn ${roundCount === n ? 'active' : ''}`}
-              disabled={debating}
-              onClick={() => setRoundCount(n)}
-            >
-              {n}轮
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="debate-rounds-picker">
+            <span className="debate-rounds-label">场次</span>
+            {[1, 2, 3, 4, 5].map(n => (
+              <button
+                key={n}
+                type="button"
+                className={`debate-rounds-btn ${roundCount === n ? 'active' : ''}`}
+                disabled={debating}
+                onClick={() => setRoundCount(n)}
+              >
+                {n}轮
+              </button>
+            ))}
+          </div>
+          <div className="debate-rounds-picker">
+            <span className="debate-rounds-label">模型数</span>
+            {Array.from({ length: maxModelCount - 2 }, (_, i) => i + 3).map(n => (
+              <button
+                key={n}
+                type="button"
+                className={`debate-rounds-btn ${modelCount === n ? 'active' : ''}`}
+                disabled={debating}
+                onClick={() => setModelCount(n)}
+              >
+                {n}个
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="chat-input-area">
@@ -425,7 +477,7 @@ export default function Debate() {
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={handleKey}
-            placeholder={treeMode ? '输入问题，自动拆解为多视角树状博弈...' : '输入一个问题，让三个AI展开辩论...'}
+            placeholder={treeMode ? '输入问题，自动拆解为多视角树状博弈...' : `输入一个问题，让 ${modelCount} 个 AI 展开辩论...`}
             disabled={debating}
           />
           <button type="submit" className="send-btn" disabled={debating}>

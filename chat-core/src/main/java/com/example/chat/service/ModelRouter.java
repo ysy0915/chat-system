@@ -137,8 +137,19 @@ public class ModelRouter {
             case "qwen" -> "千问";
             case "deepseek" -> "DeepSeek";
             case "zhipu" -> "智谱 GLM";
+            case "ollama" -> "自研";
+            case "moonshot" -> "Kimi";
+            case "openai" -> "GPT";
+            case "anthropic" -> "Claude";
             default -> provider;
         };
+    }
+
+    /** 模型展示名：provider 中文名 + 自研模型的模型名（如「自研 Hermes3」） */
+    public static String modelDisplayName(String provider, String model) {
+        String base = toDisplayName(provider);
+        if (model == null || model.isBlank()) return base;
+        return base + " " + model;
     }
 
     public Long getPersonalModelId(Long userId) {

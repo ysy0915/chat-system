@@ -43,9 +43,9 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [announcementOpen, setAnnouncementOpen] = useState(false)
 
-    // 公告未读红点：用户首次看到公告前显示（v3：8月14日第二次更新，重置未读红点）
+    // 公告未读红点：用户首次看到公告前显示（v4：8月14日第三次更新，重置未读红点）
     const userId = authUser?.id || localStorage.getItem('online_presence_guest_id') || 'guest'
-    const seenKey = `announcement_seen_v3_${userId}`
+    const seenKey = `announcement_seen_v4_${userId}`
     const [announcementUnread, setAnnouncementUnread] = useState(() => !localStorage.getItem(seenKey))
 
     const handleOpenAnnouncement = () => {
@@ -155,22 +155,22 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                         >✕</button>
                         <h3 className="announcement-title">📢 系统公告</h3>
                         <div className="announcement-content">
-                            <p><strong>博思AI智能体 · 最近更新</strong></p>
+                            <p><strong>博思AI智能体 · 最新优化</strong></p>
 
-                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🧠 AI 推理过程透明化</p>
-                            <p>个人对话空间与情绪树洞每条回答均展示推理过程（括号标注），流式输出，思考逻辑一目了然。</p>
+                            <p style={{ marginTop: '16px', fontWeight: 700 }}>🗣️ 观点辩论场 · 多模型自由组队</p>
+                            <p>新增「模型数」选择器（与场次同款样式），支持 3~5 个模型自由组队；每场辩论阵容随机抽取、模型名中文展示，场场不重样。</p>
 
-                            <p style={{ fontWeight: 700 }}>⚡ 流式输出恢复</p>
-                            <p>修复工具调度拦截导致个人对话非流式一次性返回的问题，AI 回答重新逐字呈现。</p>
+                            <p style={{ fontWeight: 700 }}>🌳 观点辩论场 · 树状博弈提速</p>
+                            <p>树状博弈自动排除本地慢速推理模型，改用云端 API 模型随机组队，多视角并行博弈响应速度大幅提升。</p>
 
-                            <p style={{ fontWeight: 700 }}>🔧 工具调度优化</p>
-                            <p>LLM 未触发工具调用时不再拦截流式路径，工具调用与流式回答各司其职，响应更流畅。</p>
+                            <p style={{ fontWeight: 700 }}>🤖 接入自研大模型</p>
+                            <p>接入本地推理的 Hermes3 与 Qwen2.5-3B 两款自研模型，与豆包、千问、DeepSeek 组成完整 AI 模型矩阵。</p>
 
-                            <p style={{ fontWeight: 700 }}>📦 前端架构重构</p>
-                            <p>App.jsx 拆分为独立组件（NavBar/AuthModal/AnnouncementModal/OnlinePresenceTracker），WebSocket 连接统一复用，聊天 UI 组件抽象。</p>
+                            <p style={{ fontWeight: 700 }}>🛡️ 安全加固升级</p>
+                            <p>注册图形验证码、登录失败锁定（连续 5 次锁 15 分钟）、Kibana/Neo4j 控制台访问鉴权、服务器全面切换密钥登录。</p>
 
-                            <p style={{ fontWeight: 700 }}>🌐 开源提交</p>
-                            <p>项目已提交至 GitHub awesome-ai 开源列表，README 更新为产品说明风格，在线体验地址更新。</p>
+                            <p style={{ fontWeight: 700 }}>🧪 测试覆盖率提升至 20%+</p>
+                            <p>新增 64 项自动化测试，全量 692 项测试全绿，核心业务链路回归有保障。</p>
 
                             <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>2026年8月14日 · 博思AI团队</p>
                         </div>

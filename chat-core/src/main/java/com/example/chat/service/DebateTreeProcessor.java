@@ -72,11 +72,11 @@ public class DebateTreeProcessor {
      * <p>流程：LLM 语义拆解 → 多视角并行（每视角 3 轮三方辩论）→ 汇总。
      * 全程通过 WS 广播 tree_* 事件驱动前端 DAG 画布渲染；异常时兜底发送 done 解锁前端。</p>
      *
-     * @param reqId      请求 ID
-     * @param userId     用户 ID（WS 主题拼接用）
-     * @param question   辩论议题
-     * @param modelMap   1=豆包 / 2=千问 / 3=DeepSeek 模型配置
-     * @param summaryModel 千问整合模型
+     * @param reqId        请求 ID
+     * @param userId       用户 ID（WS 主题拼接用）
+     * @param question     辩论议题
+     * @param modelMap     随机选出的辩论模型（id 0..N-1），前 3 个分别担任正方/反方/中立
+     * @param summaryModel 整合模型
      */
     public void process(String reqId, Long userId, String question,
                          Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
@@ -115,12 +115,20 @@ public class DebateTreeProcessor {
             perspectives = List.of(new Perspective("p0", "全面分析", "多角度分析", question));
         }
 
-        // 3. 并行辩论每个视角
+        // 3. 并行辩论每个视角（从动态模型池中取前 3 个分别担任正方/反方/中立）
         Map<String, String> perspectiveConclusions = new ConcurrentHashMap<>();
+        List<ModelConfig> debaters = new ArrayList<>(modelMap.values());
+        if (debaters.size() < 3) {
+            throw new IllegalStateException("可用的 chat 模型不足 3 个，无法开启树状辩论");
+        }
+        ModelConfig proModel = debaters.get(0);
+        ModelConfig conModel = debaters.get(2);
+        ModelConfig neutralModel = debaters.get(1);
+        // 角色信息（provider 为中文展示名，供遗留的 debatePerspective 方法复用）
         List<RoleModel> roles = List.of(
-                new RoleModel("正方", 1, "doubao", modelMap.get(1L)),
-                new RoleModel("反方", 3, "deepseek", modelMap.get(3L)),
-                new RoleModel("中立", 2, "qwen", modelMap.get(2L))
+                new RoleModel("正方", 0, displayName(proModel), proModel),
+                new RoleModel("反方", 2, displayName(conModel), conModel),
+                new RoleModel("中立", 1, displayName(neutralModel), neutralModel)
         );
 
         ExecutorService batchPool = Executors.newFixedThreadPool(Math.min(perspectives.size(), 4));
@@ -141,10 +149,7 @@ public class DebateTreeProcessor {
 
                     TreePerspectiveState state = perspectiveGraphService.execute(
                             reqId, userId, p.id, p.label, p.focus, p.question,
-                            modelMap.get(1L),  // 正方 豆包
-                            modelMap.get(3L),  // 反方 DeepSeek
-                            modelMap.get(2L),  // 中立 千问
-                            summaryModel);
+                            proModel, conModel, neutralModel, summaryModel);
 
                     perspectiveRoundDetails.put(p.id, state.getRoundHistory());
                     perspectiveConclusions.put(p.id, state.getConclusion());
@@ -404,13 +409,17 @@ public class DebateTreeProcessor {
     private void broadcastModelInfo(Long userId, String reqId,
                                      Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
         List<Map<String, Object>> models = new ArrayList<>();
-        models.add(Map.of("id", 1, "name", ModelRouter.toDisplayName(modelMap.get(1L).getProvider())));
-        models.add(Map.of("id", 2, "name", ModelRouter.toDisplayName(modelMap.get(2L).getProvider())));
-        models.add(Map.of("id", 3, "name", ModelRouter.toDisplayName(modelMap.get(3L).getProvider())));
-        models.add(Map.of("id", 4, "name", ModelRouter.toDisplayName(summaryModel.getProvider())));
+        modelMap.forEach((id, cfg) -> models.add(Map.of("id", id, "name", displayName(cfg))));
+        // 整合模型 id = 参与者数量（约定：models 数组最后一个为整合模型）
+        models.add(Map.of("id", (long) modelMap.size(), "name", displayName(summaryModel)));
 
         broadcast("/topic/debate." + userId,
                 WsMessage.of("start").withReqId(reqId).with("models", models).toMap());
+    }
+
+    /** 模型展示名（provider 中文 + 自研模型附加模型名） */
+    private String displayName(ModelConfig cfg) {
+        return ModelRouter.modelDisplayName(cfg.getProvider(), cfg.getModel());
     }
 
     private WsMessage treeMsg(String type, String reqId) {

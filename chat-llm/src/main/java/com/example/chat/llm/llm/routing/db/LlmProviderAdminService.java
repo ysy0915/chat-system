@@ -8,6 +8,7 @@ import com.example.chat.llm.strategy.LLMProviderStrategy;
 import com.example.chat.llm.strategy.LLMProviderStrategyFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ import java.util.Map;
  * api_key 的提供商注册进注册中心，覆盖同名 YAML 项；管理面操作写库后即时同步本实例。</p>
  */
 @Service
+@ConditionalOnProperty(name = "spring.datasource.url")
 public class LlmProviderAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(LlmProviderAdminService.class);

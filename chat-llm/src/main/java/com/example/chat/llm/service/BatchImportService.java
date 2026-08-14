@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.neo4j.driver.Driver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Map;
  * 批量导入服务 —— 将历史消息和辩论记录批量导入知识图谱。
  */
 @Service
+@ConditionalOnProperty(name = "app.knowledge-graph.enabled", havingValue = "true")
 public class BatchImportService {
 
     private static final Logger log = LoggerFactory.getLogger(BatchImportService.class);

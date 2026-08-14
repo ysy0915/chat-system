@@ -69,22 +69,21 @@ class ToolDispatcherTest {
     }
 
     @Test
-    void noToolsRegistered_directInvokeLlm() throws Exception {
+    void noToolsRegistered_returnsNullForStreamPath() throws Exception {
         // Arrange
         when(toolRegistry.hasTools()).thenReturn(false);
-        when(llmInvoker.invoke(config, messages, 0.7, "chat", "base", "sk-test"))
-                .thenReturn("直接回答");
 
         // Act
         String result = dispatcher.dispatch("现在几点", config, messages, 0.7, "chat", "base", "sk-test");
 
-        // Assert
-        assertEquals("直接回答", result);
+        // Assert — 无工具时返回 null，让调用方走流式路径
+        assertNull(result);
         verifyNoInteractions(llmToolInvoker);
+        verifyNoInteractions(llmInvoker);
     }
 
     @Test
-    void llmWithoutToolCalls_returnsContentDirectly() throws Exception {
+    void llmWithoutToolCalls_returnsNullForStreamPath() throws Exception {
         // Arrange
         when(toolRegistry.hasTools()).thenReturn(true);
         when(toolRegistry.getToolsSchema()).thenReturn(List.of(Map.of("type", "function")));
@@ -97,8 +96,8 @@ class ToolDispatcherTest {
         // Act
         String result = dispatcher.dispatch("现在几点", config, messages, 0.7, "chat", "base", "sk-test");
 
-        // Assert
-        assertEquals("无需工具", result);
+        // Assert — LLM 未触发工具时返回 null，让调用方走流式路径
+        assertNull(result);
         verify(llmToolInvoker, never()).executeOneToolCall(any(), any());
         verify(llmInvoker, never()).invoke(any(), anyList(), anyDouble(), anyString(), anyString(), anyString());
     }

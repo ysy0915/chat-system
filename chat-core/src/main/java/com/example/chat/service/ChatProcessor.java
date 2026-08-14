@@ -327,6 +327,18 @@ public class ChatProcessor {
                 // 个人对话强制开启思考链：每句问题都展示推理过程
                 boolean enableThinking = true;
                 List<LLMMessage> effectiveHistory = history;
+                // 实时数据类问题拦截：注入 system prompt 明确告知 LLM 无法获取实时数据
+                // 避免带历史上下文时 LLM 把"天气怎样"误解为上下文相关话题
+                if (chatRagEnhancer.isRealTimeOrPersonalQuery(question)) {
+                    if (effectiveHistory == history) {
+                        effectiveHistory = new java.util.ArrayList<>(history);
+                    }
+                    effectiveHistory.add(0, new LLMMessage("system",
+                            "用户问的是实时数据类问题（如天气、时间、新闻、行情等）。"
+                            + "你是 AI 助手，无法获取实时数据，请直接告知用户你无法查询实时信息，"
+                            + "不要结合历史对话上下文猜测或编造实时数据。"));
+                    log.info("[doPersonalStream] req_id={} 实时数据问题拦截，注入实时声明", reqId);
+                }
                 // 知识问答/任务类问题：自动检索知识库，RAG 索引增强生成
                 if (chatRagEnhancer.shouldAutoRag(intent, question)) {
                     String ragContext = chatRagEnhancer.buildContext(question);
@@ -473,7 +485,16 @@ public class ChatProcessor {
 
         // 知识问答/任务类问题：自动检索知识库，RAG 索引增强（检索一次，注入所有并发模型）
         final List<LLMMessage> historyForCall;
-        if (chatRagEnhancer.shouldAutoRag(intent, question)) {
+        // 实时数据类问题拦截：注入 system prompt 明确告知 LLM 无法获取实时数据
+        if (chatRagEnhancer.isRealTimeOrPersonalQuery(question)) {
+            List<LLMMessage> realtimeHistory = new java.util.ArrayList<>(history);
+            realtimeHistory.add(0, new LLMMessage("system",
+                    "用户问的是实时数据类问题（如天气、时间、新闻、行情等）。"
+                    + "你是 AI 助手，无法获取实时数据，请直接告知用户你无法查询实时信息，"
+                    + "不要结合历史对话上下文猜测或编造实时数据。"));
+            historyForCall = realtimeHistory;
+            log.info("[doGroupConcurrent] req_id={} 实时数据问题拦截", reqId);
+        } else if (chatRagEnhancer.shouldAutoRag(intent, question)) {
             String ragContext = chatRagEnhancer.buildContext(question);
             if (ragContext != null && history != null) {
                 List<LLMMessage> ragEnhanced = new java.util.ArrayList<>(history);

@@ -93,7 +93,7 @@ public class LLMClientConfig {
         private double temperature = 0.7;
         private double topP = 1.0;
         private String persona = "";      // 可选的场景人设提示词
-        private boolean enableTools = false;
+        private boolean enableTools;
 
         public int getMaxTokens() { return maxTokens; }
         public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }

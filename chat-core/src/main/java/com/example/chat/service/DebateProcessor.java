@@ -69,6 +69,7 @@ public class DebateProcessor {
                 6, 12, 20, "debate-worker");
     }
 
+    @SuppressWarnings("PMD.NPathComplexity") // 辩论编排：payload 解析/双方模型选取/流式广播/落库，拆分破坏单线流程
     public void process(Map<String, Object> payload) {
         String reqId = (String) payload.get("req_id");
         Long userId = payload.get("user_id") == null ? 0L : Long.parseLong(payload.get("user_id").toString());

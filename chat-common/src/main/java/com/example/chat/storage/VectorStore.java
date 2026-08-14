@@ -58,10 +58,10 @@ public interface VectorStore extends Storage {
         public final String source;
         public final float[] vector;
 
-        public VectorRecord(String text, String source, float[] vector) {
+        public VectorRecord(String text, String source, float... vector) {
             this.text = text;
             this.source = source;
-            this.vector = vector;
+            this.vector = vector.clone();   // 防御性拷贝，避免外部数组被直接存储
         }
     }
 

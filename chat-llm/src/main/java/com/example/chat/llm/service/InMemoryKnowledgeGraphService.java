@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,13 +91,14 @@ public class InMemoryKnowledgeGraphService implements KnowledgeGraphFacade, Grap
     }
 
     @Override
+    @SuppressWarnings("PMD.NPathComplexity") // 图谱搜索：关键词过滤/一跳邻居扩展/关系筛选，拆分破坏单次遍历
     public Map<String, Object> searchEntities(String keyword, int limit, int minEntityWeight, int minRelationWeight) {
         if (keyword == null || keyword.isBlank()) {
             return Map.of("nodes", List.of(), "edges", List.of());
         }
-        String kw = keyword.toLowerCase();
+        String kw = keyword.toLowerCase(Locale.ROOT);
         List<Entity> matched = entities.values().stream()
-                .filter(e -> e.name.toLowerCase().contains(kw) && e.relCount >= minEntityWeight)
+                .filter(e -> e.name.toLowerCase(Locale.ROOT).contains(kw) && e.relCount >= minEntityWeight)
                 .sorted(Comparator.comparingInt((Entity e) -> e.relCount).reversed())
                 .limit(Math.max(1, limit))
                 .toList();
@@ -238,7 +240,7 @@ public class InMemoryKnowledgeGraphService implements KnowledgeGraphFacade, Grap
         Map<String, Object> edge = new HashMap<>();
         edge.put("source", source);
         edge.put("target", target);
-        edge.put("label", r.relation);
+        edge.put("label", r.relType);
         edge.put("weight", r.count);
         if (r.question != null) {
             edge.put("question", r.question);
@@ -259,15 +261,15 @@ public class InMemoryKnowledgeGraphService implements KnowledgeGraphFacade, Grap
 
     private static final class Relation {
         final String subject;
-        final String relation;
+        final String relType;
         final String object;
         int count;
         String source;
         String question;
 
-        Relation(String subject, String relation, String object, int count, String source) {
+        Relation(String subject, String relType, String object, int count, String source) {
             this.subject = subject;
-            this.relation = relation;
+            this.relType = relType;
             this.object = object;
             this.count = count;
             this.source = source;

@@ -71,7 +71,7 @@ class LLMInvokeServiceTest {
                 .limitRefreshPeriod(Duration.ofSeconds(1))
                 .timeoutDuration(Duration.ofSeconds(1))
                 .build());
-        service = new LLMInvokeService(registry, llmConfig, cbRegistry,
+        service = new LLMInvokeService(registry, cbRegistry,
                 retryRegistry, rateLimiterRegistry, new LlmMetrics());
     }
 
@@ -121,7 +121,7 @@ class LLMInvokeServiceTest {
                 .waitDuration(Duration.ZERO)
                 .retryOnException(e -> true)
                 .build());
-        service = new LLMInvokeService(registry, llmConfig, cbRegistry,
+        service = new LLMInvokeService(registry, cbRegistry,
                 retryRegistry, rateLimiterRegistry, new LlmMetrics());
         when(mainStrategy.invoke(any()))
                 .thenThrow(new RuntimeException("first"))
@@ -142,7 +142,7 @@ class LLMInvokeServiceTest {
                 .retryOnException(e -> true)
                 .failAfterMaxAttempts(true)
                 .build());
-        service = new LLMInvokeService(registry, llmConfig, cbRegistry,
+        service = new LLMInvokeService(registry, cbRegistry,
                 retryRegistry, rateLimiterRegistry, new LlmMetrics());
         when(mainStrategy.invoke(any())).thenThrow(new RuntimeException("boom"));
         when(altStrategy.invoke(any()))
@@ -200,7 +200,7 @@ class LLMInvokeServiceTest {
                 .minimumNumberOfCalls(2)
                 .waitDurationInOpenState(Duration.ofMinutes(1))
                 .build());
-        service = new LLMInvokeService(registry, llmConfig, cbRegistry,
+        service = new LLMInvokeService(registry, cbRegistry,
                 retryRegistry, rateLimiterRegistry, new LlmMetrics());
         when(mainStrategy.invoke(any())).thenThrow(new RuntimeException("boom"));
 
@@ -226,7 +226,7 @@ class LLMInvokeServiceTest {
                 .limitRefreshPeriod(Duration.ofSeconds(1))
                 .timeoutDuration(Duration.ZERO)
                 .build());
-        service = new LLMInvokeService(registry, llmConfig, cbRegistry,
+        service = new LLMInvokeService(registry, cbRegistry,
                 retryRegistry, rateLimiterRegistry, new LlmMetrics());
         when(mainStrategy.invoke(any()))
                 .thenReturn(LangChainResponse.ok("ok", "deepseek", "deepseek-chat"));

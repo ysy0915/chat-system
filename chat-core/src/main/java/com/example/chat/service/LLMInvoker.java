@@ -267,6 +267,7 @@ public class LLMInvoker {
      * 构造发送给 chat-llm 的 LangChainRequest。
      * ModelConfig 动态配置的 baseUrl/apiKey 通过 extra 透传（chat-llm 侧消费覆盖）。
      */
+    @SuppressWarnings("PMD.UnusedFormalParameter") // scene 预留：后续可做场景差异化 extra 透传
     private LangChainRequest buildBundleRequest(ModelConfig config, List<LLMMessage> messages,
                                                 double temperature, String scene,
                                                 String defaultBaseUrl, String defaultApiKey,

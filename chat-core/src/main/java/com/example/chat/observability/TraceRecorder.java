@@ -60,9 +60,10 @@ public class TraceRecorder {
      */
     public List<Map<String, Object>> getRecentTraces(int n) {
         try {
-            if (n <= 0) n = 20;
-            if (n > retention) n = retention;
-            List<String> raw = stringRedisTemplate.opsForList().range(todayKey(), 0, n - 1);
+            int limit = n;
+            if (limit <= 0) limit = 20;
+            if (limit > retention) limit = retention;
+            List<String> raw = stringRedisTemplate.opsForList().range(todayKey(), 0, limit - 1);
             if (raw == null) return Collections.emptyList();
             List<Map<String, Object>> result = new ArrayList<>(raw.size());
             for (String json : raw) {
@@ -104,6 +105,8 @@ public class TraceRecorder {
     /**
      * 简易 JSON 解析（不引入 Jackson）
      */
+    @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+    // 手写扁平 JSON 状态机（无嵌套），拆成辅助方法会引入大量跨方法临时状态
     private static Map<String, Object> parseSimpleJson(String json) {
         if (json == null || json.isBlank()) return Collections.emptyMap();
         Map<String, Object> map = new LinkedHashMap<>();

@@ -28,9 +28,9 @@ import org.springframework.stereotype.Component;
 import java.io.InputStream;
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,6 +55,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Component
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，非业务方法逻辑
 public class ContextMatcher {
 
     private static final Logger log = LoggerFactory.getLogger(ContextMatcher.class);
@@ -115,6 +116,7 @@ public class ContextMatcher {
      * 从 intent-seeds.json 预加载种子示例到 Milvus。
      * 仅在 collection 为空时写入（避免重启重复灌入）。
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 种子加载多路容错（JSON解析/集合存在性/批量插入），拆分为辅助方法收益有限
     public void loadSeedExamples() {
         if (milvusClient == null || embeddingService == null) {
             log.info("[ContextMatcher] Milvus/Embedding 不可用，跳过种子加载");
@@ -186,6 +188,7 @@ public class ContextMatcher {
      * @param lastIntents 最近 N 轮意图（用于消歧）
      * @return 匹配结果，未命中返回 empty
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 匹配流水线多级分流（向量/规则/消歧/降权），拆分破坏单次遍历
     public Optional<IntentResult> match(String text, List<String> lastIntents) {
         if (text == null || text.isBlank()) return Optional.empty();
         if (milvusClient == null || embeddingService == null) {
@@ -252,8 +255,8 @@ public class ContextMatcher {
             double adjustedScore = adjustScoreWithContext(best.getKey(), bestScore, lastIntents, text);
 
             if (adjustedScore < threshold) {
-                log.debug("[ContextMatcher] top-intent={} adjustedScore={:.3f} < threshold={:.3f} → no match",
-                         best.getKey(), adjustedScore, threshold);
+                log.debug("[ContextMatcher] top-intent={} adjustedScore={} < threshold={} → no match",
+                         best.getKey(), String.format("%.3f", adjustedScore), String.format("%.3f", threshold));
                 totalMissCount.incrementAndGet();
                 recordCategoryMiss(best.getKey());
                 return Optional.empty();
@@ -275,8 +278,9 @@ public class ContextMatcher {
                     best.getValue().topExample
             );
 
-            log.info("[ContextMatcher] 命中: intent={} score={:.3f} threshold={:.3f} nprobe={} collectionSize={}",
-                     best.getKey(), adjustedScore, threshold, nprobe, collectionSize);
+            log.info("[ContextMatcher] 命中: intent={} score={} threshold={} nprobe={} collectionSize={}",
+                     best.getKey(), String.format("%.3f", adjustedScore),
+                     String.format("%.3f", threshold), nprobe, collectionSize);
             return Optional.of(result);
 
         } catch (Exception e) {
@@ -442,14 +446,16 @@ public class ContextMatcher {
             // 命中率太高 → 降低阈值扩大覆盖
             double newThreshold = Math.max(0.65, currentThreshold - ADJUST_STEP);
             CATEGORY_THRESHOLD_OVERRIDE.put(intent, newThreshold);
-            log.info("[ContextMatcher] 阈值下调: intent={} {:.3f}→{:.3f} hitRate={:.2f}",
-                     intent, currentThreshold, newThreshold, hitRate);
+            log.info("[ContextMatcher] 阈值下调: intent={} {}→{} hitRate={}",
+                     intent, String.format("%.3f", currentThreshold),
+                     String.format("%.3f", newThreshold), String.format("%.2f", hitRate));
         } else if (hitRate < HIT_RATE_LOWER && currentThreshold < 0.88) {
             // 命中率太低 → 提高阈值减少误判
             double newThreshold = Math.min(0.88, currentThreshold + ADJUST_STEP);
             CATEGORY_THRESHOLD_OVERRIDE.put(intent, newThreshold);
-            log.info("[ContextMatcher] 阈值上调: intent={} {:.3f}→{:.3f} hitRate={:.2f}",
-                     intent, currentThreshold, newThreshold, hitRate);
+            log.info("[ContextMatcher] 阈值上调: intent={} {}→{} hitRate={}",
+                     intent, String.format("%.3f", currentThreshold),
+                     String.format("%.3f", newThreshold), String.format("%.2f", hitRate));
         }
     }
 
@@ -482,6 +488,7 @@ public class ContextMatcher {
      * - 代码场景中 KNOWLEDGE_QA 降权
      * - 情绪连续加分
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 上下文消歧逐类加分/降权，各分支独立可读
     private double adjustScoreWithContext(String matchedIntent, double rawScore,
                                           List<String> lastIntents, String currentText) {
         if (lastIntents == null || lastIntents.isEmpty()) return rawScore;
@@ -498,26 +505,25 @@ public class ContextMatcher {
         }
 
         // 2) 代码场景中 "是什么" 类问题可能是语法查询而非知识问答
-        if (matchedIntent.equals("KNOWLEDGE_QA") && isCodeContext(lastIntents)) {
+        if ("KNOWLEDGE_QA".equals(matchedIntent)
+                && isCodeContext(lastIntents) && isDefinitionPattern(currentText)) {
             // 在代码上下文中问"是什么"，降低匹配置信度
-            if (isDefinitionPattern(currentText)) {
-                bonus -= 0.03;
-            }
+            bonus -= 0.03;
         }
 
         // 3) 情感连续性：前一轮是 EMOTIONAL_SUPPORT → 本轮也倾向于是情绪相关
-        if (matchedIntent.equals("EMOTIONAL_SUPPORT") && lastIntents.size() > 0) {
+        if ("EMOTIONAL_SUPPORT".equals(matchedIntent) && !lastIntents.isEmpty()) {
             String lastIntent = lastIntents.get(0);
-            if (lastIntent.equalsIgnoreCase("EMOTIONAL_SUPPORT")
-                    || lastIntent.equalsIgnoreCase("GENERAL_CHAT")) {
+            if ("EMOTIONAL_SUPPORT".equalsIgnoreCase(lastIntent)
+                    || "GENERAL_CHAT".equalsIgnoreCase(lastIntent)) {
                 bonus += 0.03; // 情绪延续
             }
         }
 
         // 4) 翻译场景：前轮若是翻译，本轮大概率仍是翻译
-        if (matchedIntent.equals("TRANSLATION") && lastIntents.size() > 0) {
+        if ("TRANSLATION".equals(matchedIntent) && !lastIntents.isEmpty()) {
             String lastIntent = lastIntents.get(0);
-            if (lastIntent.equalsIgnoreCase("TRANSLATION")) {
+            if ("TRANSLATION".equalsIgnoreCase(lastIntent)) {
                 bonus += 0.04;
             }
         }
@@ -527,20 +533,17 @@ public class ContextMatcher {
 
     /** 判断最近意图是否处于代码上下文 */
     private boolean isCodeContext(List<String> lastIntents) {
-        long codeCount = lastIntents.stream()
-                .filter(i -> i.equalsIgnoreCase("CODE_GENERATION")
-                          || i.equalsIgnoreCase("REASONING"))
-                .count();
         // 最近 3 轮中有代码相关意图
         int lookBack = Math.min(3, lastIntents.size());
         return lastIntents.subList(0, lookBack).stream()
-                .anyMatch(i -> i.equalsIgnoreCase("CODE_GENERATION"));
+                .anyMatch(i -> "CODE_GENERATION".equalsIgnoreCase(i)
+                        || "REASONING".equalsIgnoreCase(i));
     }
 
     /** 判断是否为"是什么/定义类"问题 */
     private boolean isDefinitionPattern(String text) {
         if (text == null) return false;
-        String lower = text.toLowerCase().trim();
+        String lower = text.toLowerCase(Locale.ROOT).trim();
         return lower.contains("是什么") || lower.contains("什么意思")
                 || lower.contains("定义") || lower.contains("什么叫")
                 || lower.contains("什么是") || lower.startsWith("怎么理解");
@@ -599,7 +602,7 @@ public class ContextMatcher {
 
     private IntentCategory safeParseCategory(String name) {
         try {
-            return IntentCategory.valueOf(name.toUpperCase());
+            return IntentCategory.valueOf(name.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return IntentCategory.UNKNOWN;
         }

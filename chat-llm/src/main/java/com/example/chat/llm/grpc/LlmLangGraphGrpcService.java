@@ -59,10 +59,10 @@ public class LlmLangGraphGrpcService extends LlmLangGraphGrpc.LlmLangGraphImplBa
         LangGraphRequest req = new LangGraphRequest();
         req.setProvider(proto.getProvider());
         req.setModel(proto.getModel());
-        req.setTemperature(proto.getTemperature() != 0 ? proto.getTemperature() : null);
-        req.setMaxTokens(proto.getMaxTokens() != 0 ? proto.getMaxTokens() : null);
+        req.setTemperature(proto.getTemperature() == 0 ? null : proto.getTemperature());
+        req.setMaxTokens(proto.getMaxTokens() == 0 ? null : proto.getMaxTokens());
         req.setEntryPoint(proto.getEntryPoint());
-        req.setMaxSteps(proto.getMaxSteps() != 0 ? proto.getMaxSteps() : null);
+        req.setMaxSteps(proto.getMaxSteps() == 0 ? null : proto.getMaxSteps());
         req.setState(new LinkedHashMap<>(proto.getStateMap()));
         req.setTraceId(proto.getTraceId());
 
@@ -73,7 +73,7 @@ public class LlmLangGraphGrpcService extends LlmLangGraphGrpc.LlmLangGraphImplBa
             node.setSystemPrompt(n.getSystemPrompt());
             node.setUserPrompt(n.getUserPrompt());
             node.setModel(n.getModel());
-            node.setTemperature(n.getTemperature() != 0 ? n.getTemperature() : null);
+            node.setTemperature(n.getTemperature() == 0 ? null : n.getTemperature());
             node.setRouter(n.getRouter());
             node.setTerminal(n.getTerminal());
             node.setTools(n.getToolsList().stream().map(t -> Map.<String, Object>of(
@@ -83,7 +83,7 @@ public class LlmLangGraphGrpcService extends LlmLangGraphGrpc.LlmLangGraphImplBa
             )).collect(Collectors.toList()));
             // ── 自愈字段 ──
             node.setRetryCount(n.getRetryCount());
-            node.setRetryBackoffMs(n.getRetryBackoffMs() != 0 ? n.getRetryBackoffMs() : 500);
+            node.setRetryBackoffMs(n.getRetryBackoffMs() == 0 ? 500 : n.getRetryBackoffMs());
             node.setFallbackNodeId(n.getFallbackNodeId());
             return node;
         }).collect(Collectors.toList()));
@@ -101,6 +101,7 @@ public class LlmLangGraphGrpcService extends LlmLangGraphGrpc.LlmLangGraphImplBa
         return req;
     }
 
+    @SuppressWarnings("PMD.NPathComplexity") // 图响应扁平化为 proto 多字段映射，逐字段判空拆分无收益
     private GraphResponse convert(LangGraphResponse lang) {
         GraphResponse.Builder b = GraphResponse.newBuilder()
                 .setSuccess(lang.isSuccess())

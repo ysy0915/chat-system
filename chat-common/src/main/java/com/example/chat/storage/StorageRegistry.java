@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -62,7 +63,7 @@ public class StorageRegistry {
         if (storage == null) {
             return;
         }
-        String type = storage.type() == null ? "" : storage.type().trim().toLowerCase();
+        String type = storage.type() == null ? "" : storage.type().trim().toLowerCase(Locale.ROOT);
         if (type.isBlank()) {
             log.warn("[StorageRegistry] 忽略非法存储注册 type=null class={}",
                     storage.getClass().getSimpleName());
@@ -81,7 +82,7 @@ public class StorageRegistry {
         if (type == null || type.isBlank()) {
             return null;
         }
-        return storages.get(type.trim().toLowerCase());
+        return storages.get(type.trim().toLowerCase(Locale.ROOT));
     }
 
     /**

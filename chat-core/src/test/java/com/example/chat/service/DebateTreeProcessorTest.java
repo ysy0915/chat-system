@@ -27,7 +27,6 @@ import static org.mockito.Mockito.*;
  *
  * 覆盖:
  *  - decompose(): JSON 正常解析 / 非法 JSON 回退 / 空结果回退
- *  - buildPerspectivePrompt(): 无历史 / 有历史轮次
  *  - aggregate(): LLM 正常返回 / LLM 异常 → 本地拼合
  *  - toPerspectiveMaps(): 集合转换
  *  - process() 异常 → done 消息仍发送
@@ -137,40 +136,6 @@ class DebateTreeProcessorTest {
             // decompose() 通过反射调用，InvocationTargetException 包装 RuntimeException
             assertThatThrownBy(() -> invokeDecompose("test"))
                     .isInstanceOf(java.lang.reflect.InvocationTargetException.class);
-        }
-    }
-
-    // ================================================================
-    //  buildPerspectivePrompt – prompt 构建逻辑
-    // ================================================================
-
-    @Nested
-    @DisplayName("Prompt 构建 buildPerspectivePrompt")
-    class BuildPerspectivePrompt {
-
-        @Test
-        @DisplayName("第 1 轮无历史 → 只含议题和独立见解指令")
-        void firstRoundNoHistory() throws Exception {
-            String result = invokeBuildPrompt("AI 伦理", Collections.emptyList(), 1, "正方");
-
-            assertThat(result).contains("你是一个AI辩论参与者", "正方", "AI 伦理");
-            assertThat(result).contains("第1轮任务", "独立见解");
-            assertThat(result).doesNotContain("此前讨论");
-        }
-
-        @Test
-        @DisplayName("第 2 轮有历史 → 包含此前讨论 + 回应指令")
-        void secondRoundWithHistory() throws Exception {
-            List<Map<String, String>> history = List.of(
-                    Map.of("正方", "AI 有助于效率提升", "反方", "但会造成失业"),
-                    Map.of("正方", "可通过培训再就业", "反方", "培训成本太高"));
-
-            String result = invokeBuildPrompt("AI 替代", history, 2, "正方");
-
-            assertThat(result).contains("此前讨论");
-            assertThat(result).contains("AI 有助于效率提升", "但会造成失业");
-            assertThat(result).contains("第2轮任务");
-            assertThat(result).contains("反驳不认同的观点");
         }
     }
 
@@ -324,15 +289,6 @@ class DebateTreeProcessorTest {
                 "decompose", String.class, ModelConfig.class);
         method.setAccessible(true);
         return (List<DebateTreeProcessor.Perspective>) method.invoke(processor, question, defaultModel);
-    }
-
-    @SuppressWarnings("unchecked")
-    private String invokeBuildPrompt(String question, List<Map<String, String>> history,
-                                      int round, String role) throws Exception {
-        var method = DebateTreeProcessor.class.getDeclaredMethod(
-                "buildPerspectivePrompt", String.class, List.class, int.class, String.class);
-        method.setAccessible(true);
-        return (String) method.invoke(processor, question, history, round, role);
     }
 
     @SuppressWarnings("unchecked")

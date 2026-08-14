@@ -44,8 +44,8 @@ public class ToolIntentMatcher {
         }
         try {
             IntentResult result = intentService.recognize(text, scene);
-            log.info("[ToolMatcher] LLM 分类: intent={} confidence={:.2f}",
-                     result.category(), result.confidence());
+            log.info("[ToolMatcher] LLM 分类: intent={} confidence={}",
+                     result.category(), String.format("%.2f", result.confidence()));
             return result;
         } catch (Exception e) {
             log.debug("[ToolMatcher] LLM 分类失败: {}", e.getMessage());

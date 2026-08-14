@@ -33,6 +33,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import org.springframework.dao.DataAccessException;
 
 @Service
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，业务方法已分别豁免
 public class ChatProcessor {
     private static final Logger log = LoggerFactory.getLogger(ChatProcessor.class);
     private final MessageRepository messageRepository;
@@ -267,6 +268,8 @@ public class ChatProcessor {
     /**
      * 个人对话流式输出（含工具调度 + 停止管理 + 意图驱动温度）。
      */
+    @SuppressWarnings({"PMD.CompareObjectsWithEquals", "PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+    // == 为引用比较：判断 effectiveHistory 是否需防御拷贝；流式链路多分支（意图路由/记忆/技能/思考链）拆分无收益
     private void doPersonalStream(String reqId, Long userId, String question,
                                    ModelConfig config, List<LLMMessage> history,
                                    IntentResult intent) {
@@ -354,7 +357,7 @@ public class ChatProcessor {
                 }
 
                 // Step3: 技能库注入（Agent 自进化沉淀的技能，供直接套用）
-                String skillPrompt = buildSkillSystemPrompt(question);
+                String skillPrompt = buildSkillSystemPrompt();
                 if (skillPrompt != null && !skillPrompt.isBlank()) {
                     if (effectiveHistory == history) {
                         effectiveHistory = new java.util.ArrayList<>(history);
@@ -429,9 +432,9 @@ public class ChatProcessor {
                 }
 
                 // 思考链模式下 fullAnswer 含 <thinking> 标签，用 answerCollector 获取纯净回答
-                String cleanAnswer = (!answerCollector.isEmpty())
-                        ? answerCollector.toString()
-                        : fullAnswer;
+                String cleanAnswer = answerCollector.isEmpty()
+                        ? fullAnswer
+                        : answerCollector.toString();
 
                 if (isStopped(reqId)) {
                     broadcastService.broadcast("/topic/user." + userId,
@@ -454,9 +457,11 @@ public class ChatProcessor {
     /**
      * 群聊并发竞速：多个模型并发调用，首个完成者推送结果（意图驱动温度）。
      */
+    @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+    // 群聊并发多模型汇总：竞态结果合并/流式转发/异常兜底，拆分破坏并发状态管理
     private void doGroupConcurrent(String reqId, Long userId, String question,
-                                    List<ModelConfig> configs, List<LLMMessage> history,
-                                    long startTime, IntentResult intent) {
+                                   List<ModelConfig> configs, List<LLMMessage> history,
+                                   long startTime, IntentResult intent) {
         AtomicBoolean completed = new AtomicBoolean(false);
         AtomicInteger finishedCount = new AtomicInteger(0);
         int totalModels = configs.size();
@@ -588,6 +593,8 @@ public class ChatProcessor {
         process(payload);
     }
 
+    @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.NPathComplexity", "PMD.ConfusingTernary"})
+    // 文件问答链路：类型识别/模型链选择/内容注入/流式响应，拆分会割裂降级优先级
     public void processWithFile(String reqId, Long userId, String question, String fileName, byte[] fileContent, String mimeType) {
         try {
             log.info("[INFO] processWithFile: reqId={}, fileName={}, mimeType={}", reqId, fileName, mimeType);
@@ -644,12 +651,20 @@ public class ChatProcessor {
                         List<ModelConfig> bound = allConfigs.stream()
                                 .filter(c -> c.id != null && c.id.equals(boundModelId))
                                 .toList();
-                        configs = bound.isEmpty() ? allConfigs : bound;
+                        if (bound.isEmpty()) {
+                            configs = allConfigs;
+                        } else {
+                            configs = bound;
+                        }
                     } else {
                         List<ModelConfig> textConfigs = allConfigs.stream()
                                 .filter(c -> "qwen".equalsIgnoreCase(c.provider))
                                 .toList();
-                        configs = textConfigs.isEmpty() ? allConfigs : textConfigs;
+                        if (textConfigs.isEmpty()) {
+                            configs = allConfigs;
+                        } else {
+                            configs = textConfigs;
+                        }
                     }
                 }
             }
@@ -784,6 +799,7 @@ public class ChatProcessor {
     }
 
     /** 判断意图是否需要展示思考链（复杂推理类） */
+    @SuppressWarnings("PMD.UnusedPrivateMethod") // 被 ChatProcessorTest 反射调用
     private boolean isComplexIntent(IntentResult intent) {
         if (intent == null) return false;
         IntentCategory c = intent.category();
@@ -819,7 +835,7 @@ public class ChatProcessor {
      * 构建技能库注入 prompt（Agent 自进化沉淀的技能，供直接套用）。
      * 返回 null 表示无可注入技能。
      */
-    private String buildSkillSystemPrompt(String question) {
+    private String buildSkillSystemPrompt() {
         if (skillRegistry == null || !skillRegistry.hasSkills()) return null;
         java.util.List<com.example.chat.entity.Skill> skills = skillRegistry.allSkills();
         if (skills.isEmpty()) return null;
@@ -829,7 +845,7 @@ public class ChatProcessor {
         int injected = 0;
         for (com.example.chat.entity.Skill s : skills) {
             if (injected >= 3) break;
-            sb.append("【技能 ").append(s.name).append("】").append(s.language).append('\n');
+            sb.append("【技能 ").append(s.name).append('】').append(s.language).append('\n');
             if (s.description != null && !s.description.isBlank()) {
                 sb.append("适用场景: ").append(s.description).append('\n');
             }
@@ -837,7 +853,7 @@ public class ChatProcessor {
                 sb.append("触发说明: ").append(s.triggerPrompt).append('\n');
             }
             if (s.code != null && !s.code.isBlank()) {
-                sb.append("代码:\n```").append(s.language).append('\n').append(s.code).append("\n```\n");
+                sb.append("代码:\n```").append(s.language).append('\n').append(s.code).append('\n').append("```").append('\n');
             }
             sb.append('\n');
             injected++;

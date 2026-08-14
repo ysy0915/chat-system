@@ -1,6 +1,5 @@
 package com.example.chat.llm.config;
 
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import com.example.chat.dto.LangChainResponse;
@@ -60,7 +59,7 @@ public class ResilienceConfig {
 
         // 为每个提供商注册独立断路器
         for (LLMConfig.ProviderConfig pc : llmConfig.getProviders()) {
-            CircuitBreaker cb = registry.circuitBreaker("llm-cb-" + pc.getName(), defaultCb);
+            registry.circuitBreaker("llm-cb-" + pc.getName(), defaultCb);
         }
         // 聚合默认断路器
         registry.circuitBreaker("llm-cb-default", defaultCb);

@@ -89,9 +89,8 @@ public class SubAgentWorker {
             basicAck(channel, deliveryTag);
             return;
         }
-        String modelName = "unknown";
         try {
-            modelName = llmConfig.getModel();
+            String modelName = llmConfig.getModel();
             String summary = execute(task);
             subTaskProducer.sendResult(SubAgentResult.success(task, summary, modelName,
                     System.currentTimeMillis() - start));
@@ -182,7 +181,7 @@ public class SubAgentWorker {
             user.append("【相关上下文】\n").append(task.contextSummary).append("\n\n");
         }
         if (task.expectedOutput != null && !task.expectedOutput.isBlank()) {
-            user.append("【期望输出】\n").append(task.expectedOutput).append("\n");
+            user.append("【期望输出】\n").append(task.expectedOutput).append('\n');
         }
         return List.of(new LLMMessage("system", system.toString()),
                 new LLMMessage("user", user.toString()));

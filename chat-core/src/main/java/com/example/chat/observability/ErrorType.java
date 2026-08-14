@@ -24,6 +24,8 @@ public enum ErrorType {
     /**
      * 根据异常信息推断错误类型
      */
+    @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity"})
+    // 关键字匹配表：每个 if 即一条独立分类规则，拆为 Map 表驱动反而丢失可读性
     public static ErrorType fromException(Exception e) {
         if (e == null || e.getMessage() == null) {
             return UNKNOWN;

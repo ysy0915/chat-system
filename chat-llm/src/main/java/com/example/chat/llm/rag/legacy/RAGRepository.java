@@ -1,7 +1,5 @@
 package com.example.chat.llm.rag.legacy;
 
-import com.example.chat.llm.rag.legacy.KnowledgeBase;
-import com.example.chat.llm.rag.legacy.KnowledgeDocument;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;

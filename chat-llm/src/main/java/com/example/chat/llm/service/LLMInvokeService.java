@@ -1,6 +1,5 @@
 package com.example.chat.llm.service;
 
-import com.example.chat.llm.config.LLMConfig;
 import com.example.chat.dto.BizType;
 import com.example.chat.dto.LangChainRequest;
 import com.example.chat.dto.LangChainResponse;
@@ -11,7 +10,6 @@ import com.example.chat.llm.metrics.LlmMetrics;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.github.resilience4j.decorators.Decorators;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
@@ -25,6 +23,7 @@ import org.springframework.stereotype.Service;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -51,20 +50,17 @@ public class LLMInvokeService {
     private static final Logger log = LoggerFactory.getLogger(LLMInvokeService.class);
 
     private final LLMProviderRegistry registry;
-    private final LLMConfig llmConfig;
     private final CircuitBreakerRegistry cbRegistry;
     private final RetryRegistry retryRegistry;
     private final RateLimiterRegistry rateLimiterRegistry;
     private final LlmMetrics metrics;
 
     public LLMInvokeService(LLMProviderRegistry registry,
-                            LLMConfig llmConfig,
                             CircuitBreakerRegistry cbRegistry,
                             RetryRegistry retryRegistry,
                             RateLimiterRegistry rateLimiterRegistry,
                             LlmMetrics metrics) {
         this.registry = registry;
-        this.llmConfig = llmConfig;
         this.cbRegistry = cbRegistry;
         this.retryRegistry = retryRegistry;
         this.rateLimiterRegistry = rateLimiterRegistry;
@@ -97,7 +93,7 @@ public class LLMInvokeService {
         String cbName = "llm-cb-" + route.providerName();
         String retryName = "llm-retry-" + route.providerName();
         String rateName = "llm-rate-" + route.providerName();
-        String bizRateName = "llm-biz-rate-" + bizType.name().toLowerCase() + "-" + route.providerName();
+        String bizRateName = "llm-biz-rate-" + bizType.name().toLowerCase(Locale.ROOT) + "-" + route.providerName();
 
         CircuitBreaker cb = cbRegistry.circuitBreaker(cbName);
         Retry retry = retryRegistry.retry(retryName);
@@ -198,7 +194,7 @@ public class LLMInvokeService {
         }
 
         String rateName = "llm-rate-" + route.providerName();
-        String bizRateName = "llm-biz-rate-" + bizType.name().toLowerCase() + "-" + route.providerName();
+        String bizRateName = "llm-biz-rate-" + bizType.name().toLowerCase(Locale.ROOT) + "-" + route.providerName();
         RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter(rateName);
         RateLimiter bizRateLimiter = rateLimiterRegistry.rateLimiter(bizRateName);
 

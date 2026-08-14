@@ -118,18 +118,18 @@ public class MonitorController {
     @Operation(summary = "LLM 统计", description = "按天获取各模型的调用次数和平均延迟统计")
     @GetMapping("/llm-stats")
     public ResponseEntity<?> getLlmStats(@RequestParam(value = "date", required = false) String date) {
-        if (date == null || date.isBlank()) {
-            date = java.time.LocalDate.now().toString();
-        }
-        String key = "llm:stats:" + date;
+        String resolvedDate = (date == null || date.isBlank())
+                ? java.time.LocalDate.now().toString()
+                : date;
+        String key = "llm:stats:" + resolvedDate;
         Map<Object, Object> raw = redisTemplate.opsForHash().entries(key);
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         for (Map.Entry<Object, Object> entry : raw.entrySet()) {
             String provider = entry.getKey().toString();
             String json = entry.getValue().toString();
             Map<String, Object> stats = new java.util.HashMap<>();
-            json = json.replaceAll("[{}\"]", "");
-            for (String part : json.split(",")) {
+            String cleaned = json.replaceAll("[{}\"]", "");
+            for (String part : cleaned.split(",")) {
                 String[] kv = part.split(":");
                 if (kv.length == 2) {
                     try {

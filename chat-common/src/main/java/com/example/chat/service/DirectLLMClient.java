@@ -99,9 +99,10 @@ public class DirectLLMClient {
             }
             return unwrapNestedContent(message.get("content"));
 
-        } catch (LLMCallException e) {
-            throw e;
+        } catch (LLMCallException le) {
+            throw le;
         } catch (Exception e) {
+            // 其余异常包装为 LLMCallException
             log.error("[DirectLLMClient] 调用失败 model={} rootCause={}: {} body前500字={}",
                     model, e.getClass().getSimpleName(), e.getMessage(),
                     responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null");

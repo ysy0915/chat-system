@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -88,7 +89,7 @@ public class LLMProviderStrategyFactory {
                     type, factory != null ? factory.getClass().getSimpleName() : null);
             return;
         }
-        String key = type.toLowerCase();
+        String key = type.toLowerCase(Locale.ROOT);
         LLMProviderFactory old = factories.put(key, factory);
         log.info("[LLMStrategyFactory] 注册策略工厂 type={} class={} {}",
                 key, factory.getClass().getSimpleName(),
@@ -101,7 +102,7 @@ public class LLMProviderStrategyFactory {
     public LLMProviderStrategy create(ProviderConfig config) {
         String type = config.getType() == null || config.getType().isBlank()
                 ? LLMProviderStrategy.INVOKE_TYPE_REST
-                : config.getType().toLowerCase();
+                : config.getType().toLowerCase(Locale.ROOT);
         LLMProviderFactory factory = factories.get(type);
         if (factory == null) {
             log.warn("[LLMStrategyFactory] 提供商 {} 配置了未注册的调用方式 '{}'，回退 rest",

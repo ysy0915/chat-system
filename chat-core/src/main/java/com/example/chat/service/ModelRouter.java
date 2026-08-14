@@ -125,6 +125,7 @@ public class ModelRouter {
                 case "qwen":   if (query.contains("千问") || query.contains("qwen") || query.contains("通义")) return c; break;
                 case "deepseek": if (query.contains("deepseek") || query.contains("深度求索")) return c; break;
                 case "zhipu":  if (query.contains("智谱") || query.contains("zhipu") || query.contains("glm")) return c; break;
+                default: break;
             }
         }
         return null;

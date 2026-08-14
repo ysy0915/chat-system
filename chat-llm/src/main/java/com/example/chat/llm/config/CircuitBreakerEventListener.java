@@ -1,6 +1,5 @@
 package com.example.chat.llm.config;
 
-import com.example.chat.llm.metrics.LlmMetrics;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.event.CircuitBreakerOnCallNotPermittedEvent;
 import io.github.resilience4j.circuitbreaker.event.CircuitBreakerOnErrorEvent;
@@ -28,13 +27,10 @@ public class CircuitBreakerEventListener {
     private static final Logger log = LoggerFactory.getLogger(CircuitBreakerEventListener.class);
 
     private final io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry cbRegistry;
-    private final LlmMetrics metrics;
 
     public CircuitBreakerEventListener(
-            io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry cbRegistry,
-            LlmMetrics metrics) {
+            io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry cbRegistry) {
         this.cbRegistry = cbRegistry;
-        this.metrics = metrics;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -63,6 +59,8 @@ public class CircuitBreakerEventListener {
                 break;
             case CLOSED:
                 log.warn("[CircuitBreaker] {} 已恢复 — 熔断关闭", name);
+                break;
+            default:
                 break;
         }
     }

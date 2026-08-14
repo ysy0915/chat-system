@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -112,22 +113,26 @@ public class RuleBasedMatcher {
     }
 
     /** 重新加载规则（热更新入口） */
-    public synchronized void reload() {
-        loadRules();
+    public void reload() {
+        synchronized (this) {
+            loadRules();
+        }
     }
 
     /** 批量添加规则（从种子池提取的关键词，追加到 Trie 后无需完整 reload） */
-    public synchronized void batchAddRules(List<IntentRule> rules) {
-        if (rules == null || rules.isEmpty()) return;
-        int added = 0;
-        for (IntentRule rule : rules) {
-            if (!rule.isEnabled()) continue;
-            if (rule.getMatchType() == IntentRule.MatchType.KEYWORD) {
-                addKeywordRule(rule);
-                added++;
+    public void batchAddRules(List<IntentRule> rules) {
+        synchronized (this) {
+            if (rules == null || rules.isEmpty()) return;
+            int added = 0;
+            for (IntentRule rule : rules) {
+                if (!rule.isEnabled()) continue;
+                if (rule.getMatchType() == IntentRule.MatchType.KEYWORD) {
+                    addKeywordRule(rule);
+                    added++;
+                }
             }
+            log.info("[RuleMatcher] 批量追加 {} 条关键词规则 (输入 {} 条)", added, rules.size());
         }
-        log.info("[RuleMatcher] 批量追加 {} 条关键词规则 (输入 {} 条)", added, rules.size());
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -137,7 +142,7 @@ public class RuleBasedMatcher {
     /** 关键词 Trie 扫描 */
     private Optional<RuleMatch> matchKeyword(String text) {
         List<ScoredRule> found = new ArrayList<>();
-        String lower = text.toLowerCase();
+        String lower = text.toLowerCase(Locale.ROOT);
         // 滑动窗口：以每个字符为起点
         for (int i = 0; i < lower.length(); i++) {
             TrieNode node = trieRoot;
@@ -198,7 +203,7 @@ public class RuleBasedMatcher {
         for (IntentRule rule : rules) {
             if (!rule.isEnabled()) continue;
             // 简单文本包含匹配（状态机规则一般句式较短）
-            if (text.toLowerCase().contains(rule.getPattern().toLowerCase())
+            if (text.toLowerCase(Locale.ROOT).contains(rule.getPattern().toLowerCase(Locale.ROOT))
                 || text.equalsIgnoreCase(rule.getPattern())) {
                 // 状态转移
                 String toState = rule.getTargetState();
@@ -264,7 +269,7 @@ public class RuleBasedMatcher {
     }
 
     private void addKeywordRule(IntentRule rule) {
-        String lower = rule.getPattern().toLowerCase();
+        String lower = rule.getPattern().toLowerCase(Locale.ROOT);
         TrieNode node = trieRoot;
         for (char c : lower.toCharArray()) {
             node = node.children.computeIfAbsent(c, k -> new TrieNode());

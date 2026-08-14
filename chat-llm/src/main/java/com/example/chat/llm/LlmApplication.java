@@ -6,6 +6,7 @@ import com.example.chat.security.JwtUtil;
 import com.example.chat.storage.StorageRegistry;
 import com.example.chat.service.DirectLLMClient;
 import com.example.chat.util.BaseUrlResolver;
+import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -59,10 +60,15 @@ public class LlmApplication {
     /**
      * 有 DataSource 时才启用 MapperScan（避免 standalone 模式无 DB 启动失败）。
      * 由 app.mapper-scan.enabled 控制（默认 true，standalone 配置中显式关闭）。
+     * <p>仅扫描带 {@code @Mapper} 注解的接口：避免将 rag.legacy 包下无注解的
+     * 领域接口（如 {@code MemoryKVStore}/{@code VectorStoreLegacy}/{@code UserFactMemory}）
+     * 误注册为 MyBatis Mapper bean，导致与 @Component 实现类型冲突
+     * （如 ConversationMemoryService 注入 MemoryKVStore 时发现 redisMemoryKVStore + memoryKVStore 两个候选）。</p>
      */
     @org.springframework.context.annotation.Configuration
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.mapper-scan.enabled", havingValue = "true", matchIfMissing = true)
-    @MapperScan({"com.example.chat.repository",
+    @MapperScan(annotationClass = Mapper.class, basePackages = {
+            "com.example.chat.repository",
             "com.example.chat.llm.rag.legacy",
             "com.example.chat.llm.llm.routing.db"})
     public static class MapperScanConfig {}

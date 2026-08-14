@@ -1,6 +1,5 @@
 package com.example.chat.llm.rag.legacy;
 
-import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import com.example.chat.storage.VectorStore;
 import com.example.chat.storage.VectorStore.VectorHit;
 import com.example.chat.storage.VectorStore.VectorRecord;
@@ -21,7 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -78,6 +76,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
     /**
      * 确保某个知识库的 Collection 存在，不存在则创建
      */
+    @Override
     public void ensureCollection(Long knowledgeBaseId) {
         String collectionName = getCollectionName(knowledgeBaseId);
         int dim = dimension;
@@ -167,6 +166,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
      * @param chunks 分片列表 [(text, chunkIndex), ...]
      * @param source 来源标记
      */
+    @Override
     public void insertChunks(Long knowledgeBaseId, Long docId, List<VectorStoreLegacy.ChunkText> chunks, String source) {
         if (chunks == null || chunks.isEmpty()) return;
 
@@ -214,6 +214,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
      * 语义检索：根据 query 找最相似的 topK 个分片
      * @return 匹配的分片列表，按相似度降序
      */
+    @Override
     public List<VectorStoreLegacy.SearchResult> search(Long knowledgeBaseId, String query, int topK) {
         String collectionName = getCollectionName(knowledgeBaseId);
         float[] queryVec = embeddingService.embed(query);
@@ -261,6 +262,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
     /**
      * 删除某个知识库的 Collection（删知识库时调用）
      */
+    @Override
     public void dropCollection(Long knowledgeBaseId) {
         String collectionName = getCollectionName(knowledgeBaseId);
         try {

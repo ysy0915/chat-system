@@ -94,6 +94,7 @@ public class ToolRegistry {
      * </ul>
      * 表未建 / DB 不可用时容错降级（按代码默认注册继续），不阻塞启动。
      */
+    @SuppressWarnings("PMD.NPathComplexity") // DB 覆盖声明逐字段合并，分支语义直白，拆分无收益
     public void applyDbOverrides() {
         if (repository == null) {
             return;
@@ -191,7 +192,7 @@ public class ToolRegistry {
             }
             Tool tool = tools.get(e.getKey());
             if (tool != null) {
-                schema.add(buildSchemaEntry(tool, e.getValue()));
+                schema.add(buildSchemaEntry(e.getValue()));
             }
         }
         return schema;
@@ -211,14 +212,14 @@ public class ToolRegistry {
             }
             Tool tool = tools.get(name);
             if (tool != null) {
-                schema.add(buildSchemaEntry(tool, def));
+                schema.add(buildSchemaEntry(def));
             }
         }
         return schema;
     }
 
     /** 单条工具的 OpenAI function schema（描述/参数以定义视图为准，可被 DB 覆盖） */
-    private Map<String, Object> buildSchemaEntry(Tool tool, ToolDefinition def) {
+    private Map<String, Object> buildSchemaEntry(ToolDefinition def) {
         Object parametersJson;
         try {
             parametersJson = objectMapper.readValue(def.getParameters(), Object.class);

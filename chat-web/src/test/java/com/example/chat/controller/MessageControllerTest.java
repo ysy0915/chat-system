@@ -15,6 +15,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Map;
 
@@ -49,15 +51,22 @@ class MessageControllerTest {
 
     private MessageController controller;
 
+    /** 模拟已登录用户：JWT 安全上下文（credentials=uid），配合 AuthUtils.extractUserIdFromContext */
+    private static void authenticateAs(long uid) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("user", uid));
+    }
+
     @BeforeEach
     void setUp() {
-        controller = new MessageController(coreClient, simpMessagingTemplate, sessionTracker,
+        controller = new MessageController(coreClient, sessionTracker,
                 rateLimitService, contentSafetyService, broadcastService, onlineCountRedisService,
                 new ObjectMapper());
     }
 
     @Test
     void createMessage_rateLimited_429WithRetryAfter() {
+        authenticateAs(1L);
         when(rateLimitService.isAllowed(1L)).thenReturn(false);
         when(rateLimitService.getRemainingSeconds(1L)).thenReturn(15L);
 
@@ -70,6 +79,7 @@ class MessageControllerTest {
 
     @Test
     void createMessage_sensitiveContent_400() {
+        authenticateAs(1L);
         when(rateLimitService.isAllowed(1L)).thenReturn(true);
         when(contentSafetyService.detectSensitive("暴力内容")).thenReturn("violence");
         when(contentSafetyService.getLabelHint("violence")).thenReturn("问题包含暴力内容，请修改后重试");
@@ -82,6 +92,7 @@ class MessageControllerTest {
 
     @Test
     void createMessage_newUser_createsAndInserts() {
+        authenticateAs(0L);
         when(rateLimitService.isAllowed(0L)).thenReturn(true);
         when(contentSafetyService.detectSensitive("你好")).thenReturn(null);
         when(coreClient.getUserById(0L)).thenReturn(null);
@@ -106,6 +117,7 @@ class MessageControllerTest {
 
     @Test
     void createMessage_aiAnswerTrue_forwardsModelConfig() {
+        authenticateAs(1L);
         when(rateLimitService.isAllowed(1L)).thenReturn(true);
         when(contentSafetyService.detectSensitive("hi")).thenReturn(null);
         when(coreClient.getUserById(1L))
@@ -131,6 +143,7 @@ class MessageControllerTest {
 
     @Test
     void regenerate_success_callsChatRegenerate() {
+        authenticateAs(1L);
         ResponseEntity<?> resp = controller.regenerate(Map.of("req_id", "req-1", "user_id", 1L));
 
         assertEquals(202, resp.getStatusCode().value());

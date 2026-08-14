@@ -146,7 +146,7 @@ public class LLMClient {
          * @return LLM 完整回答文本
          * @throws LLMCallException 调用失败时抛出
          */
-        public String execute() throws LLMCallException {
+        public String execute() {
             try {
                 // 1. 解析场景温度
                 double effectiveTemp = (temperature >= 0)
@@ -169,9 +169,10 @@ public class LLMClient {
                             config, builtMessages, effectiveTemp, scene,
                             resolveBaseUrl(), resolveApiKey());
                 }
-            } catch (LLMCallException e) {
-                throw e;
+            } catch (LLMCallException le) {
+                throw le;
             } catch (Exception e) {
+                // 其余异常包装为 LLMCallException
                 throw new LLMCallException("LLMClient 调用失败 scene=" + scene, e);
             }
         }
@@ -179,7 +180,7 @@ public class LLMClient {
         /**
          * 执行流式调用（等价于 .stream(callback).execute()）
          */
-        public String executeStream(Consumer<String> callback) throws LLMCallException {
+        public String executeStream(Consumer<String> callback) {
             this.streamCallback = callback;
             return execute();
         }

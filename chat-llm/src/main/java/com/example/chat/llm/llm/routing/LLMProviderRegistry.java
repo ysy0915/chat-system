@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -39,17 +40,14 @@ public class LLMProviderRegistry {
     private final Map<String, RouteContext> routes = new ConcurrentHashMap<>();
 
     private final LLMConfig llmConfig;
-    private final ObjectMapper mapper;
     private final LLMProviderStrategyFactory strategyFactory;
 
     /**
      * Spring 构造器：注入策略工厂（内含 rest/sdk 及 SPI 自定义实现）。
      */
     @Autowired
-    public LLMProviderRegistry(LLMConfig llmConfig, ObjectMapper mapper,
-                               LLMProviderStrategyFactory strategyFactory) {
+    public LLMProviderRegistry(LLMConfig llmConfig, LLMProviderStrategyFactory strategyFactory) {
         this.llmConfig = llmConfig;
-        this.mapper = mapper;
         this.strategyFactory = strategyFactory;
     }
 
@@ -57,7 +55,7 @@ public class LLMProviderRegistry {
      * 便捷构造器：内置默认策略工厂（单元测试 / 非 Spring 环境）。
      */
     public LLMProviderRegistry(LLMConfig llmConfig, ObjectMapper mapper) {
-        this(llmConfig, mapper, new LLMProviderStrategyFactory(mapper));
+        this(llmConfig, new LLMProviderStrategyFactory(mapper));
     }
 
     @PostConstruct
@@ -106,7 +104,7 @@ public class LLMProviderRegistry {
             // 按 invoke_type 经策略工厂创建适配器（SPI 插件化，未知类型自动回退 rest）
             LLMProviderStrategy strategy = strategyFactory.create(pc);
 
-            routes.put(pc.getName().toLowerCase(), new RouteContext(provider, strategy));
+            routes.put(pc.getName().toLowerCase(Locale.ROOT), new RouteContext(provider, strategy));
             log.info("[LLMRegistry] 注册提供商: {} ({}) [{}] 模型数: {}",
                     pc.getName(), pc.getBaseUrl(), pc.getType(), modelRoutes.size());
         }
@@ -140,12 +138,14 @@ public class LLMProviderRegistry {
      */
     public RouteResult resolve(String provider, String model) {
         RouteContext ctx;
+        String resolvedProvider;
 
         if (provider != null && !provider.isBlank()) {
-            ctx = routes.get(provider.toLowerCase());
+            ctx = routes.get(provider.toLowerCase(Locale.ROOT));
             if (ctx == null) {
                 return RouteResult.notFound("未知提供商: " + provider);
             }
+            resolvedProvider = provider;
         } else {
             // fallback: 默认提供商
             ctx = routes.values().stream()
@@ -155,12 +155,12 @@ public class LLMProviderRegistry {
             if (ctx == null) {
                 return RouteResult.notFound("没有可用的 LLM 提供商");
             }
-            provider = ctx.provider.getName();
+            resolvedProvider = ctx.provider.getName();
         }
 
         ModelRoute modelRoute = ctx.provider.matchModel(model);
         if (modelRoute == null) {
-            return RouteResult.notFound("提供商 " + provider + " 下没有可用模型" +
+            return RouteResult.notFound("提供商 " + resolvedProvider + " 下没有可用模型" +
                     (model != null ? ": " + model : ""));
         }
 
@@ -180,21 +180,21 @@ public class LLMProviderRegistry {
      * 获取提供商信息。
      */
     public ProviderRoute getProvider(String name) {
-        RouteContext ctx = routes.get(name != null ? name.toLowerCase() : "");
+        RouteContext ctx = routes.get(name != null ? name.toLowerCase(Locale.ROOT) : "");
         return ctx != null ? ctx.provider : null;
     }
 
     // ── 动态注册（DB 路由注入） ────────────────────────────
 
     public void register(ProviderRoute provider, LLMProviderStrategy strategy) {
-        routes.put(provider.getName().toLowerCase(),
+        routes.put(provider.getName().toLowerCase(Locale.ROOT),
                 new RouteContext(provider, strategy));
         log.info("[LLMRegistry] 动态注册: {} ({} 模型)",
                 provider.getName(), provider.getModels().size());
     }
 
     public void unregister(String providerName) {
-        RouteContext removed = routes.remove(providerName.toLowerCase());
+        RouteContext removed = routes.remove(providerName.toLowerCase(Locale.ROOT));
         if (removed != null) {
             log.info("[LLMRegistry] 移除: {}", providerName);
         }

@@ -9,6 +9,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Map;
 
@@ -33,6 +35,12 @@ class DebateControllerTest {
 
     private DebateController controller;
 
+    /** 模拟已登录用户：JWT 安全上下文（credentials=uid），配合 AuthUtils.extractUserIdFromContext */
+    private static void authenticateAs(long uid) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("user", uid));
+    }
+
     @BeforeEach
     void setUp() {
         controller = new DebateController(coreClient, contentSafetyService);
@@ -40,6 +48,7 @@ class DebateControllerTest {
 
     @Test
     void startDebate_sensitiveContent_400AndNoForward() {
+        authenticateAs(1L);
         when(contentSafetyService.detectSensitive("非法内容")).thenReturn("politics");
         when(contentSafetyService.getLabelHint("politics")).thenReturn("问题涉及敏感政治内容，请修改后重试");
 
@@ -54,6 +63,7 @@ class DebateControllerTest {
 
     @Test
     void startDebate_roundsClampedTo10_modePassthrough() {
+        authenticateAs(3L);
         when(contentSafetyService.detectSensitive("正常问题")).thenReturn(null);
 
         ResponseEntity<?> resp = controller.startDebate(Map.of(
@@ -72,6 +82,7 @@ class DebateControllerTest {
 
     @Test
     void startDebate_defaultRounds3() {
+        authenticateAs(1L);
         when(contentSafetyService.detectSensitive("问题")).thenReturn(null);
 
         controller.startDebate(Map.of("question", "问题"));
@@ -83,6 +94,7 @@ class DebateControllerTest {
 
     @Test
     void startDebate_invalidRounds_fallsBackTo3() {
+        authenticateAs(1L);
         when(contentSafetyService.detectSensitive("问题")).thenReturn(null);
 
         controller.startDebate(Map.of("question", "问题", "rounds", "abc"));

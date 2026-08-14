@@ -44,12 +44,12 @@ public class SummaryService {
      * 生成对话摘要（15 字以内）
      */
     public String generateSummary(String question, String answer) {
-        if (question == null) question = "";
-        if (answer == null) answer = "";
+        String q0 = question == null ? "" : question;
+        String a0 = answer == null ? "" : answer;
 
         // 截断超长内容，避免 token 浪费
-        String q = question.length() > 500 ? question.substring(0, 500) : question;
-        String a = answer.length() > 1000 ? answer.substring(0, 1000) : answer;
+        String q = q0.length() > 500 ? q0.substring(0, 500) : q0;
+        String a = a0.length() > 1000 ? a0.substring(0, 1000) : a0;
 
         String prompt = "请用15个字以内概括以下对话的主题：\n问：" + q + "\n答：" + a;
 

@@ -121,9 +121,10 @@ public class ErrorAggregator {
             long cb = toLong(b.get("count"));
             return Long.compare(cb, ca);
         });
-        if (n <= 0) n = 10;
-        if (n > all.size()) n = all.size();
-        return new ArrayList<>(all.subList(0, n));
+        int limit = n;
+        if (limit <= 0) limit = 10;
+        if (limit > all.size()) limit = all.size();
+        return new ArrayList<>(all.subList(0, limit));
     }
 
     private static long toLong(Object o) {

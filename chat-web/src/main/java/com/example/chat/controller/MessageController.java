@@ -19,7 +19,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -39,7 +38,6 @@ import java.util.UUID;
 public class MessageController {
     private static final Logger log = LoggerFactory.getLogger(MessageController.class);
     private final CoreClient coreClient;
-    private final SimpMessagingTemplate simpMessagingTemplate;
     private final WebSocketSessionTracker sessionTracker;
     private final RateLimitService rateLimitService;
     private final ContentSafetyService contentSafetyService;
@@ -48,7 +46,6 @@ public class MessageController {
     private final ObjectMapper objectMapper;
 
     public MessageController(CoreClient coreClient,
-                             SimpMessagingTemplate simpMessagingTemplate,
                              WebSocketSessionTracker sessionTracker,
                              RateLimitService rateLimitService,
                              ContentSafetyService contentSafetyService,
@@ -56,7 +53,6 @@ public class MessageController {
                              OnlineCountRedisService onlineCountRedisService,
                              ObjectMapper objectMapper) {
         this.coreClient = coreClient;
-        this.simpMessagingTemplate = simpMessagingTemplate;
         this.sessionTracker = sessionTracker;
         this.rateLimitService = rateLimitService;
         this.contentSafetyService = contentSafetyService;
@@ -67,6 +63,7 @@ public class MessageController {
 
     @Operation(summary = "发送消息", description = "创建新消息并触发 AI 回答（速率限制 + 内容安全检测）")
     @PostMapping
+    @SuppressWarnings("PMD.NPathComplexity") // 消息入口流水线：鉴权/限流/内容安全/落库/AI触发多分支，拆分破坏防御顺序
     public ResponseEntity<?> createMessage(@RequestBody Map<String, Object> body) {
         Object reqIdObj = body.get("req_id");
         String reqId = (reqIdObj == null || "null".equals(String.valueOf(reqIdObj)) || String.valueOf(reqIdObj).isBlank())
@@ -177,14 +174,14 @@ public class MessageController {
 
     @SuppressWarnings("unchecked")
     private User resolveOrCreateMessageUser(Long rawUserId) {
-        if (rawUserId == null) rawUserId = 0L;
+        long userId = rawUserId != null ? rawUserId : 0L;
 
-        Object result = coreClient.getUserById(rawUserId);
+        Object result = coreClient.getUserById(userId);
         if (result != null) {
             return objectMapper.convertValue(result, User.class);
         }
 
-        String guestEmail = "user_" + rawUserId + "@chat.local";
+        String guestEmail = "user_" + userId + "@chat.local";
         Object emailResult = coreClient.getUserByEmail(guestEmail);
         if (emailResult != null) {
             return objectMapper.convertValue(emailResult, User.class);
@@ -193,7 +190,7 @@ public class MessageController {
         Map<String, Object> newUser = new HashMap<>();
         newUser.put("email", guestEmail);
         newUser.put("name", "");
-        newUser.put("guestName", "用户" + rawUserId);
+        newUser.put("guestName", "用户" + userId);
         newUser.put("role", "user");
         newUser.put("passwordHash", "");
         coreClient.insertUser(newUser);

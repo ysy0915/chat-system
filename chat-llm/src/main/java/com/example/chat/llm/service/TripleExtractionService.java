@@ -128,17 +128,17 @@ public class TripleExtractionService {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, String>> parseTriplesResponse(String content) {
-        content = content.trim();
-        if (content.contains("```")) {
-            int start = content.indexOf("{");
-            int end = content.lastIndexOf("}");
+        String cleaned = content.trim();
+        if (cleaned.contains("```")) {
+            int start = cleaned.indexOf('{');
+            int end = cleaned.lastIndexOf('}');
             if (start >= 0 && end > start) {
-                content = content.substring(start, end + 1);
+                cleaned = cleaned.substring(start, end + 1);
             }
         }
 
         try {
-            Map<String, Object> result = objectMapper.readValue(content, Map.class);
+            Map<String, Object> result = objectMapper.readValue(cleaned, Map.class);
             List<Map<String, Object>> triples = (List<Map<String, Object>>) result.get("triples");
             if (triples == null) return List.of();
 

@@ -98,9 +98,10 @@ public class LangChain4jTreeHoleService {
             log.info("[LangChain4j-TreeHole] 回答完成 userId={} answerLen={}", userId,
                     answer != null ? answer.length() : 0);
             return answer;
-        } catch (LLMCallException e) {
-            throw e;
+        } catch (LLMCallException le) {
+            throw le;
         } catch (Exception e) {
+            // 其余异常包装为 LLMCallException
             log.error("[LangChain4j-TreeHole] 调用失败 userId={} error={}", userId, e.getMessage());
             throw new LLMCallException("LangChain4j 调用失败", e);
         }

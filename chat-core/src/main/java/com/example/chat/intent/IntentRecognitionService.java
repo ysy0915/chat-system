@@ -14,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -188,12 +189,13 @@ public class IntentRecognitionService {
     }
 
     /** 解析意图类别字符串 */
+    @SuppressWarnings("PMD.NPathComplexity") // 连续模糊匹配关键字映射，拆分为 Map 反而损失可读性
     IntentCategory parseCategory(String name) {
         try {
-            return IntentCategory.valueOf(name.toUpperCase());
+            return IntentCategory.valueOf(name.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             // 模糊匹配
-            String upper = name.toUpperCase();
+            String upper = name.toUpperCase(Locale.ROOT);
             if (upper.contains("CHAT")) return IntentCategory.GENERAL_CHAT;
             if (upper.contains("KNOWLEDGE") || upper.contains("QA")) return IntentCategory.KNOWLEDGE_QA;
             if (upper.contains("CODE")) return IntentCategory.CODE_GENERATION;

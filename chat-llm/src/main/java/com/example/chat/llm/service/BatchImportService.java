@@ -44,6 +44,8 @@ public class BatchImportService {
     }
 
     /** 执行批量导入，返回总三元组数 */
+    @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+    // 批量导入双路（消息+辩论）分页循环，拆分会割裂进度日志与重试节奏
     public int execute(Driver neo4jDriver) {
         int totalTriples = 0;
 

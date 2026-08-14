@@ -303,7 +303,7 @@ public class RagClient {
         if (resp.statusCode() != 200) {
             log.warn("[RagClient] {} HTTP {} body={}", path, resp.statusCode(),
                     resp.body().length() > 300 ? resp.body().substring(0, 300) : resp.body());
-            return null;
+            return Map.of();
         }
         return objectMapper.readValue(resp.body(), Map.class);
     }

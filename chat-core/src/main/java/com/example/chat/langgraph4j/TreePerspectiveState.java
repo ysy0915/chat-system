@@ -32,7 +32,7 @@ public class TreePerspectiveState {
     private String question;
     private Long userId = 0L;
     private String reqId;
-    private int currentRound = 0;
+    private int currentRound;
     private int maxRounds = 3;
     private List<String> model1Answers = new ArrayList<>();
     private List<String> model2Answers = new ArrayList<>();

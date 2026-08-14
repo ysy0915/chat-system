@@ -169,3 +169,10 @@
   2. **模型名中文展示**：`ModelRouter.modelDisplayName(provider, model)`（doubao→豆包、qwen→千问、deepseek→DeepSeek、ollama→自研、moonshot→Kimi 等），前端 `toCnModel` 渲染
   3. **树状模式固定快模型**：树状辩论 `excludeLocal=true` 排除 ollama，仅从豆包/DeepSeek/千问等快模型随机 3 个；`TreePerspectiveGraphService` 用 `Map<String, BranchInfo>` 动态映射正方/中立/反方分支，替代硬编码模型 id
 - **后果**：✅ 辩论模型可自选（上限随已配置 chat 模型数，3~6）、随机组队多样性提升；✅ 树状博弈单次响应从 10s+ 降至 ~1s，卡顿根除；✅ 前端 `modelType === 'chat'` 过滤动态展示可用模型数；⚠️ 树状模式不再包含自研 Ollama 模型（若需纳入需优化其推理速度）。
+
+## ADR-024 chat-llm @MapperScan annotationClass 约束（2026-08-15）
+
+- **状态**：Accepted（2026-08-15 上线）
+- **背景**：`LlmApplication.MapperScanConfig` 的 `@MapperScan` 扫描 `com.example.chat.llm.rag.legacy` 包时未限制 `annotationClass`，MyBatis 把包下所有接口（含无注解的领域接口 `MemoryKVStore` / `VectorStoreLegacy` / `UserFactMemory`）注册为 Mapper 代理 bean。`MemoryKVStore` 被注册为 `memoryKVStore`，与 `@Component` 的 `RedisMemoryKVStore`（`redisMemoryKVStore`）同时成为 `ConversationMemoryService.setMemoryStore()` 注入候选，报 "expected single matching bean but found 2" 冲突。本地 standalone profile 因 `app.mapper-scan.enabled=false` 关闭 MapperScan 不触发，生产 prod profile 才暴露。
+- **决策**：`@MapperScan` 加 `annotationClass = Mapper.class`，仅注册带 `@Mapper` 注解的接口。已核实 `com.example.chat.repository` 下 10 个接口、`RAGRepository`、`LlmRoutingRepository` 均带 `@Mapper`，不受影响。
+- **后果**：✅ 无注解领域接口不再被误注册为 Mapper bean，bean 冲突根除；✅ chat-llm 双实例 9095/9096 prod 启动正常（health UP）；⚠️ 新增 Mapper 接口必须标注 `@Mapper` 注解，否则不会被扫描注册（比无差别包扫描更安全，但要求开发者遵守注解约定）。

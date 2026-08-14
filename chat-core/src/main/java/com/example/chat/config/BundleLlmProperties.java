@@ -16,7 +16,7 @@ import java.time.Duration;
 public class BundleLlmProperties {
 
     /** 是否启用 bundle 模式：模型调用优先走 chat-llm */
-    private boolean enabled = false;
+    private boolean enabled;
 
     /** chat-llm 服务地址 */
     private String baseUrl = "http://127.0.0.1:9095";

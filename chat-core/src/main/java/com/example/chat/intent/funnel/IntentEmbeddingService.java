@@ -122,18 +122,19 @@ public class IntentEmbeddingService {
                         "Embedding API 失败 status=" + response.statusCode());
             }
 
-            return parseResponse(response.body(), texts.size());
+            return parseResponse(response.body());
 
-        } catch (LLMCallException e) {
-            throw e;
+        } catch (LLMCallException le) {
+            throw le;
         } catch (Exception e) {
+            // 其余异常包装为 LLMCallException
             log.error("[IntentEmbedding] 转向量失败 model={} error={}", model, e.getMessage());
             throw new LLMCallException("Embedding 失败", e);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private List<float[]> parseResponse(String body, int expectedCount) throws Exception {
+    private List<float[]> parseResponse(String body) throws Exception {
         Map<String, Object> result = objectMapper.readValue(body, Map.class);
 
         if ("openai-compat".equalsIgnoreCase(apiMode)) {

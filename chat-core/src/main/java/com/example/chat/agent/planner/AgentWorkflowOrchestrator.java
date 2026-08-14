@@ -4,18 +4,18 @@ import com.example.chat.agent.protocol.SubAgentPlan;
 import com.example.chat.agent.protocol.SubAgentResult;
 import com.example.chat.agent.protocol.SubAgentTask;
 import com.example.chat.agent.workflow.SubTaskProducer;
+import com.example.chat.agent.workflow.SubTaskResultCollector;
 import com.example.chat.config.LlmConfigProperties;
-import com.example.chat.config.ThreadPoolFactory;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
+import com.example.chat.exception.ChatServiceException;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.ChatProcessor;
 import com.example.chat.service.LLMInvoker;
 import com.example.chat.service.ModelRouter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,8 +31,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 
 /**
  * Multi-Agent 并行工作流指挥官（Orchestrator）—— Step 2 + Step 3 编排核心。
@@ -94,9 +92,6 @@ public class AgentWorkflowOrchestrator {
     private final ChatProcessor chatProcessor;
     private final ModelRouter modelRouter;
 
-    /** 收敛执行线程池（结果到齐后发起最终总结） */
-    private final ExecutorService convergeExecutor;
-
     @Value("${app.agent.planner.max-concurrent:8}")
     private int maxConcurrent;
 
@@ -131,7 +126,6 @@ public class AgentWorkflowOrchestrator {
         this.objectMapper = objectMapper;
         this.chatProcessor = chatProcessor;
         this.modelRouter = modelRouter;
-        this.convergeExecutor = ThreadPoolFactory.create(2, 4, 50, "agent-converge");
     }
 
     /**
@@ -264,6 +258,7 @@ public class AgentWorkflowOrchestrator {
     /**
      * 全部子任务完成后，主 Agent 对结构化摘要进行最终总结并流式推送。
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 收敛编排多分支（限流/降级/轻量模型/硬截断/去重），逐条拆分反而降低可读性
     public void converge(String planId) {
         log.info("[MultiAgent] 收敛开始 planId={}", planId);
         try {
@@ -292,13 +287,13 @@ public class AgentWorkflowOrchestrator {
             for (SubAgentResult r : results) {
                 idx++;
                 String title = findTaskTitle(plan, r.taskId);
-                sb.append("【子任务 ").append(idx).append("】").append(title != null ? title : r.taskId).append("\n");
+                sb.append("【子任务 ").append(idx).append('】').append(title != null ? title : r.taskId).append('\n');
                 if (r.success) {
-                    sb.append("结果：").append(r.summary != null ? r.summary : "(无内容)").append("\n");
+                    sb.append("结果：").append(r.summary != null ? r.summary : "(无内容)").append('\n');
                 } else {
-                    sb.append("结果：该部分执行失败：").append(r.error).append("\n");
+                    sb.append("结果：该部分执行失败：").append(r.error).append('\n');
                 }
-                sb.append("\n");
+                sb.append('\n');
             }
             // 给模型留 100 字余量，避免输出贴近上限
             int budget = convergeMaxChars > 0 ? Math.max(100, convergeMaxChars - 100) : 0;
@@ -330,7 +325,7 @@ public class AgentWorkflowOrchestrator {
                         broadcastService.broadcast(topic,
                                 WsMessage.streamToken(token).withReqId(reqId).toMap());
                     });
-            String cleanAnswer = !collector.isEmpty() ? collector.toString() : fullAnswer;
+            String cleanAnswer = collector.isEmpty() ? fullAnswer : collector.toString();
             // 硬截断兜底：确保最终回答不超过 converge-max-chars
             if (convergeMaxChars > 0 && cleanAnswer.length() > convergeMaxChars) {
                 cleanAnswer = cleanAnswer.substring(0, convergeMaxChars) + "……";
@@ -358,7 +353,7 @@ public class AgentWorkflowOrchestrator {
             } catch (Exception ignored) {
             }
             // 包装重抛给 CoreBusinessMetricsAspect 统一记录 failed 指标（切面捕获后不重抛，对外语义不变）
-            throw new RuntimeException(e);
+            throw new ChatServiceException("多Agent收敛失败: " + e.getMessage(), e);
         } finally {
             // 释放全局限流许可（成功/失败/meta缺失均释放），Redis 原子计数保证不泄漏
             releasePermit(planId);
@@ -369,6 +364,7 @@ public class AgentWorkflowOrchestrator {
     //  Redis 读写
     // ═══════════════════════════════════════════════════════════════════
 
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull") // null 表示"meta 不存在"，调用方依赖 null 判断
     private Map<String, Object> readMeta(String planId) {
         String json = redisTemplate.opsForValue().get(key(KEY_META, planId));
         if (json == null) return null;

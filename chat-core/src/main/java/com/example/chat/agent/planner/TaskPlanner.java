@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -157,7 +158,8 @@ public class TaskPlanner {
     }
 
     /** 解析 LLM 输出为 SubAgentPlan；分配 planId / taskId */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "PMD.NPathComplexity", "PMD.CyclomaticComplexity", "PMD.CognitiveComplexity"})
+    // 计划解析含容错重试/字段提取/去重等多分支，拆分会破坏一次遍历的连贯性
     private SubAgentPlan parsePlan(String raw, String question, ModelConfig config) throws Exception {
         String json = extractPlanJson(raw);
 
@@ -230,7 +232,7 @@ public class TaskPlanner {
                     + "是输出 true，否输出 false，只输出一个单词：\n" + question;
             String raw = llmInvoker.invoke(defaultConfig(), List.of(new LLMMessage("user", systemPrompt)),
                     0.1, "planner", llmConfig.getBaseUrl(), llmConfig.getApiKey());
-            return raw != null && raw.trim().toLowerCase().contains("true");
+            return raw != null && raw.trim().toLowerCase(Locale.ROOT).contains("true");
         } catch (Exception e) {
             log.debug("[TaskPlanner] LLM 判定失败，按不需要拆解处理: {}", e.getMessage());
             return false;
@@ -260,17 +262,25 @@ public class TaskPlanner {
      */
     private String extractPlanJson(String raw) {
         String current = raw;
-        for (int depth = 0; depth < 3; depth++) {
+        String result = current;
+        boolean finished = false;
+        for (int depth = 0; depth < 3 && !finished; depth++) {
             int start = current.indexOf('{');
             int end = current.lastIndexOf('}');
-            if (start < 0 || end <= start) return current;
+            if (start < 0 || end <= start) {
+                result = current;
+                finished = true;
+                continue;
+            }
             String candidate = current.substring(start, end + 1);
             JsonNode node;
             try {
                 node = objectMapper.readTree(candidate);
             } catch (Exception e) {
                 // 截断等无法解析，交给 repairTruncatedJson 兜底
-                return candidate;
+                result = candidate;
+                finished = true;
+                continue;
             }
             // chat.completion 响应体：提取 choices[0].message.content
             JsonNode choices = node.get("choices");
@@ -283,12 +293,15 @@ public class TaskPlanner {
                         continue; // 可能再嵌套（中转网关双包一层）
                     }
                 }
-                return candidate;
+                result = candidate;
+                finished = true;
+                continue;
             }
             // 计划结构或其他合法 JSON：直接返回
-            return candidate;
+            result = candidate;
+            finished = true;
         }
-        return current;
+        return result;
     }
 
     /**

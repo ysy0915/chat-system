@@ -27,7 +27,7 @@ public class DebateState {
     private List<String> proArguments = new ArrayList<>();
     private List<String> conArguments = new ArrayList<>();
     private List<String> neutralArguments = new ArrayList<>();
-    private int currentRound = 0;
+    private int currentRound;
     private int maxRounds = 3;
     private String summary;
     private String next = "summary";

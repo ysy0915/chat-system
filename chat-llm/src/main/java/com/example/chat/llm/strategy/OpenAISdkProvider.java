@@ -114,6 +114,7 @@ public class OpenAISdkProvider implements LLMProviderStrategy {
     // ========= 流式 =========
 
     @Override
+    @SuppressWarnings("PMD.CognitiveComplexity") // SDK 流式调用：事件循环/工具回调/终止判定多分支，拆分破坏回调状态
     public void invokeStream(LangChainRequest request,
                              java.util.function.Consumer<String> chunkConsumer,
                              Runnable onComplete,

@@ -2,6 +2,7 @@ package com.example.chat;
 
 import com.example.chat.client.CoreClient;
 import com.example.chat.config.WebSocketSessionTracker;
+import com.example.chat.security.JwtUtil;
 import com.example.chat.security.RateLimitChecker;
 import com.example.chat.service.BroadcastService;
 import com.example.chat.service.ContentSafetyService;
@@ -58,6 +59,9 @@ class MessageFlowIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @MockBean
     private CoreClient coreClient;
 
@@ -96,16 +100,23 @@ class MessageFlowIntegrationTest {
     private static final String BROWSER_UA =
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0 Safari/537.36";
 
+    /** 生成已登录用户(uid=1)的测试 JWT（test profile 下 JwtUtil 使用随机密钥） */
+    private String bearerToken() {
+        return "Bearer " + jwtUtil.generateToken("test@chat.local", 1L, "USER");
+    }
+
     private ResponseEntity<String> post(String path, String body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set(HttpHeaders.USER_AGENT, BROWSER_UA);
+        headers.set(HttpHeaders.AUTHORIZATION, bearerToken());
         return restTemplate.postForEntity(path, new HttpEntity<>(body, headers), String.class);
     }
 
     private ResponseEntity<String> get(String path) {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.USER_AGENT, BROWSER_UA);
+        headers.set(HttpHeaders.AUTHORIZATION, bearerToken());
         return restTemplate.exchange(path, HttpMethod.GET, new HttpEntity<>(headers), String.class);
     }
 

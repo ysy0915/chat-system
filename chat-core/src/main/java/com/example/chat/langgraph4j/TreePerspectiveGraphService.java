@@ -49,6 +49,7 @@ public class TreePerspectiveGraphService {
      *
      * @return 包含 roundHistory / conclusion 的结果状态
      */
+    @SuppressWarnings("PMD.CognitiveComplexity") // 图编排推进/广播/容错多分支，拆分引入中间状态参数
     public TreePerspectiveState execute(String reqId, Long userId,
                                         String perspectiveId, String perspectiveLabel,
                                         String perspectiveFocus, String question,
@@ -132,10 +133,8 @@ public class TreePerspectiveGraphService {
                 }
                 case GraphStreamEventDto.TYPE_NODE_END -> {
                     if ("debate".equals(event.getNodeId())) {
+                        // node_end 无分支信息时跳过推送（响应在 branch_end 已推送）
                         List<Map<String, String>> responses = new ArrayList<>();
-                        if (event.getBranchId() == null) {
-                            // node_end 无分支信息：跳过（响应在 branch_end 已推送）
-                        }
                         broadcast(uid, treeMsg("tree_round_end", rid)
                                 .with("perspectiveId", pid).with("round", round.get())
                                 .with("responses", responses));

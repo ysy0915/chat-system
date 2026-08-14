@@ -6,7 +6,6 @@ import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.util.BaseUrlResolver;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,7 +26,6 @@ public class ModelAutoChatService {
     private static final Logger log = LoggerFactory.getLogger(ModelAutoChatService.class);
 
     private final ModelConfigRepository modelConfigRepository;
-    private final ObjectMapper objectMapper;
     private final BroadcastService broadcastService;
     private final BaseUrlResolver baseUrlResolver;
     private final DirectLLMClient directLLMClient;
@@ -48,18 +46,17 @@ public class ModelAutoChatService {
     );
 
     public ModelAutoChatService(ModelConfigRepository modelConfigRepository,
-                                ObjectMapper objectMapper,
                                 BroadcastService broadcastService,
                                 BaseUrlResolver baseUrlResolver,
                                 DirectLLMClient directLLMClient) {
         this.modelConfigRepository = modelConfigRepository;
-        this.objectMapper = objectMapper;
         this.broadcastService = broadcastService;
         this.baseUrlResolver = baseUrlResolver;
         this.directLLMClient = directLLMClient;
     }
 
     @Scheduled(fixedRate = 3600000, initialDelay = 60000)
+    @SuppressWarnings("PMD.NPathComplexity") // 定时自动对话编排：并发提问/双答案/广播回调，拆分无收益
     public void autoChat() {
         // 双 core 部署：仅主实例(9090)执行自动对话，避免双实例重复广播
         if (!"9090".equals(serverPort)) {

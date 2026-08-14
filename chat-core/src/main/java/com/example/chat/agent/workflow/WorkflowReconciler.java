@@ -126,6 +126,7 @@ public class WorkflowReconciler {
         return planIds;
     }
 
+    @SuppressWarnings("PMD.NPathComplexity") // 对账逐级防御（结果齐/meta全/去重/锁抢占），拆分反而割裂状态机
     private boolean tryReconcile(String planId) {
         try {
             // 1. 结果必须已全部到齐（与 SubTaskResultCollector 正常触发条件一致）

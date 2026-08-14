@@ -1,7 +1,6 @@
 package com.example.chat.llm.rag.legacy;
 
 import io.milvus.client.MilvusServiceClient;
-import io.milvus.grpc.ConsistencyLevel;
 import io.milvus.grpc.DataType;
 import io.milvus.grpc.SearchResults;
 import io.milvus.param.IndexType;
@@ -26,9 +25,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -124,6 +121,7 @@ public class UserFactMemoryService implements UserFactMemory {
      * @return 召回的事实列表（按相关度降序，已按 user_id 过滤）
      */
     @Override
+    @SuppressWarnings("PMD.NPathComplexity") // Milvus 召回流水线：搜索/过滤/去重/截断，拆分破坏一次遍历
     public List<String> recallFacts(Long userId, String question, int topK) {
         if (userId == null || question == null || question.isBlank()) return List.of();
         try {

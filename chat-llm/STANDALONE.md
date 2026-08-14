@@ -191,6 +191,8 @@ app:
 ```
 
 > 数据仅存内存，重启即清空；生产请使用 milvus/neo4j backend 并接入 MySQL。
+>
+> **prod 模式注意**：`app.mapper-scan.enabled` 默认 `true`（`matchIfMissing`），`@MapperScan` 已加 `annotationClass = Mapper.class` 仅扫描带 `@Mapper` 注解的接口。若新增无注解的领域接口到 `rag.legacy` 包，不会被误注册为 Mapper bean（2026-08-15 修复，详见 CHANGELOG §〇〇〇〇）。
 
 ### 1. 模型管理面（DB CRUD → 内存 CRUD）
 

@@ -86,7 +86,13 @@ public class KnowledgeGraphService implements GraphStore, KnowledgeGraphFacade {
         connect();
     }
 
-    private synchronized void connect() {
+    private void connect() {
+        synchronized (this) {
+            doConnect();
+        }
+    }
+
+    private void doConnect() {
         try {
             neo4jDriver = GraphDatabase.driver(neo4jUri, AuthTokens.basic(neo4jUser, neo4jPassword));
             neo4jDriver.verifyConnectivity();
@@ -103,28 +109,30 @@ public class KnowledgeGraphService implements GraphStore, KnowledgeGraphFacade {
     }
 
     // 启动竞态（Neo4j 与 core 同时拉起时）导致连接失败，每 60s 重试直至成功
-    private synchronized void scheduleReconnect() {
+    private void scheduleReconnect() {
         reconnector.schedule(this::reconnect, 60, TimeUnit.SECONDS);
     }
 
-    private synchronized void reconnect() {
-        if (!enabled) return;
-        try {
-            Driver d = GraphDatabase.driver(neo4jUri, AuthTokens.basic(neo4jUser, neo4jPassword));
-            d.verifyConnectivity();
-            if (neo4jDriver == null) {
-                neo4jDriver = d;
-                try (Session session = neo4jDriver.session()) {
-                    session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE");
-                    session.run("CREATE INDEX IF NOT EXISTS FOR (e:Entity) ON (e.category)");
+    private void reconnect() {
+        synchronized (this) {
+            if (!enabled) return;
+            try {
+                Driver d = GraphDatabase.driver(neo4jUri, AuthTokens.basic(neo4jUser, neo4jPassword));
+                d.verifyConnectivity();
+                if (neo4jDriver == null) {
+                    neo4jDriver = d;
+                    try (Session session = neo4jDriver.session()) {
+                        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE");
+                        session.run("CREATE INDEX IF NOT EXISTS FOR (e:Entity) ON (e.category)");
+                    }
+                    log.info("[KnowledgeGraph] Neo4j 自动重连成功: {}", neo4jUri);
+                } else {
+                    d.close();
                 }
-                log.info("[KnowledgeGraph] Neo4j 自动重连成功: {}", neo4jUri);
-            } else {
-                d.close();
+            } catch (Exception e) {
+                log.warn("[KnowledgeGraph] Neo4j 自动重连失败，60s 后重试: {}", e.getMessage());
+                scheduleReconnect();
             }
-        } catch (Exception e) {
-            log.warn("[KnowledgeGraph] Neo4j 自动重连失败，60s 后重试: {}", e.getMessage());
-            scheduleReconnect();
         }
     }
 

@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
  * </ul>
  */
 @Service
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，业务方法已分别豁免
 public class GraphExecuteService {
 
     private static final Logger log = LoggerFactory.getLogger(GraphExecuteService.class);
@@ -58,6 +59,7 @@ public class GraphExecuteService {
      * @param request 图执行请求（节点/边/状态/入口点）
      * @return 图执行结果，含最终状态与逐步执行轨迹；参数校验失败时返回 fail 响应
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 图遍历主循环：条件跳转/逻辑节点分流/状态写回，拆分会破坏状态机
     public LangGraphResponse execute(LangGraphRequest request) {
         if (request.getMaxSteps() == null) request.setMaxSteps(MAX_STEPS_DEFAULT);
         try {
@@ -128,6 +130,7 @@ public class GraphExecuteService {
      * @param onEvent 流式事件回调 (GraphStreamEvent)
      * @param onDone  完成回调 (true=成功)
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 流式图遍历：异步事件转发/条件跳转/完成回调，拆分破坏回调时序
     public void executeStream(LangGraphRequest request,
                               Consumer<GraphStreamEvent> onEvent,
                               Consumer<Boolean> onDone) {
@@ -224,12 +227,13 @@ public class GraphExecuteService {
         String provider = node.getProvider() != null ? node.getProvider() : request.getProvider();
         String system = node.getSystemPrompt();
         String user = renderTemplate(node.getUserPrompt(), state);
-        LangChainRequest lc = buildLangChainRequest(request, provider, model, temp, system, user, node.getTools());
+        LangChainRequest lc = buildLangChainRequest(request, provider, model, temp, system, user);
         return invokeWithRetry(node, request, lc, state, traces, onEvent, null);
     }
 
     // ── 并行分支执行 ──────────────────────────────────────
 
+    @SuppressWarnings("PMD.NPathComplexity") // 分支并行汇聚：快照/合并/去重/流式广播，拆分破坏并发状态管理
     private String executeBranches(LangGraphRequest.GraphNode node,
                                    LangGraphRequest request,
                                    Map<String, Object> state,
@@ -281,8 +285,8 @@ public class GraphExecuteService {
                         : node.getId() + "." + branch.getId();
                 writeSink(state, sinkKey, r.output(), branch.isSinkAppend());
             }
-            if (aggregate.length() > 0) aggregate.append("\n");
-            aggregate.append("【").append(r.branchId()).append("】").append(r.output());
+            if (aggregate.length() > 0) aggregate.append('\n');
+            aggregate.append('【').append(r.branchId()).append('】').append(r.output());
         }
 
         // 记录 trace
@@ -302,6 +306,7 @@ public class GraphExecuteService {
     private record BranchResult(String branchId, String output, boolean error) {}
 
     /** 执行单个分支（流式时逐 token 回调）。返回完整输出。 */
+    @SuppressWarnings("PMD.NPathComplexity") // 分支模型/温度/提示词三级覆盖解析，拆分为辅助方法收益有限
     private String executeBranch(LangGraphRequest.GraphBranch branch,
                                  LangGraphRequest.GraphNode node,
                                  LangGraphRequest request,
@@ -318,7 +323,7 @@ public class GraphExecuteService {
         String system = branch.getSystemPrompt() != null ? branch.getSystemPrompt() : node.getSystemPrompt();
         String user = renderTemplate(branch.getUserPrompt() != null ? branch.getUserPrompt() : node.getUserPrompt(), state);
 
-        LangChainRequest lc = buildLangChainRequest(request, provider, model, temp, system, user, node.getTools());
+        LangChainRequest lc = buildLangChainRequest(request, provider, model, temp, system, user);
 
         if (onEvent != null) {
             onEvent.accept(GraphStreamEvent.branchStart(node.getId(), branch.getId()));
@@ -340,8 +345,7 @@ public class GraphExecuteService {
                                                    String model,
                                                    double temp,
                                                    String system,
-                                                   String user,
-                                                   List<Map<String, Object>> tools) {
+                                                   String user) {
         LangChainRequest lc = new LangChainRequest();
         lc.setProvider(provider != null ? provider : request.getProvider());
         lc.setModel(model);
@@ -505,6 +509,8 @@ public class GraphExecuteService {
 
     // ── 路由 ─────────────────────────────────────────────
 
+    @SuppressWarnings("PMD.NPathComplexity")
+    // router/普通节点双分支×条件边/默认边多轮评估，拆方法反而割裂路由语义
     private String resolveNext(LangGraphRequest.GraphNode node,
                                String output,
                                LangGraphRequest request,

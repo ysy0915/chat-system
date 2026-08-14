@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -59,7 +58,11 @@ public class DebateTreeProcessor {
     record RoleModel(String role, int modelId, String provider, ModelConfig config) {}
 
     public static class Perspective {
-        public final String id, label, focus, question;
+        public final String id;
+        public final String label;
+        public final String focus;
+        public final String question;
+
         public Perspective(String id, String label, String focus, String question) {
             this.id = id; this.label = label; this.focus = focus; this.question = question;
         }
@@ -124,12 +127,6 @@ public class DebateTreeProcessor {
         ModelConfig proModel = debaters.get(0);
         ModelConfig conModel = debaters.get(2);
         ModelConfig neutralModel = debaters.get(1);
-        // 角色信息（provider 为中文展示名，供遗留的 debatePerspective 方法复用）
-        List<RoleModel> roles = List.of(
-                new RoleModel("正方", 0, displayName(proModel), proModel),
-                new RoleModel("反方", 2, displayName(conModel), conModel),
-                new RoleModel("中立", 1, displayName(neutralModel), neutralModel)
-        );
 
         ExecutorService batchPool = Executors.newFixedThreadPool(Math.min(perspectives.size(), 4));
         List<CompletableFuture<Void>> perspectiveFutures = new ArrayList<>();
@@ -183,7 +180,7 @@ public class DebateTreeProcessor {
             for (Perspective p : perspectives) {
                 sb.append("- **").append(p.label).append("**：")
                   .append(perspectiveConclusions.getOrDefault(p.id, "无结论"))
-                  .append("\n");
+                  .append('\n');
             }
             finalAnswer = sb.toString();
         }
@@ -243,139 +240,21 @@ public class DebateTreeProcessor {
         return result;
     }
 
-    // ===================== 单视角辩论 =====================
-
-    /** @return 每轮的 {role→answer} 历史，供 aggregate 使用 */
-    private List<Map<String, String>> debatePerspective(String reqId, Long userId, Perspective p, int pIdx,
-                                    List<RoleModel> roles) throws Exception {
-        send("/topic/debate." + userId,
-                treeMsg("tree_perspective_start", reqId)
-                        .with("perspectiveId", p.id).with("label", p.label)
-                        .with("index", pIdx));
-
-        // 存储所有历史轮次 (每轮是一个 Map<role, answer>)
-        List<Map<String, String>> allRoundsHistory = Collections.synchronizedList(new ArrayList<>());
-
-        for (int round = 1; round <= 3; round++) {
-            final int currentRound = round;
-            send("/topic/debate." + userId,
-                    treeMsg("tree_round_start", reqId)
-                            .with("perspectiveId", p.id).with("round", currentRound));
-
-            // 本轮各角色的回答 (并发获取)
-            Map<String, String> roundAnswers = new ConcurrentHashMap<>();
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-            for (RoleModel rm : roles) {
-                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                    try {
-                        String question = p.question + "（聚焦: " + p.label + "——" + p.focus + "）";
-                        String prompt = buildPerspectivePrompt(question, allRoundsHistory, currentRound, rm.role);
-                        String answer = llmInvoker.invokeStream(rm.config,
-                                List.of(LLMMessage.user(prompt)),
-                                0.7, "debate-tree", null, defaultApiKey,
-                                token -> {
-                                    send("/topic/debate." + userId,
-                                            treeMsg("tree_stream_token", reqId)
-                                                    .with("perspectiveId", p.id)
-                                                    .with("round", currentRound)
-                                                    .with("role", rm.role)
-                                                    .with("modelId", rm.modelId)
-                                                    .with("provider", rm.provider)
-                                                    .with("token", token));
-                                });
-                        roundAnswers.put(rm.role, answer);
-                        send("/topic/debate." + userId,
-                                treeMsg("tree_round_response", reqId)
-                                        .with("perspectiveId", p.id)
-                                        .with("round", currentRound)
-                                        .with("role", rm.role)
-                                        .with("modelId", rm.modelId)
-                                        .with("provider", rm.provider)
-                                        .with("answer", answer));
-                    } catch (Exception e) {
-                        log.error("[TreeDebate] {}/R{}/{} error: {}", p.id, currentRound, rm.role, e.getMessage());
-                        roundAnswers.put(rm.role, "[调用失败]");
-                    }
-                }, treeExecutor);
-                futures.add(future);
-            }
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-            allRoundsHistory.add(new HashMap<>(roundAnswers));
-
-            send("/topic/debate." + userId,
-                    treeMsg("tree_round_end", reqId)
-                            .with("perspectiveId", p.id).with("round", currentRound)
-                            .with("responses", new ArrayList<>(roundAnswers.entrySet().stream()
-                                    .map(e -> Map.of("role", e.getKey(), "answer", e.getValue()))
-                                    .toList())));
-        }
-        return allRoundsHistory;
-    }
-
-    private String buildPerspectivePrompt(String question, List<Map<String, String>> allRounds,
-                                           int round, String role) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("你是一个AI辩论参与者，身份是「").append(role).append("」。\n\n");
-        sb.append("## 议题\n").append(question).append("\n\n");
-
-        if (round > 1 && !allRounds.isEmpty()) {
-            sb.append("## 此前讨论\n");
-            for (int r = 0; r < allRounds.size(); r++) {
-                Map<String, String> roundData = allRounds.get(r);
-                for (Map.Entry<String, String> entry : roundData.entrySet()) {
-                    sb.append("**").append(entry.getKey()).append("**: ")
-                            .append(entry.getValue()).append("\n\n");
-                }
-            }
-        }
-
-        sb.append("## 第").append(round).append("轮任务\n");
-        if (round == 1) {
-            sb.append("给出你对这个视角的独立见解，观点明确、论据充分。50字以内。\n");
-        } else {
-            sb.append("阅读其他角色的观点后：1) 补充认同的观点 2) 反驳不认同的观点 3) 更新立场。50字以内。\n");
-        }
-        return sb.toString();
-    }
-
-    // ===================== 单视角总结 =====================
-
-    private String summarizePerspective(String reqId, Long userId, Perspective p, int pIdx,
-                                         ModelConfig summaryModel) throws Exception {
-        send("/topic/debate." + userId,
-                treeMsg("tree_perspective_concluding", reqId).with("perspectiveId", p.id));
-
-        String prompt = "请综合你对「" + p.label + "」视角下各方辩论的理解，" +
-                "给出该视角的核心结论。要求：30字以内，一句话总结。";
-
-        return llmInvoker.invokeStream(summaryModel,
-                List.of(LLMMessage.user(prompt)),
-                0.3, "debate-tree", null, defaultApiKey,
-                token -> {
-                    send("/topic/debate." + userId,
-                            treeMsg("tree_stream_token", reqId)
-                                    .with("perspectiveId", p.id)
-                                    .with("role", "conclusion")
-                                    .with("token", token));
-                });
-    }
-
     // ===================== 最终汇总 (流式逐字推送) =====================
 
+    @SuppressWarnings("PMD.UnusedFormalParameter") // reqId/userId/perspectiveRoundDetails/summaryModel 预留（测试经反射传入完整签名）
     private String aggregate(String reqId, Long userId, String question,
-                              List<Perspective> perspectives,
-                              Map<String, String> conclusions,
-                              Map<String, List<Map<String, String>>> perspectiveRoundDetails,
-                              ModelConfig summaryModel) throws Exception {
+                             List<Perspective> perspectives,
+                             Map<String, String> conclusions,
+                             Map<String, List<Map<String, String>>> perspectiveRoundDetails,
+                             ModelConfig summaryModel) throws Exception {
         StringBuilder psb = new StringBuilder();
         psb.append("你是辩论总结者，请综合以下各方 AI 的辩论结论，给出对原问题的最终回答。\n\n");
         psb.append("## 原问题\n").append(question).append("\n\n");
         psb.append("## 各视角结论\n");
         for (Perspective p : perspectives) {
-            psb.append("- 【").append(p.label).append("】").append(p.focus).append(": ");
-            psb.append(conclusions.getOrDefault(p.id, "无")).append("\n");
+            psb.append("- 【").append(p.label).append('】').append(p.focus).append(": ");
+            psb.append(conclusions.getOrDefault(p.id, "无")).append('\n');
         }
         psb.append("\n## 任务\n");
         psb.append("综合以上，给出平衡客观的最终结论。\n\n");

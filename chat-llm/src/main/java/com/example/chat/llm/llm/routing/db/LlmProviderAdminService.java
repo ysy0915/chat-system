@@ -31,6 +31,7 @@ import java.util.Map;
  */
 @Service
 @ConditionalOnProperty(name = "app.llm.admin.enabled", havingValue = "true", matchIfMissing = true)
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，业务方法已分别豁免
 public class LlmProviderAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(LlmProviderAdminService.class);
@@ -147,6 +148,7 @@ public class LlmProviderAdminService {
     /**
      * 更新提供商：写 DB 后同步注册中心（同名覆盖；apiKey 空串表示保留原值）。
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 字段级空值回填（DB 原值兜底）逐项覆盖，拆分无收益
     public Map<String, Object> updateProvider(Long id, Map<String, Object> dto) {
         LlmProviderRow db = repo.findProviderById(id);
         if (db == null) {
@@ -188,7 +190,7 @@ public class LlmProviderAdminService {
 
         refreshRegistry(row, dto);
         log.info("[LLMAdmin] 更新提供商: {} (id={}){}", row.getProviderName(), id,
-                !oldName.equals(row.getProviderName()) ? " 原名: " + oldName : "");
+                oldName.equals(row.getProviderName()) ? "" : " 原名: " + oldName);
         return toView(buildRoute(row));
     }
 

@@ -179,11 +179,14 @@ public class InMemoryVectorStoreService implements VectorStore, VectorStoreLegac
     }
 
     /** 余弦相似度（两向量维度一致；任一为零向量返回 NaN） */
+    @SuppressWarnings("PMD.UseVarargs") // 双数组参数，varargs 只能修饰最后一个参数，无法转换
     private float cosine(float[] a, float[] b) {
         if (a.length != b.length) {
             return Float.NaN;
         }
-        double dot = 0, na = 0, nb = 0;
+        double dot = 0;
+        double na = 0;
+        double nb = 0;
         for (int i = 0; i < a.length; i++) {
             dot += a[i] * b[i];
             na += a[i] * a[i];
@@ -233,13 +236,13 @@ public class InMemoryVectorStoreService implements VectorStore, VectorStoreLegac
         final String source;
         final float[] vector;
 
-        MemChunk(long id, long docId, int chunkIndex, String text, String source, float[] vector) {
+        MemChunk(long id, long docId, int chunkIndex, String text, String source, float... vector) {
             this.id = id;
             this.docId = docId;
             this.chunkIndex = chunkIndex;
             this.text = text;
             this.source = source;
-            this.vector = vector;
+            this.vector = vector.clone();   // 防御性拷贝，避免外部数组被直接存储
         }
     }
 

@@ -3,7 +3,6 @@ package com.example.chat.llm.rag.legacy;
 import com.example.chat.dto.LangChainRequest;
 import com.example.chat.dto.LangChainResponse;
 import com.example.chat.entity.UserProfile;
-import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import com.example.chat.llm.service.LLMInvokeService;
 import com.example.chat.repository.UserProfileRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,6 +45,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，业务方法已分别豁免
 public class ConversationMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationMemoryService.class);
@@ -215,15 +215,15 @@ public class ConversationMemoryService {
             sb.append("【最近对话】\n");
             for (ConversationEntry e : shortTerm) {
                 sb.append("用户: ").append(e.question).append('\n');
-                sb.append("AI: ").append(e.answer).append("\n\n");
+                sb.append("AI: ").append(e.answer).append('\n').append('\n');
             }
         }
 
         if (!longTerm.isEmpty()) {
             sb.append("【相关历史记忆】\n");
             for (ConversationEntry e : longTerm) {
-                sb.append("用户(").append(e.timeDesc).append("): ").append(e.question).append("\n");
-                sb.append("AI: ").append(e.answer).append("\n\n");
+                sb.append("用户(").append(e.timeDesc).append("): ").append(e.question).append('\n');
+                sb.append("AI: ").append(e.answer).append('\n').append('\n');
             }
         }
 
@@ -350,6 +350,7 @@ public class ConversationMemoryService {
     /**
      * 调用 LLM 从一轮对话中提炼用户画像（情景 / 情绪 / 偏好）。
      */
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull") // null 表示"提炼失败/无画像"，调用方依赖 null 判断
     private Map<String, Object> extractUserProfile(String question, String answer) {
         String systemPrompt =
                 "你是一名用户心理画像分析师，任务是从用户的情感倾诉中提炼用户画像。\n" +
@@ -387,7 +388,7 @@ public class ConversationMemoryService {
         return parseProfileJson(resp.getContent());
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "PMD.ReturnEmptyCollectionRatherThanNull"}) // null 表示"无画像"，调用方依赖 null 判断
     private Map<String, Object> parseProfileJson(String content) {
         String json = content.trim();
         int start = json.indexOf('{');
@@ -500,7 +501,8 @@ public class ConversationMemoryService {
     /**
      * 合并新旧画像：情景/情绪取最新，偏好增量合并去重，背景追加最新。
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "PMD.NPathComplexity", "PMD.ConfusingTernary"})
+    // 画像合并按字段类型分别取最新/合并去重，分支对称直白，拆分会引入大量中间 Map
     private Map<String, Object> mergeProfile(Map<String, Object> oldProfile, Map<String, Object> newProfile) {
         Map<String, Object> merged = new LinkedHashMap<>();
 

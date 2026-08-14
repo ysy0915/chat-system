@@ -12,6 +12,7 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -347,7 +348,7 @@ public class IntentFunnelEngine {
 
     private IntentCategory safeParseCategory(String name) {
         try {
-            return IntentCategory.valueOf(name.toUpperCase());
+            return IntentCategory.valueOf(name.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return IntentCategory.UNKNOWN;
         }

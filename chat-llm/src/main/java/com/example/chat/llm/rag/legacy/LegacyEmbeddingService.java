@@ -78,6 +78,8 @@ public class LegacyEmbeddingService {
     /**
      * 批量文本转向量（减少 API 调用次数，单次最多 10 条）
      */
+    @SuppressWarnings("PMD.AvoidRethrowingException")
+    // LLMCallException 需原样传播保留 statusCode，避免被 catch(Exception) 二次包装丢失语义
     public List<float[]> embedBatch(List<String> texts) {
         if (texts == null || texts.isEmpty()) {
             return List.of();
@@ -126,18 +128,19 @@ public class LegacyEmbeddingService {
                         "Embedding API 失败 status=" + response.statusCode());
             }
 
-            return parseResponse(response.body(), texts.size());
+            return parseResponse(response.body());
 
-        } catch (LLMCallException e) {
-            throw e;
+        } catch (LLMCallException le) {
+            throw le;
         } catch (Exception e) {
+            // 其余异常包装为 LLMCallException
             log.error("[LegacyEmbedding] 转向量失败 provider={} model={} error={}", provider, model, e.getMessage());
             throw new LLMCallException("Embedding 失败", e);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private List<float[]> parseResponse(String body, int expectedCount) throws Exception {
+    private List<float[]> parseResponse(String body) throws Exception {
         Map<String, Object> result = objectMapper.readValue(body, Map.class);
 
         if ("openai-compat".equalsIgnoreCase(apiMode)) {

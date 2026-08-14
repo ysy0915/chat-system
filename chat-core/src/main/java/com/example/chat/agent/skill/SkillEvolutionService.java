@@ -14,7 +14,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -153,7 +152,8 @@ public class SkillEvolutionService {
     /**
      * 解析 LLM 输出（JSON 数组），去重后存库并注册。
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "PMD.NPathComplexity"})
+    // 技能解析沉淀：字段提取/去重/入库冲突逐项防御，拆分会打散循环主体
     private void saveSkills(String raw, String userInput, String toolSummary) {
         String content = raw.trim();
         int start = content.indexOf('[');

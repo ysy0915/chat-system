@@ -63,6 +63,7 @@ public class CoreBusinessMetricsAspect {
      * 方法内部消化异常的对外语义（调用方 WorkflowReconciler/ResultCollector 感知不变）。
      */
     @Around("execution(* com.example.chat.agent.planner.AgentWorkflowOrchestrator.converge(..))")
+    @SuppressWarnings("PMD.AvoidCatchingThrowable") // AOP 边界：需捕获 Error 以记录 failed 指标
     public Object converge(ProceedingJoinPoint pjp) throws Throwable {
         try {
             Object result = pjp.proceed();

@@ -62,6 +62,7 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
     // ========= 非流式 =========
 
     @Override
+    @SuppressWarnings("PMD.AvoidCatchingThrowable") // 外部 API 边界：需捕获 Error 转换为失败响应（边界防护为有意设计）
     public LangChainResponse invoke(LangChainRequest request) {
         long start = System.currentTimeMillis();
         String model = resolveModel(request.getModel());
@@ -88,7 +89,7 @@ public class OpenAICompatProvider implements LLMProviderStrategy {
                 r.setElapsedMs(System.currentTimeMillis() - start);
                 return r;
             }
-        } catch (Throwable t) {
+        } catch (Throwable t) { // NOSONAR 外部 API 边界：需捕获 Error 转换为失败响应
             log.error("{} invoke 异常(Throwable) type={} msg={}", name(), t.getClass().getName(), t.getMessage(), t);
             LangChainResponse r = LangChainResponse.fail(t.getMessage(), request.getProvider());
             r.setElapsedMs(System.currentTimeMillis() - start);

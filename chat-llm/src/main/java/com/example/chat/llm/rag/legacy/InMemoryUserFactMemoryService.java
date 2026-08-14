@@ -117,11 +117,14 @@ public class InMemoryUserFactMemoryService implements UserFactMemory {
         }
     }
 
+    @SuppressWarnings("PMD.UseVarargs") // 双数组参数，varargs 只能修饰最后一个参数，无法转换
     private float cosine(float[] a, float[] b) {
         if (a.length != b.length) {
             return Float.NaN;
         }
-        double dot = 0, na = 0, nb = 0;
+        double dot = 0;
+        double na = 0;
+        double nb = 0;
         for (int i = 0; i < a.length; i++) {
             dot += a[i] * b[i];
             na += a[i] * a[i];
@@ -141,7 +144,7 @@ public class InMemoryUserFactMemoryService implements UserFactMemory {
 
         MemFact(String text, float[] vector, String scene, long ts) {
             this.text = text;
-            this.vector = vector;
+            this.vector = vector.clone();   // 防御性拷贝，避免外部数组被直接存储
             this.scene = scene;
             this.ts = ts;
         }

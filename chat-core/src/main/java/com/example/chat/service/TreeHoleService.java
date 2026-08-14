@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService;
  * 历史查询     → TreeHoleQueryService
  */
 @Service
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，业务方法已分别豁免
 public class TreeHoleService {
 
     private static final Logger log = LoggerFactory.getLogger(TreeHoleService.class);
@@ -100,6 +101,7 @@ public class TreeHoleService {
     /**
      * 带文件的树洞请求：图片 → qwen-vl-max 视觉解析；其他 → 智谱文本解析
      */
+    @SuppressWarnings("PMD.NPathComplexity") // 文件树洞多路分支（限流/类型识别/模型链选择/异步提交），拆分破坏降级优先级
     public TreeHoleMessage askWithFile(Long userId, String question, String mood,
                                        String fileName, byte[] fileBytes) {
         if (!rateLimitService.isAllowed(userId)) {
@@ -174,6 +176,8 @@ public class TreeHoleService {
     }
 
     /** 非图片文件：提取文本内容，用智谱解析 */
+    @SuppressWarnings("PMD.NPathComplexity")
+    // 文件类型分支(文本/二进制)+文档/PPT意图判断+提示词组装+情绪前缀，拆分影响可读性
     private String handleTextFile(String question, String mood, String fileName, byte[] fileBytes) throws Exception {
         ModelConfig zhipu = modelConfigResolver.resolveZhipuOrThrow();
 
@@ -270,9 +274,10 @@ public class TreeHoleService {
     }
 
     /** 流式调用核心逻辑 */
+    @SuppressWarnings("PMD.NPathComplexity") // 流式回调/思考链剥离/停止判定/落库多分支，拆分引入大量跨回调状态
     private void executeStreamCall(ModelConfig config, String effectiveApiKey,
-                                    List<LLMMessage> messages, String reqId,
-                                    Long fUserId, String question, TreeHoleMessage m, long startTime) {
+                                   List<LLMMessage> messages, String reqId,
+                                   Long fUserId, String question, TreeHoleMessage m, long startTime) {
         StringBuilder answerCollector = new StringBuilder();
         String topic = "/topic/treehole." + fUserId;
         final boolean[] thinkingStarted = {false};
@@ -323,9 +328,12 @@ public class TreeHoleService {
                         WsMessage.streamToken(close).withReqId(reqId).toMap());
             }
 
-            String answer = (!answerCollector.isEmpty())
-                    ? answerCollector.toString()
-                    : (rawAnswer != null ? rawAnswer : "");
+            String answer;
+            if (answerCollector.isEmpty()) {
+                answer = rawAnswer != null ? rawAnswer : "";
+            } else {
+                answer = answerCollector.toString();
+            }
 
             long latency = System.currentTimeMillis() - startTime;
             int estimatedTokens = Math.max(1, (answer != null ? answer.length() : 0) / 2);
@@ -357,12 +365,6 @@ public class TreeHoleService {
         } finally {
             streamStopManager.remove(reqId);
         }
-    }
-
-    private void sendToken(Long userId, String reqId, String token) {
-        if (streamStopManager.getOrDefault(reqId).get()) return;
-        broadcastService.broadcast("/topic/treehole." + userId,
-                WsMessage.streamToken(token).withReqId(reqId).toMap());
     }
 
     // ──────────────── 重新生成 ────────────────

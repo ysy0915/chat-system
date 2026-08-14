@@ -68,7 +68,7 @@ public class ProfileController {
         String name = body.get("name");
 
         if (nickname != null) user.nickname = nickname.trim();
-        if (name != null && !name.trim().isEmpty()) user.name = name.trim();
+        if (name != null && !name.trim().isBlank()) user.name = name.trim();
 
         userRepository.updateProfile(user);
 

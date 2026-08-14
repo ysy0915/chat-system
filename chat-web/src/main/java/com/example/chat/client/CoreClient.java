@@ -23,6 +23,7 @@ import java.util.Map;
  * chat-web 通过此客户端调用 chat-core 的 REST API
  */
 @Service
+@SuppressWarnings("PMD.CyclomaticComplexity") // 类级复杂度来自字段初始化器/流式匿名类，业务方法已分别豁免
 public class CoreClient {
 
     private static final Logger log = LoggerFactory.getLogger(CoreClient.class);

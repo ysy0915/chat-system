@@ -64,6 +64,8 @@ public class DebateGraphService {
         return execute(reqId, userId, topic, maxRounds);
     }
 
+    @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+    // 图编排：模型选取/建图/流式广播/状态推进，拆分会引入大量中间状态参数
     public DebateState execute(String reqId, Long userId, String topic, int rounds) {
         int effectiveRounds = Math.max(1, Math.min(10, rounds));
         log.info("[DebateGraph] 开始辩论 reqId={} userId={} topic={} rounds={}", reqId, userId, topic, effectiveRounds);
@@ -106,12 +108,10 @@ public class DebateGraphService {
                             broadcastService.broadcast("/topic/debate." + uid,
                                     WsMessage.of("round_start").withReqId(rid).with("round", round.get()).toMap());
                         }
-                    } else if ("summary".equals(event.getNodeId())) {
-                        if (uid != null && uid != 0) {
-                            broadcastService.broadcast("/topic/debate." + uid,
-                                    WsMessage.of("synthesizing").withReqId(rid)
-                                            .with("synthesizer", providerName(summaryModel)).toMap());
-                        }
+                    } else if ("summary".equals(event.getNodeId()) && uid != null && uid != 0) {
+                        broadcastService.broadcast("/topic/debate." + uid,
+                                WsMessage.of("synthesizing").withReqId(rid)
+                                        .with("synthesizer", providerName(summaryModel)).toMap());
                     }
                 }
                 case GraphStreamEventDto.TYPE_DELTA -> {

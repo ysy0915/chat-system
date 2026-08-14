@@ -154,7 +154,7 @@ public class GraphClient {
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (resp.statusCode() != 200) {
             log.warn("[GraphClient] {} HTTP {}", path, resp.statusCode());
-            return null;
+            return Map.of();
         }
         return objectMapper.readValue(resp.body(), Map.class);
     }
@@ -171,7 +171,7 @@ public class GraphClient {
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (resp.statusCode() != 200) {
             log.warn("[GraphClient] {} HTTP {}", path, resp.statusCode());
-            return null;
+            return Map.of();
         }
         return objectMapper.readValue(resp.body(), Map.class);
     }

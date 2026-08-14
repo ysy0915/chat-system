@@ -4,6 +4,50 @@
 
 ---
 
+## 〇〇〇〇、chat-llm `@MapperScan` bean 冲突修复（2026-08-15）
+
+### 1. 现象
+
+chat-llm 双实例（9095/9096）prod 启动失败，日志报：
+
+```
+Error creating bean with name 'conversationMemoryService':
+Unsatisfied dependency expressed through method 'setMemoryStore' parameter 0:
+No qualifying bean of type 'com.example.chat.llm.rag.legacy.MemoryKVStore' available:
+expected single matching bean but found 2: redisMemoryKVStore, memoryKVStore
+  - redisMemoryKVStore: defined in RedisMemoryKVStore.class (@Component)
+  - memoryKVStore: defined in MemoryKVStore.class
+```
+
+### 2. 根因
+
+`LlmApplication.MapperScanConfig` 的 `@MapperScan` 扫描了 `com.example.chat.llm.rag.legacy` 包，**未限制 `annotationClass`**。MyBatis Mapper 扫描器会将该包下**所有接口**（含无注解的领域接口 `MemoryKVStore` / `VectorStoreLegacy` / `UserFactMemory`）注册为 Mapper 代理 bean，bean 名为接口名首字母小写（如 `memoryKVStore`），与 `@Component` 的 `RedisMemoryKVStore`（`redisMemoryKVStore`）同时成为 `ConversationMemoryService.setMemoryStore()` 注入候选 → "found 2" 冲突。
+
+> 注：本地 standalone profile 测试不报错是因为 `app.mapper-scan.enabled=false` 关闭了 MapperScan；生产 `.env` 中 `NACOS_ENABLED=true` + `RAG_ENABLED=true` 且 `app.mapper-scan.enabled` 默认 `matchIfMissing=true`，MapperScan 启用后触发冲突。
+
+### 3. 修复
+
+`LlmApplication.java` 的 `@MapperScan` 加 `annotationClass = Mapper.class`，仅注册带 `@Mapper` 注解的接口：
+
+```java
+@MapperScan(annotationClass = Mapper.class, basePackages = {
+        "com.example.chat.repository",
+        "com.example.chat.llm.rag.legacy",
+        "com.example.chat.llm.llm.routing.db"})
+public static class MapperScanConfig {}
+```
+
+已核实：`com.example.chat.repository` 下 10 个接口、`RAGRepository`、`LlmRoutingRepository` 均带 `@Mapper` 注解，不受影响；无注解的领域接口不再被误扫。
+
+### 4. 验证
+
+- 重新打包 → 上传（MD5 `4ab4f4e4...`）→ 重启双实例
+- 9095/9096 `/actuator/health` 均 `UP`（MySQL/Redis/Neo4j/Nacos 全绿）
+- gRPC 9195/9196、HTTP 9095/9096 四端口正常监听
+- 日志确认 LLM 提供商路由正常加载
+
+---
+
 ## 〇〇〇、chat-llm standalone 纯内存模式（2026-08-14）
 
 ### 1. 背景
@@ -367,7 +411,7 @@ frontend             — 可拖拽树状辩论画布 + 思考链渲染
 
 - **两套 RAG 并存**：新版多数据源 RAG（`rag.enabled`，`EmbeddingService` 默认 1536 维）与 legacy kbId 模型（`app.rag.enabled`，`LegacyEmbeddingService` 1024 维）同驻 chat-llm，配置开关独立
 - **维度隔离**：旧知识库 / 意图匹配 Milvus 集合为 1024 维，与新版 1536 维不兼容，故 `LegacyEmbeddingService`（知识库）与 `IntentEmbeddingService`（意图 L2）独立实现
-- **chat-llm bean 注册**：`LlmApplication` 通过 `@MapperScan` 扫描 chat-common `repository` 包与 `rag.legacy` 包；`@Import` 显式注册 `LlmConfigProperties` / `DirectLLMClient` / `BaseUrlResolver` / `JwtUtil`（均位于 `com.example.chat.*` 默认扫描路径外）
+- **chat-llm bean 注册**：`LlmApplication` 通过 `@MapperScan(annotationClass = Mapper.class)` 扫描 chat-common `repository` 包与 `rag.legacy` 包（仅注册带 `@Mapper` 注解的接口，避免无注解领域接口如 `MemoryKVStore` 被误注册为 Mapper bean 与 `@Component` 实现类冲突）；`@Import` 显式注册 `LlmConfigProperties` / `DirectLLMClient` / `BaseUrlResolver` / `JwtUtil`（均位于 `com.example.chat.*` 默认扫描路径外）
 - **条件注册**：`/internal/rag/*` 与 `/api/v1/rag/*` 需 `app.rag.enabled=true`，新版 `/api/v1/llm/rag/*` 需 `rag.enabled=true`
 
 ### 部署要点

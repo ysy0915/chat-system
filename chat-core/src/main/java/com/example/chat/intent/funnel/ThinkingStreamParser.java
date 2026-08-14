@@ -1,5 +1,6 @@
 package com.example.chat.intent.funnel;
 
+import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
@@ -35,6 +36,7 @@ public class ThinkingStreamParser {
     private static final String THINKING_CLOSE = "</thinking>";
 
     private State state = State.AWAIT_THINKING;
+    @SuppressWarnings("PMD.AvoidStringBufferField") // 有状态流解析器：跨多次 token 调用持续 append/reset，字段级 buffer 是设计需要
     private final StringBuilder buf = new StringBuilder();
     private int receivedChars;
 
@@ -108,7 +110,7 @@ public class ThinkingStreamParser {
     /** 流结束后的状态描述（用于调试）。 */
     public String stateDescription() {
         if (nonThinkingMode) return "non-thinking";
-        return state.name().toLowerCase() + " (chars=" + receivedChars + ")";
+        return state.name().toLowerCase(Locale.ROOT) + " (chars=" + receivedChars + ")";
     }
 
     // ──────── 内部 ────────
@@ -158,6 +160,7 @@ public class ThinkingStreamParser {
     /**
      * 安全地 emit：保留尾部的可能标签前缀，只 emit 确定安全的部分。
      */
+    @SuppressWarnings("PMD.ConfusingTernary") // if-else 非对称分支为流式解析的语义要求（if 全量 flush / else 安全部分+缓存尾部）
     private void emitSafe(String s, String tag, Consumer<String> consumer) {
         // 短于 tag 长度的内容保留到下次
         if (s.length() <= tag.length()) return;

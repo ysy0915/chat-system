@@ -2,6 +2,7 @@ package com.example.chat.controller;
 
 import com.example.chat.client.CoreClient;
 import com.example.chat.config.WebSocketSessionTracker;
+import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.OnlineCountRepository;
 import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.service.OnlineCountRedisService;
@@ -35,6 +36,8 @@ class MonitorControllerTest {
     @Mock
     private OnlineCountRepository onlineCountRepository;
     @Mock
+    private MessageRepository messageRepository;
+    @Mock
     private WebSocketSessionTracker sessionTracker;
     @Mock
     private OnlineCountRedisService onlineCountRedisService;
@@ -51,7 +54,7 @@ class MonitorControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new MonitorController(onlineCountRepository, sessionTracker,
+        controller = new MonitorController(onlineCountRepository, messageRepository, sessionTracker,
                 onlineCountRedisService, adminAuthUtil, coreClient);
         ReflectionTestUtils.setField(controller, "redisTemplate", redisTemplate);
     }
@@ -142,13 +145,14 @@ class MonitorControllerTest {
     }
 
     @Test
-    void getTotalUsage_returnsSum() {
-        when(onlineCountRepository.sumAllCounts()).thenReturn(123L);
+    void getTotalUsage_returnsCompletedMessageCount() {
+        // 累计使用量 = 已完成且有答案的对话消息数
+        when(messageRepository.countAllWithAnswers()).thenReturn(10580);
 
         ResponseEntity<?> resp = controller.getTotalUsage();
 
         assertEquals(200, resp.getStatusCode().value());
-        assertEquals(123L, ((Map<?, ?>) resp.getBody()).get("totalUsage"));
+        assertEquals(10580L, ((Map<?, ?>) resp.getBody()).get("totalUsage"));
     }
 
     @Test

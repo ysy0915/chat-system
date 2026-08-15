@@ -5,6 +5,7 @@ import com.example.chat.common.ApiResponse;
 import com.example.chat.common.ErrorCode;
 import com.example.chat.config.WebSocketSessionTracker;
 import com.example.chat.entity.OnlineCountRecord;
+import com.example.chat.repository.MessageRepository;
 import com.example.chat.repository.OnlineCountRepository;
 import com.example.chat.security.AdminAuthUtil;
 import com.example.chat.service.OnlineCountRedisService;
@@ -35,6 +36,7 @@ public class MonitorController {
     private static final Logger log = LoggerFactory.getLogger(MonitorController.class);
 
     private final OnlineCountRepository onlineCountRepository;
+    private final MessageRepository messageRepository;
     private final WebSocketSessionTracker sessionTracker;
     private final OnlineCountRedisService onlineCountRedisService;
     private final AdminAuthUtil adminAuthUtil;
@@ -44,11 +46,13 @@ public class MonitorController {
     private RedisTemplate<String, String> redisTemplate;
 
     public MonitorController(OnlineCountRepository onlineCountRepository,
+                             MessageRepository messageRepository,
                              WebSocketSessionTracker sessionTracker,
                              OnlineCountRedisService onlineCountRedisService,
                              AdminAuthUtil adminAuthUtil,
                              CoreClient coreClient) {
         this.onlineCountRepository = onlineCountRepository;
+        this.messageRepository = messageRepository;
         this.sessionTracker = sessionTracker;
         this.onlineCountRedisService = onlineCountRedisService;
         this.adminAuthUtil = adminAuthUtil;
@@ -149,10 +153,11 @@ public class MonitorController {
         return ResponseEntity.ok(result);
     }
 
-    @Operation(summary = "累计使用量", description = "获取系统累计在线人次总和")
+    @Operation(summary = "累计使用量", description = "获取系统累计完成的对话消息数（真实使用量）")
     @GetMapping("/total-usage")
     public ResponseEntity<?> getTotalUsage() {
-        long total = onlineCountRepository.sumAllCounts();
+        // 真实使用量 = 已完成且有答案的对话消息数（而非在线人数快照累加）
+        long total = messageRepository.countAllWithAnswers();
         return ResponseEntity.ok(Map.of("totalUsage", total));
     }
 

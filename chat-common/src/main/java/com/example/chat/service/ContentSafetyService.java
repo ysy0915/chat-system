@@ -38,6 +38,9 @@ public class ContentSafetyService {
     private boolean clientReady;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
+    /** 检测异常（fail-close）时的标签：表示内容安全服务不可用，应拒绝放行 */
+    public static final String ERROR_LABEL = "SYSTEM_ERROR";
+
     @PostConstruct
     public void init() {
         if (!enabled) {
@@ -95,8 +98,10 @@ public class ContentSafetyService {
             }
             return null;
         } catch (Exception e) {
-            log.error("[ContentSafety] ⚠️ 异常放行: {}, text={}", e.getMessage(), (text.length() > 50 ? text.substring(0, 50) + "..." : text));
-            return null;
+            // fail-close：检测服务异常时不放行，返回错误标签由调用方拒绝（避免敏感内容绕过检测）
+            log.error("[ContentSafety] ❌ 检测异常，拒绝放行(fail-close): {}, text={}",
+                    e.getMessage(), (text.length() > 50 ? text.substring(0, 50) + "..." : text));
+            return ERROR_LABEL;
         }
     }
 
@@ -105,6 +110,7 @@ public class ContentSafetyService {
      */
     public String getLabelHint(String labels) {
         if (labels == null) return "内容包含敏感信息";
+        if (ERROR_LABEL.equals(labels)) return "内容安全服务暂不可用，请稍后重试";
         if (labels.contains("politics")) return "问题涉及敏感政治内容，请修改后重试";
         if (labels.contains("pornography")) return "问题包含不适当内容，请修改后重试";
         if (labels.contains("violence")) return "问题包含暴力内容，请修改后重试";

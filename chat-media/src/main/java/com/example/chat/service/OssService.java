@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Service;
 
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -86,9 +88,15 @@ public class OssService {
         Exception lastError = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                // SSRF 防护：校验 URL 协议与主机，拒绝内网/本地地址
+                URI uri = URI.create(sourceUrl);
+                if (!isSafeExternalUrl(uri)) {
+                    log.warn("[OSS] 拒绝转存不安全的 URL（SSRF 防护）: {}", sourceUrl);
+                    return sourceUrl;
+                }
                 // 下载文件
                 HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(sourceUrl))
+                        .uri(uri)
                         .timeout(java.time.Duration.ofSeconds(90))
                         .GET()
                         .build();
@@ -127,6 +135,42 @@ public class OssService {
         }
         log.warn("OSS 转存最终失败, 保留原URL: {} - {}", sourceUrl, lastError == null ? "unknown" : lastError.getMessage());
         return sourceUrl;
+    }
+
+    /**
+     * SSRF 防护：仅允许 http/https 协议，且目标主机必须是公网地址，
+     * 拒绝 localhost、回环地址、内网网段、链路本地等（防止利用 OSS 转存探测/攻击内网）。
+     */
+    private static boolean isSafeExternalUrl(URI uri) {
+        String scheme = uri.getScheme();
+        if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+            return false;
+        }
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            if (addr.isLoopbackAddress()
+                    || addr.isAnyLocalAddress()
+                    || addr.isLinkLocalAddress()
+                    || addr.isSiteLocalAddress()
+                    || addr.isMulticastAddress()) {
+                return false;
+            }
+            // 兜底：解析出多个地址时，任一为内网即拒绝（DNS 重绑定防护）
+            InetAddress[] all = InetAddress.getAllByName(host);
+            for (InetAddress a : all) {
+                if (a.isLoopbackAddress() || a.isAnyLocalAddress() || a.isLinkLocalAddress()
+                        || a.isSiteLocalAddress() || a.isMulticastAddress()) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (UnknownHostException e) {
+            return false;
+        }
     }
 
     private void sleepQuietly(long millis) {

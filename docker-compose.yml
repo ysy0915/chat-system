@@ -121,7 +121,8 @@ services:
     image: mysql:8.0
     container_name: chat-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: chat123
+      # 仅本地开发/CI 使用；生产走远程 RDS。密码建议通过环境变量覆盖：MYSQL_ROOT_PASSWORD=xxx
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-chat123_dev_only}
       MYSQL_DATABASE: chat_system
     ports:
       - "3306:3306"
@@ -146,8 +147,9 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: chat-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      # 仅本地开发使用；生产请通过环境变量覆盖默认账号密码
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -162,7 +164,8 @@ services:
     container_name: chat-nacos
     environment:
       MODE: standalone
-      NACOS_AUTH_ENABLE: "false"
+      # 生产环境建议开启鉴权（NACOS_AUTH_ENABLE=true），本地开发默认关闭
+      NACOS_AUTH_ENABLE: ${NACOS_AUTH_ENABLE:-false}
     ports:
       - "8848:8848"
     restart: unless-stopped
@@ -191,8 +194,9 @@ services:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     container_name: chat-milvus-minio
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      # 仅本地开发使用；生产请通过环境变量覆盖默认账号密码
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: minio server /data --console-address ":9001"
     volumes:
       - milvus-minio-data:/data
@@ -208,8 +212,9 @@ services:
     environment:
       ETCD_ENDPOINTS: milvus-etcd:2379
       MINIO_ADDRESS: milvus-minio:9000
-      MINIO_ACCESS_KEY_ID: minioadmin
-      MINIO_SECRET_ACCESS_KEY: minioadmin
+      # 与 milvus-minio 一致，仅本地开发使用
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "19530:19530"
       - "9091:9091"
@@ -228,7 +233,8 @@ services:
     image: neo4j:5.20.0
     container_name: chat-neo4j
     environment:
-      NEO4J_AUTH: neo4j/chat123456
+      # 仅本地开发使用；生产请通过 NEO4J_AUTH 环境变量覆盖
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/chat123456_dev_only}
     ports:
       - "7474:7474"
       - "7687:7687"
@@ -259,8 +265,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      # 仅本地开发使用；生产请通过环境变量覆盖默认账号密码
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin_dev_only}
     volumes:
       - ./docs/grafana/provisioning:/etc/grafana/provisioning:ro
     restart: unless-stopped

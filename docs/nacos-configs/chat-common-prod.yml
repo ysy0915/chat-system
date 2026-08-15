@@ -58,7 +58,9 @@ mybatis:
     map-underscore-to-camel-case: true
 
 jwt:
-  secret: ${JWT_SECRET:change-me-to-a-random-256-bit-string}
+  # 生产密钥必须由环境变量 JWT_SECRET 注入（至少 32 字节），不设默认值：
+  # 未配置时 JwtUtil 会生成随机密钥（重启即失效）或对短密钥直接拒绝启动，双重兜底
+  secret: ${JWT_SECRET:}
   expiration: 3600000
 
 # Actuator + Prometheus

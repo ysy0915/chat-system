@@ -68,7 +68,9 @@ export function useStompConnection({
             try { Promise.resolve(clientRef.current.deactivate()).catch(() => {}) } catch {}
         }
         const cfg = configRef.current
-        const sock = new SockJS(`/ws/chat?userId=${encodeURIComponent(userId)}`)
+        // SockJS 无法自定义 Header，JWT 经 query 参数传递（后端握手校验 token，userId 以 token 为准）
+        const token = localStorage.getItem('auth_token') || ''
+        const sock = new SockJS(`/ws/chat?userId=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`)
         const client = new Client({
             webSocketFactory: () => sock,
             debug: () => {},

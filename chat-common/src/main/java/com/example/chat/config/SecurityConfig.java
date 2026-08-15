@@ -5,6 +5,7 @@ import com.example.chat.security.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -18,9 +19,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 @Configuration
-// @EnableMethodSecurity 会在 Spring Security 6.x 中改变 AuthorizationFilter 行为，
-// 导致 SockJS WebSocket 的 xhr_send POST 请求被拒绝（403）。等 SockJS 升级后再启用。
-// @EnableMethodSecurity
+// 启用方法级鉴权（@PreAuthorize/@Secured）。
+// 仅开启 prePostEnabled：无注解的方法不受影响；WebSocket 的 /ws/** 已在 URL 层 permitAll，
+// SockJS 的 xhr_send/xhr_streaming 传输请求（/ws/chat/**）不会触发方法级拦截。
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
     private final JwtUtil jwtUtil;
 

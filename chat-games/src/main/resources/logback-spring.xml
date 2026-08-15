@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <springProperty name="APP_NAME" source="spring.application.name" defaultValue="app"/>
+
+    <!-- 日志脱敏 -->
+    <conversionRule conversionWord="maskedMsg" converterClass="com.example.chat.config.MaskingMessageConverter"/>
     <property name="LOG_DIR" value="${LOG_PATH:-./logs}" />
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %maskedMsg%n</pattern>
         </encoder>
     </appender>
 
@@ -19,7 +22,7 @@
             <totalSizeCap>500MB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %maskedMsg%n</pattern>
         </encoder>
     </appender>
 
@@ -32,7 +35,7 @@
             <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%X{traceId}] %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%X{traceId}] %maskedMsg%n</pattern>
         </encoder>
     </appender>
 

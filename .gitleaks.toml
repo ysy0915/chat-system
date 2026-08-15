@@ -23,8 +23,6 @@
     '''.idea/.*''',
     # 规则配置文件本身
     '''\.gitleaks\.toml''',
-    # Docker 构建上下文（本地开发密钥占位符）
-    '''docker-compose\.yml''',
   ]
 
   # 排除特定 commit

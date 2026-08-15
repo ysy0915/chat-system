@@ -17,8 +17,14 @@ docs/nacos-configs/.env
 node_modules/
 frontend/node_modules/
 
+# 前端构建产物（生产环境独立部署到 Nginx，不入库）
+frontend/dist/
+
 ### Runtime logs ###
 app.log
+*.log
+# 上传文件的本地落盘目录（生产走 OSS）
+uploads/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml

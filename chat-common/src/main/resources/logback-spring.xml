@@ -3,9 +3,12 @@
     <springProperty name="APP_NAME" source="spring.application.name" defaultValue="app"/>
     <property name="LOG_DIR" value="${LOG_PATH:-./logs}" />
 
+    <!-- 日志脱敏：遮蔽 JWT/签名 URL/敏感键值对（password/secret/token 等） -->
+    <conversionRule conversionWord="maskedMsg" converterClass="com.example.chat.config.MaskingMessageConverter"/>
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %maskedMsg%n</pattern>
         </encoder>
     </appender>
 
@@ -19,7 +22,7 @@
             <totalSizeCap>500MB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %maskedMsg%n</pattern>
         </encoder>
     </appender>
 
@@ -37,7 +40,14 @@
                 <providers>
                     <timestamp/>
                     <version/>
-                    <message/>
+                    <!-- 用 %maskedMsg 输出脱敏后的消息（与明文日志一致） -->
+                    <pattern>
+                        <pattern>
+                            {
+                                "message": "%maskedMsg"
+                            }
+                        </pattern>
+                    </pattern>
                     <loggerName/>
                     <threadName/>
                     <logLevel/>

@@ -66,6 +66,10 @@ public class ChatProcessor {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SummaryService summaryService;
 
+    /** 内容安全检测（输出侧，可选注入；仅引入阿里云 green SDK 时存在） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.chat.service.ContentSafetyService contentSafetyService;
+
     /** 知识图谱客户端（可选注入，失败不阻塞主流程；运行时已迁至 chat-llm） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.chat.client.GraphClient graphClient;
@@ -776,12 +780,18 @@ public class ChatProcessor {
                 WsMessage.of(WsMessage.TYPE_ANSWER).withReqId(reqId)
                         .with("user_id", userId).with("answer", answer).toMap());
 
-        chatCacheManager.save(question, provider, model, answer);
+        // 输出侧内容安全检测：命中敏感则不写入缓存/记忆，避免敏感内容被复用或污染（流式内容已推送，不回滚）
+        boolean answerSafe = checkOutputSafety(answer);
+        if (answerSafe) {
+            chatCacheManager.save(question, provider, model, answer);
 
-        // 保存对话记忆（异步 fire-and-forget）
-        ragClient.saveMemoryAsync("personal", userId, question, answer);
-        // L2: 异步抽取用户关键事实存 Milvus user_memory
-        ragClient.saveFactsAsync("personal", userId, question, answer);
+            // 保存对话记忆（异步 fire-and-forget）
+            ragClient.saveMemoryAsync("personal", userId, question, answer);
+            // L2: 异步抽取用户关键事实存 Milvus user_memory
+            ragClient.saveFactsAsync("personal", userId, question, answer);
+        } else {
+            log.warn("[ContentSafety] 输出命中敏感内容，跳过缓存/记忆写入 reqId={}", reqId);
+        }
 
         Message m = messageRepository.findByReqId(reqId);
         if (m != null) {
@@ -813,6 +823,29 @@ public class ChatProcessor {
                     log.warn("[KnowledgeGraph] 触发知识抽取失败 messageId={}: {}", m.id, ex.getMessage());
                 }
             }
+        }
+    }
+
+    /**
+     * 输出侧内容安全检测。
+     * <p>返回 false 表示命中敏感内容（或检测服务异常 fail-close）。流式输出已实时推送，
+     * 此处不阻断已推送内容，而是用于阻止敏感内容进入缓存/记忆/知识图谱等后续复用链路。</p>
+     */
+    private boolean checkOutputSafety(String answer) {
+        if (contentSafetyService == null) {
+            // 未引入内容安全 SDK（如 standalone 模式），跳过输出检测
+            return true;
+        }
+        try {
+            String label = contentSafetyService.detectSensitive(answer);
+            if (label != null) {
+                log.warn("[ContentSafety] 输出检测命中/异常 label={}", label);
+                return false;
+            }
+            return true;
+        } catch (Exception ex) {
+            log.error("[ContentSafety] 输出检测异常（按安全处理）: {}", ex.getMessage());
+            return false;
         }
     }
 

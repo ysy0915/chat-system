@@ -86,7 +86,7 @@ class AttachmentControllerTest {
 
     @Test
     void upload_nullUploader_defaultsToZero() throws Exception {
-        var file = new MockMultipartFile("file", "note", "text/plain", new byte[]{});
+        var file = new MockMultipartFile("file", "note.txt", "text/plain", new byte[]{1});
         when(attachmentRepository.insert(any())).thenAnswer(inv -> {
             inv.<Attachment>getArgument(0).id = 101L;
             return 1;
@@ -98,8 +98,33 @@ class AttachmentControllerTest {
         verify(attachmentRepository).insert(captor.capture());
         assertEquals(0L, captor.getValue().uploadedBy);
         assertNull(captor.getValue().messageId);
-        // 无扩展名文件：原始文件名保留在 filename 字段，存储名由 UUID 拼接生成
-        assertEquals("note", captor.getValue().filename);
+        assertEquals("note.txt", captor.getValue().filename);
         assertTrue(captor.getValue().storageUrl.contains("uploads"));
+    }
+
+    @Test
+    void upload_rejectsDisallowedExtension() throws Exception {
+        // 可执行/脚本文件应被扩展名白名单拒绝
+        var file = new MockMultipartFile("file", "evil.sh", "application/x-sh", new byte[]{1});
+        ResponseEntity<?> resp = controller.upload(file, null, null);
+        assertEquals(400, resp.getStatusCode().value());
+        verify(attachmentRepository, org.mockito.Mockito.never()).insert(any());
+    }
+
+    @Test
+    void upload_rejectsNoExtension() throws Exception {
+        // 无扩展名文件无法判断类型，应被拒绝
+        var file = new MockMultipartFile("file", "noext", "application/octet-stream", new byte[]{1});
+        ResponseEntity<?> resp = controller.upload(file, null, null);
+        assertEquals(400, resp.getStatusCode().value());
+        verify(attachmentRepository, org.mockito.Mockito.never()).insert(any());
+    }
+
+    @Test
+    void upload_rejectsEmptyFile() throws Exception {
+        var file = new MockMultipartFile("file", "empty.txt", "text/plain", new byte[]{});
+        ResponseEntity<?> resp = controller.upload(file, null, null);
+        assertEquals(400, resp.getStatusCode().value());
+        verify(attachmentRepository, org.mockito.Mockito.never()).insert(any());
     }
 }

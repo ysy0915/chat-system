@@ -56,6 +56,13 @@
             <version>5.2.5</version>
         </dependency>
 
+        <!-- 阿里云内容安全（LLM 输出检测；chat-common 中 optional，此处显式引入） -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>green20220302</artifactId>
+            <version>2.2.8</version>
+        </dependency>
+
         <!-- Milvus 向量数据库客户端（意图 L2 语义匹配） -->
         <dependency>
             <groupId>io.milvus</groupId>

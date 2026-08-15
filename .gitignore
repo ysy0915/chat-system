@@ -13,6 +13,11 @@ backup/
 # 本地敏感配置副本（真实 AK/SK/密码），仅存于工作区，禁止入库
 docs/nacos-configs/.env
 
+### 答辩材料（应试内容，不公开到开源仓库）###
+# 原理追问清单：含答辩问答，存于 ~/Documents/GOAI-答辩/
+docs/07-变更与经验/原理追问清单.md
+wiki/原理追问清单.md
+
 ### Node ###
 node_modules/
 frontend/node_modules/

@@ -8,7 +8,7 @@
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17-orange.svg)](pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1-brightgreen.svg)](pom.xml)
-[![Tests](https://img.shields.io/badge/Tests-892%20passed-success.svg)](#运行测试)
+[![Tests](https://img.shields.io/badge/Tests-895%20passed-success.svg)](#运行测试)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
 
 [English](README.en.md) | 简体中文
@@ -300,7 +300,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ## 运行测试
 
 ```bash
-# 全量测试（892 用例全绿）
+# 全量测试（895 用例全绿）
 mvn clean test
 
 # 单模块
@@ -333,9 +333,9 @@ mvn test -pl chat-media   # 26 个测试
 
 | 维度 | 指标 |
 |------|------|
-| 测试 | 全量 **892 用例全绿**，含 @SpringBootTest 集成测试、Mapper 契约测试 |
+| 测试 | 全量 **895 用例全绿**，含 @SpringBootTest 集成测试、Mapper 契约测试 |
 | 代码规范 | Checkstyle **0 违规** · PMD 2000+→92 · SpotBugs 0 阻断 |
-| 架构设计 | 双 core/双 web 高可用 + stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流 |
+| 架构设计 | 双 core 高可用 + web 弹性伸缩（Nacos 动态 upstream）+ stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流 |
 | 模型抽象 | Provider 策略 + SPI 策略工厂 + 注册中心 + 动态路由 + 模型自助管理面 + 工具平台化 + 存储 SPI 热插拔 |
 | 可观测性 | Prometheus 监控栈（系统 8 + 业务 4 条告警规则）+ Micrometer Tracing 全链路追踪 |
 | 文档 | 7 类文档中心 + ADR 架构决策记录（25 条）+ Swagger API 文档 |
@@ -409,6 +409,7 @@ mvn test -pl chat-media   # 26 个测试
 | 08-13 | Multi-Agent 并行工作流全链路 + 工具平台化 + 存储 SPI 热插拔 + 测试质量专项（892 用例全绿） |
 | 08-14 | chat-llm 独立部署 standalone 模式 + 树状辩论多模型化 |
 | 08-15 | 性能与稳定性加固（熔断/缓存双写/DLX）+ V1.2.0 DDL 上线 + 文档开源规范化 |
+| 08-16 | 安全加固（方法级鉴权/WebSocket 鉴权/日志脱敏/上传 SSRF）+ 依赖漏洞清零 + web 弹性伸缩（Nacos 动态 upstream）+ 在线人数真实统计（895 用例全绿） |
 
 > **关于提交历史**：早期开发过程中曾将模型 API Key 误写入代码仓库，为彻底清除敏感信息，对仓库进行了归档重建，故 Git 提交时间集中显示为 08-14 之后。完整迭代细节见 [架构评估报告.md](docs/01-架构设计/架构评估报告.md) 与 [CHANGELOG-3.0.md](docs/07-变更与经验/CHANGELOG-3.0.md)。
 

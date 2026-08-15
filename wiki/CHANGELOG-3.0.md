@@ -1,6 +1,40 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11（初版）· 持续更新至 2026-08-15
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-08-16
+
+---
+
+## 安全加固 + 弹性伸缩 + 在线人数真实统计（2026-08-16）
+
+### 1. 安全加固（6 项）
+
+| 项 | 内容 |
+|----|------|
+| 方法级鉴权 | 恢复 `@EnableMethodSecurity(prePostEnabled=true)`，管理密码改 `MessageDigest.isEqual` 常量时间比较，消除时序侧信道 |
+| WebSocket 双层鉴权 | 握手验 JWT（宽容匿名）+ 私有 topic 订阅级鉴权（`ChannelInterceptor`，防横向越权订阅他人消息） |
+| 日志脱敏 | 新增 `MaskingMessageConverter`（logback 自定义 converter），`%msg` → `%maskedMsg`，遮蔽 JWT/签名 URL/敏感键值对，明文+JSON 日志全覆盖 |
+| 删默认密码 | DB/中间件密码改环境变量注入（`${VAR:-dev_only}`），移除 gitleaks 对 docker-compose 的豁免，Nacos prod 配置明文默认值清空（`${VAR:}` 只从服务器 .env 注入） |
+| 上传/SSRF 防护 | `AttachmentController` 扩展名白名单 + 10MB 兜底 + UUID 文件名；`OssService` 仅 http/https + 拒绝内网/回环/链路本地 + DNS 重绑定防护 |
+| 内容安全 fail-close + 输出检测 | `detectSensitive` 异常返回 `SYSTEM_ERROR` 拒绝放行；chat-core 引入 green SDK，`ChatProcessor.checkOutputSafety` 对 LLM 完整答案检测，命中跳过缓存/记忆写入 |
+
+### 2. 依赖漏洞清零
+
+- 后端：`mysql-connector-j` 8.0.33→8.2.0、`poi-ooxml` 5.2.5→5.4.0
+- 前端：`react-router-dom` 6→7.18.2、`vite` 5→6.4.3、`vitest` 2→3.2.7、`esbuild`→0.25.12、`nanoid`→3.3.18
+- Dependabot 告警 12 项全部清零（含 1 critical / 2 high）
+
+### 3. Web 弹性伸缩 + 动态负载均衡
+
+- `nacos-upstream-sync.sh`：周期拉取 Nacos 健康实例 → 动态生成 Nginx upstream → 有变化才 reload
+- `web-scale.sh`：一键 scale-up/scale-down 扩缩容
+- 负载策略 `ip_hash` → `least_conn`（依赖跨节点广播兜底，放弃粘性换取动态扩容能力）
+
+### 4. 在线人数真实统计
+
+- `WebSocketSessionTracker` 直接统计真实 WebSocket 连接数并广播（60s 刷新）
+- `MonitorController.getTotalUsage` 累计使用量改为「已完成且有答案的对话消息数」（`countAllWithAnswers`），替代在线人数快照累加
+
+验证：全量 **895 用例全绿**（chat-common 277 / chat-core 257 / chat-web 93 / chat-llm 198 / chat-games 44 / chat-media 26）。
 
 ---
 
@@ -36,7 +70,6 @@
 | 连接池扩容 | HikariCP `maximum-pool-size`：chat-common 10→20、chat-llm 10→20；nacos 配置同步（chat-common-prod 20 / chat-core-prod 30） |
 | RabbitConfig 兼容 | Spring AMQP 3.0 移除 `QueueProperties`，改用 `QueueInformation`（`rabbitAdmin.getQueueInfo()` + `getMessageCount()`） |
 | 内存防护 | `RuleBasedMatcher` 状态机条目带最后活跃时间，**30 分钟 TTL 定时清理**过期状态；`DebateTreeProcessor` 无界队列 → `ThreadPoolFactory` 有界队列（`BoundedQueue` + CallerRuns），批量池类级复用不再每请求新建 |
-| 在线人数观感 | `WebSocketSessionTracker` 虚拟在线人数下限 0→30（范围 30-300），不再显示"0 人在线"冷清感 |
 | SQL 危险词正则 | `SqlExecutorController` 危险词匹配改**词边界正则**（`\b`），不再误伤 `created_at` 等含子串的字段 |
 | 压测脚本 | `stress-test/k6-http-test.js` 增加 `setup()` 单次登录共享 JWT（规避敏感接口 10 次/分钟 IP 限流），带鉴权打核心读接口 + 按 `SEND_RATIO` 触发 AI 链路 |
 

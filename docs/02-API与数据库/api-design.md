@@ -4,7 +4,7 @@
 >
 > 本文档包含 MySQL DDL、OpenAPI 概要、Redis 键设计、MQ 消息格式、WebSocket 流示例、完整 API 端点清单（对外约 123 + 内部约 48 + WebSocket 9 事件，按模块分组的精确统计见 §0.6）、索引与运维/安全建议。
 >
-> **2026-08-15 性能与稳定性加固同步**：缓存 Key 双写、流式 Token 合并广播、MQ MANUAL ack + DLX、Resilience4j 熔断、虚拟在线人数下限 30、SQL 危险词词边界、V1.2.0 数据库迁移。详见 §3/§4/§5/§7/§9/§13 标注。
+> **2026-08-16 安全加固 + 弹性伸缩同步**：方法级鉴权、WebSocket 订阅级鉴权、日志脱敏、上传/SSRF 防护、内容安全 fail-close、Nacos 动态 upstream 弹性伸缩、在线人数真实统计、累计使用量改为真实消息数。详见 §3/§4/§5/§7/§9/§13 标注。
 
 ## 0 V3.0 完整 API 端点清单（2026-08-15）
 
@@ -32,7 +32,7 @@
 | GET | `/api/v1/messages/recent` | 最近私聊消息 | JWT |
 | GET | `/api/v1/messages/search?keyword=` | 搜索私聊消息（全文索引） | JWT |
 | GET | `/api/v1/messages/context?msg_id=` | 获取消息上下文 | JWT |
-| GET | `/api/v1/messages/online-count?page=` | 在线人数（按页面，虚拟值区间 30-300） | 公开 |
+| GET | `/api/v1/messages/online-count?page=` | 在线人数（按页面，真实连接数） | 公开 |
 | POST | `/api/v1/messages/regenerate` | 重新生成回答 | JWT |
 | POST | `/api/v1/messages/stop` | 停止流式生成（广播到所有 core 实例） | JWT |
 
@@ -114,11 +114,11 @@
 | 方法 | 路径 | 说明 | 鉴权 |
 |------|------|------|------|
 | POST | `/api/v1/monitor/login` | 监控面板登录 | 公开 |
-| GET | `/api/v1/monitor/online-history?days=` | 在线人数历史（含虚拟值，下限 30） | X-Admin-Password |
-| GET | `/api/v1/monitor/current` | 当前在线人数（虚拟值 30-300，60s 刷新） | X-Admin-Password |
+| GET | `/api/v1/monitor/online-history?days=` | 在线人数历史（真实连接数快照） | X-Admin-Password |
+| GET | `/api/v1/monitor/current` | 当前在线人数（真实连接数，60s 刷新） | X-Admin-Password |
 | POST | `/api/v1/monitor/record` | 记录当前在线快照 | X-Admin-Password |
 | GET | `/api/v1/monitor/llm-stats?date=` | LLM 调用统计 | X-Admin-Password |
-| GET | `/api/v1/monitor/total-usage` | 总使用量 | X-Admin-Password |
+| GET | `/api/v1/monitor/total-usage` | 累计使用量（已完成且有答案的对话消息数） | X-Admin-Password |
 | GET | `/api/v1/monitor/traces?n=` | 最近调用链 | X-Admin-Password |
 | GET | `/api/v1/monitor/errors` | 错误统计 | X-Admin-Password |
 | GET | `/api/v1/monitor/traces/search?keyword=` | 搜索调用链 | X-Admin-Password |

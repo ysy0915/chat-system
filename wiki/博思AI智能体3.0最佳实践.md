@@ -72,8 +72,8 @@ AI回答你，而是一群AI一起帮你」。系统融合千问、DeepSeek、�
   - 游戏状态存Redis，支持水平扩展
   - nodeId固定为node-{port}，重启不生成新UUID，杜绝消息队列堆积
 
-生产环境双实例部署：
-  - chat-web双实例（8081/8082），Nginx ip_hash粘性负载均衡
+生产环境部署：
+  - chat-web 弹性伸缩（默认 8081，Nacos 服务发现 + least_conn 动态负载均衡，`web-scale.sh` 按需扩容）
   - chat-core双实例（9090主/9092从），web轮询调用，autoChat仅主实例执行
 
 2.3 双服务器资源最优分配
@@ -406,7 +406,7 @@ AI错误自愈策略：
 ------------------------
 
   core主（9090，Xmx768m）+ core从（9092，Xmx512m）
-  web双实例（8081/8082，各Xmx256m）
+  web（8081，Xmx256m，弹性伸缩按需扩容）
 
   - stop请求CoreClient.broadcast()广播到所有实例
   - 按端口精确pkill，restart-core.sh [9090|9092|all]

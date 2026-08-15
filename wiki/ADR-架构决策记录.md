@@ -190,3 +190,28 @@
   6. **连接池扩容**：HikariCP `maximum-pool-size` chat-common/chat-llm 10→20（nacos 同步），chat-core prod 30
   7. **SQL 危险词词边界**：`SqlExecutorController` 危险词匹配改 `\b` 词边界正则
 - **后果**：✅ 缓存从"永远失效"恢复真实命中；✅ MQ 消息量降一个数量级（前端延迟 ≤30ms 无感知）；✅ 熔断能识别慢请求/偶发抖动，指标可观测；✅ 失败消息可重试不丢失、状态机/线程池无 OOM 风险；⚠️ 缓存双写多一次 Redis set（可忽略）；⚠️ 流式合并广播需保证超时冲刷（30ms 窗口），极端低延迟场景延迟略增；⚠️ `V1.2.0` DDL（req_id 唯一索引 + question ngram 全文索引）已于 2026-08-15 执行完成；chat-core 257 / 全量 892 用例全绿。
+
+## ADR-026 安全加固：方法级鉴权 + WebSocket 鉴权 + 日志脱敏 + fail-close（2026-08-16）
+
+- **状态**：Accepted（2026-08-16 上线）
+- **背景**：代码走查发现多处「文档承诺但代码缺失」的安全硬伤：① `@EnableMethodSecurity` 被注释，方法级鉴权全缺失，管理接口用明文 `String.equals` 比密码（时序侧信道）；② WebSocket `/ws/**` permitAll，握手只读 `userId` 不验 JWT，可伪造 userId 订阅他人私有消息；③ 日志打印 JWT/OSS 签名 URL/密钥无脱敏；④ 配置文件硬编码默认密码（DB root、中间件默认口令），且 `.gitleaks.toml` 豁免了 docker-compose；⑤ 文件上传无类型校验、OSS 转存无 SSRF 防护；⑥ 内容安全异常 fail-open（放行）且只检输入不检输出。
+- **决策**：
+  1. **方法级鉴权**：恢复 `@EnableMethodSecurity(prePostEnabled=true)`（无注解方法不受影响，`/ws/**` 已 URL 层 permitAll，SockJS 不触发方法级拦截）；`AdminAuthUtil` 改 `MessageDigest.isEqual` 常量时间比较，消除时序侧信道
+  2. **WebSocket 双层鉴权**：握手拦截器读 query `token`（SockJS 无法设 Header），有效则绑定 token 中 `uid`（忽略可伪造的 `userId` 参数）；匿名连接允许但仅限公开 topic；`ChannelInterceptor` 订阅级鉴权——私有 topic（`/topic/user.*`/`debate.*`/`treehole.*`）必须登录且 uid 匹配，防横向越权
+  3. **日志脱敏**：新增 `MaskingMessageConverter`（logback 自定义 converter），`%msg` → `%maskedMsg`，遮蔽 JWT/签名 URL 参数/敏感键值对，明文+JSON 日志全覆盖
+  4. **删默认密码**：DB/中间件密码改环境变量注入（`${VAR:-dev_only}`），移除 gitleaks 对 docker-compose 的豁免
+  5. **上传/SSRF 防护**：`AttachmentController` 扩展名白名单 + 10MB 兜底 + UUID 文件名（防路径穿越）；`OssService` 仅 http/https + 拒绝内网/回环/链路本地 + DNS 重绑定防护
+  6. **内容安全 fail-close + 输出检测**：`detectSensitive` 异常返回 `SYSTEM_ERROR` 标签（调用方拒绝）；chat-core 引入 green SDK，`ChatProcessor.checkOutputSafety` 对 LLM 完整答案检测，命中跳过缓存/记忆写入（不阻断已推送流式内容）
+- **后果**：✅ 方法级鉴权恢复，时序攻击根除；✅ WebSocket 越权订阅封堵，且不破坏匿名在线人数/监控场景（宽容握手+订阅级鉴权的权衡）；✅ 日志敏感信息遮蔽；✅ 默认密码清零，gitleaks 恢复扫描 docker-compose；✅ 上传/SSRF 攻击面收敛；✅ 内容安全 fail-close，输出侧检测落地；⚠️ 流式输出检测不阻断已推送内容（流式架构固有特性），仅作用于缓存/记忆复用链路；⚠️ 上传扩展名白名单收紧了「无扩展名文件」历史行为（需产品确认）；全量 895 用例全绿。
+
+## ADR-027 弹性伸缩与服务发现：Nacos 动态 upstream + least_conn（2026-08-16）
+
+- **状态**：Accepted（2026-08-16 上线）
+- **背景**：web 实例数写死在 Nginx `upstream`（`ip_hash` + 固定 8081/8082），core 双实例靠 web 手动配 `base-urls`；想扩缩容必须改配置 + 手动 reload。且发现 `health-check.sh` 仍守护已废弃的 8082，导致「幽灵实例」（restart 脚本已注释 8082 但 health-check 仍拉起）。
+- **决策**：
+  1. **Nacos 服务发现正式启用**：实例启动自动注册、心跳超时自动摘除
+  2. **动态 upstream 同步器**：`nacos-upstream-sync.sh`（主服务器）周期拉取 Nacos 健康实例 → 生成 `/etc/nginx/conf.d/upstream.chat.conf` → 与旧配置 diff，有变化才 `nginx -s reload`；Nacos 无响应/无健康实例时保留旧配置（不破坏流量）；crontab 每分钟执行
+  3. **负载策略 `ip_hash` → `least_conn`**：放弃粘性，改用最小连接数（长连接 WebSocket 更均衡）
+  4. **弹性扩缩容控制器**：`web-scale.sh`（scale-up/scale-down/status）+ health-check 标记机制（`web-8082-disabled` 标记存在则跳过守护 8082）
+- **后果**：✅ 扩缩容零改配置、约 1 分钟自动生效（Nacos 摘除/注册 + cron 同步）；✅ 幽灵实例问题根除（标记机制接管 8082 守护）；✅ 纯轮询负载更均衡；⚠️ **放弃粘性依赖跨节点广播机制**——结果无论在哪节点生成，`BroadcastService` + RabbitMQ `cross-node` + `_nodeId` 都能推回真正持有用户连接的节点，这是放弃 `ip_hash` 的前提；⚠️ 主服务器 `nacos-upstream-sync.sh` 与 Milvus 服务器 `web-scale.sh`/`health-check.sh` 三处脚本需保持一致（仓库 `scripts/` 为权威源）。
+

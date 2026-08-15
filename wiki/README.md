@@ -35,7 +35,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [api-design.md](02-API与数据库/api-design.md) | V1.0 系统 ER 与 API 设计（MySQL DDL / OpenAPI / Redis 键） |
+| [api-design.md](02-API与数据库/api-design.md) | API 设计（§1-15 V1.0 历史存档 + §16+ V3.0 全量端点清单 146 个；MySQL DDL / OpenAPI / Redis 键） |
 | [数据库设计说明.md](02-API与数据库/数据库设计说明.md) | 表结构、索引策略、数据字典 |
 | [数据库ER图.md](02-API与数据库/数据库ER图.md) | 18 张表 ER 图（Mermaid） |
 | `db-migrations/` | 版本化 SQL 迁移脚本（V{版本}__{描述}.sql，见 `scripts/db-migrate.sh`） |

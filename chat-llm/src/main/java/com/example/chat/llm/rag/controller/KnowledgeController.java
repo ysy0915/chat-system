@@ -11,8 +11,6 @@ import com.example.chat.llm.rag.legacy.TextChunker;
 import com.example.chat.llm.rag.legacy.VectorStoreLegacy;
 import com.example.chat.common.ApiResponse;
 import com.example.chat.common.ErrorCode;
-import com.example.chat.security.AuthUtils;
-import com.example.chat.security.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,7 +24,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -63,7 +60,6 @@ public class KnowledgeController {
     private final VectorStoreLegacy vectorStoreService;
     private final DocumentParser documentParser;
     private final TextChunker textChunker;
-    private final JwtUtil jwtUtil;
     private final KeywordSearchService keywordSearchService;
     private final HybridSearchService hybridSearchService;
 
@@ -73,53 +69,28 @@ public class KnowledgeController {
     @Value("${app.rag.upload.max-size:10485760}")  // 默认 10MB
     private long maxUploadSize;
 
-    /** 安全开关（standalone 模式为 false，跳过 admin 校验） */
-    @Value("${app.security.enabled:true}")
-    private boolean securityEnabled;
-
     public KnowledgeController(RAGRepository ragRepository,
                                @org.springframework.beans.factory.annotation.Autowired(required = false) VectorStoreLegacy vectorStoreService,
                                DocumentParser documentParser,
                                TextChunker textChunker,
-                               JwtUtil jwtUtil,
                                @org.springframework.beans.factory.annotation.Autowired(required = false) KeywordSearchService keywordSearchService,
                                @org.springframework.beans.factory.annotation.Autowired(required = false) HybridSearchService hybridSearchService) {
         this.ragRepository = ragRepository;
         this.vectorStoreService = vectorStoreService;
         this.documentParser = documentParser;
         this.textChunker = textChunker;
-        this.jwtUtil = jwtUtil;
         this.keywordSearchService = keywordSearchService;
         this.hybridSearchService = hybridSearchService;
         this.ragExecutor = ThreadPoolFactory.create(2, 4, 50, "rag-ingest-");
     }
 
-    /** 校验 token 并要求 admin 角色，返回 null 表示通过，否则返回错误响应 */
-    private ResponseEntity<?> checkAdmin(String authHeader) {
-        // standalone 模式（app.security.enabled=false）关闭认证，直接放行
-        if (!securityEnabled) return null;
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "请先登录"));
-        }
-        String role = AuthUtils.extractRole(authHeader, jwtUtil);
-        if (role == null) {
-            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "登录已过期，请重新登录"));
-        }
-        if (!"admin".equals(role)) {
-            return ResponseEntity.status(403).body(ApiResponse.error(ErrorCode.FORBIDDEN, "仅管理员可操作知识库"));
-        }
-        return null;
-    }
-
     // ============ 知识库 CRUD ============
+
+    // 管理员鉴权由 RagAdminAuthInterceptor 统一处理（见 /api/v1/rag/** 拦截器）
 
     @Operation(summary = "创建知识库", description = "创建一个新的RAG知识库，需管理员权限")
     @PostMapping("/kb")
-    public ResponseEntity<?> createKnowledgeBase(@RequestBody Map<String, String> body,
-                                                  @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
-
+    public ResponseEntity<?> createKnowledgeBase(@RequestBody Map<String, String> body) {
         KnowledgeBase kb = new KnowledgeBase();
         kb.name = body.get("name");
         kb.description = body.getOrDefault("description", "");
@@ -134,20 +105,14 @@ public class KnowledgeController {
 
     @Operation(summary = "知识库列表", description = "列出所有已创建的知识库，需管理员权限")
     @GetMapping("/kb")
-    public ResponseEntity<?> listKnowledgeBases(@Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
+    public ResponseEntity<?> listKnowledgeBases() {
         return ResponseEntity.ok(ragRepository.findAllKnowledgeBases());
     }
 
     @Operation(summary = "删除知识库", description = "删除知识库及其向量数据，需管理员权限")
     @DeleteMapping("/kb/{id}")
     public ResponseEntity<?> deleteKnowledgeBase(
-            @Parameter(description = "知识库ID") @PathVariable Long id,
-            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
-
+            @Parameter(description = "知识库ID") @PathVariable Long id) {
         // 删除 Milvus 中的 Collection
         if (vectorStoreService != null) {
             vectorStoreService.dropCollection(id);
@@ -167,11 +132,7 @@ public class KnowledgeController {
     @PostMapping("/kb/{kbId}/documents")
     public ResponseEntity<?> uploadDocument(
             @Parameter(description = "知识库ID") @PathVariable Long kbId,
-            @Parameter(description = "上传的文件") @RequestParam("file") MultipartFile file,
-            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
-
+            @Parameter(description = "上传的文件") @RequestParam("file") MultipartFile file) {
         if (file.getSize() > maxUploadSize) {
             return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "文件超过 " + maxUploadSize + " 字节限制"));
         }
@@ -250,20 +211,14 @@ public class KnowledgeController {
     @Operation(summary = "文档列表", description = "列出指定知识库中的所有文档，需管理员权限")
     @GetMapping("/kb/{kbId}/documents")
     public ResponseEntity<?> listDocuments(
-            @Parameter(description = "知识库ID") @PathVariable Long kbId,
-            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
+            @Parameter(description = "知识库ID") @PathVariable Long kbId) {
         return ResponseEntity.ok(ragRepository.findDocumentsByKbId(kbId));
     }
 
     @Operation(summary = "删除文档", description = "删除指定文档及其向量数据，需管理员权限")
     @DeleteMapping("/documents/{id}")
     public ResponseEntity<?> deleteDocument(
-            @Parameter(description = "文档ID") @PathVariable Long id,
-            @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
+            @Parameter(description = "文档ID") @PathVariable Long id) {
         // 注意：Milvus 按 doc_id 删除向量需要额外实现 deleteEntities
         // 当前简化为只删除 MySQL 记录，向量残留可定期重建 Collection 清理
         ragRepository.deleteDocument(id);
@@ -279,11 +234,7 @@ public class KnowledgeController {
 
     @Operation(summary = "知识库检索测试", description = "在指定知识库中执行向量检索，返回语义相似的文档片段，用于测试检索效果")
     @PostMapping("/search")
-    public ResponseEntity<?> search(@RequestBody Map<String, Object> body,
-                                    @Parameter(description = "认证Token，格式：Bearer xxx") @RequestHeader(value = "Authorization", required = false) String auth) {
-        ResponseEntity<?> err = checkAdmin(auth);
-        if (err != null) return err;
-
+    public ResponseEntity<?> search(@RequestBody Map<String, Object> body) {
         Long kbId = ((Number) body.get("knowledgeBaseId")).longValue();
         String query = (String) body.get("query");
         int topK = body.containsKey("topK") ? ((Number) body.get("topK")).intValue() : 5;

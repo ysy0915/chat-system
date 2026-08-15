@@ -16,6 +16,10 @@ server:
 spring:
   application:
     name: chat-llm
+  config:
+    # 与 local 共享的基础配置（LLM 网关 / Resilience4j / Actuator / Logging / gRPC）
+    import:
+      - classpath:application-common.yml
   autoconfigure:
     # 排除不需要的自动配置（无 MySQL/Redis/RabbitMQ/Neo4j）
     exclude:
@@ -33,11 +37,6 @@ spring:
         enabled: false
       config:
         enabled: false
-
-# gRPC（可选，不需要可设为 -1 关闭）
-grpc:
-  server:
-    port: ${GRPC_PORT:9195}
 
 # RAG / 知识图谱 / 对话记忆 — 全部启用，纯内存实现（app.rag.backend=memory / app.knowledge-graph.backend=memory）
 # 模型管理面（DB CRUD）— 纯内存实现（app.llm.admin.memory=true），可用 /api/v1/llm/admin/providers 自助接入模型
@@ -65,89 +64,8 @@ app:
   mapper-scan:
     enabled: false
 
-# LLM 配置 — 只需配 API Key
-llm:
-  invoke-timeout-seconds: 120
-  max-retries: 2
-  retry-backoff-millis: 1000
-  providers:
-    - name: deepseek
-      type: rest
-      base-url: https://api.deepseek.com
-      path: /chat/completions
-      api-key: ${DEEPSEEK_API_KEY:}
-      models:
-        - deepseek-chat
-        - deepseek-reasoner
-    - name: qwen
-      type: rest
-      base-url: https://dashscope.aliyuncs.com/compatible-mode
-      path: /v1/chat/completions
-      api-key: ${QWEN_API_KEY:}
-      models:
-        - qwen-plus
-        - qwen-max
-        - qwen-turbo
-    - name: doubao
-      type: rest
-      base-url: https://ark.cn-beijing.volces.com/api/v3
-      path: /chat/completions
-      api-key: ${DOUBAO_API_KEY:}
-      models:
-        - doubao-seed-2-0-pro-260215
-        - doubao-seed-2-0-lite-260215
-    # 示例：OpenAI 官方
-    # - name: openai
-    #   type: rest
-    #   base-url: https://api.openai.com
-    #   path: /v1/chat/completions
-    #   api-key: ${OPENAI_API_KEY:}
-    #   models:
-    #     - gpt-4o
-    #     - gpt-4o-mini
-    # 示例：Ollama 本地模型
-    # - name: ollama
-    #   type: rest
-    #   base-url: http://127.0.0.1:11434
-    #   path: /v1/chat/completions
-    #   api-key: ollama
-    #   models:
-    #     - llama3
-    #     - qwen2.5
-
-# Resilience4j 熔断/重试/限流
-resilience4j:
-  circuitbreaker:
-    instances:
-      llm-cb-default:
-        failure-rate-threshold: 50
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-  retry:
-    instances:
-      llm-retry-default:
-        max-attempts: 3
-        wait-duration: 500ms
-  ratelimiter:
-    instances:
-      llm-rate-default:
-        limit-for-period: 10
-        limit-refresh-period: 1s
-
-# Actuator
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics,circuitbreakers,retries,ratelimiters
-  endpoint:
-    health:
-      show-details: always
-
-# Security — standalone 模式关闭认证
+# LLM 网关 / Resilience4j / Actuator / Logging 等基础配置见 application-common.yml
+# 仅增量开启策略包调试日志（公共部分已在 application-common.yml）
 logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
   level:
-    com.example.chat.llm: DEBUG
     com.example.chat.llm.strategy: DEBUG

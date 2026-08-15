@@ -13,13 +13,12 @@ spring:
       - optional:nacos:chat-web-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
   cloud:
     nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
       discovery:
         enabled: ${NACOS_ENABLED:false}
-        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         ip: ${NACOS_IP:}
       config:
         enabled: ${NACOS_ENABLED:false}
-        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         file-extension: yml
         group: CHAT
   datasource:

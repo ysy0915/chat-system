@@ -1,5 +1,6 @@
 # chat-llm 本地开发配置
 # 生产环境配置由 Nacos 提供: chat-llm-prod.yml + chat-common-prod.yml
+# 与 standalone 共享的基础配置见 application-common.yml（import 顺序靠前，本文件可覆盖）
 server:
   port: 9095
 
@@ -10,22 +11,22 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:local}
   config:
     import:
+      - classpath:application-common.yml
       - optional:nacos:chat-common-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
       - optional:nacos:chat-llm-${spring.profiles.active}.yml?group=CHAT&refreshEnabled=true
   cloud:
     nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
       discovery:
         enabled: ${NACOS_ENABLED:false}
-        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         ip: ${NACOS_IP:}
       config:
         enabled: ${NACOS_ENABLED:false}
-        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         file-extension: yml
         group: CHAT
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:chat_system}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai
+    url: ${DB_URL:jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:chat_system}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -51,11 +52,6 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
-
-# gRPC
-grpc:
-  server:
-    port: 9195
 
 # RAG（本地开发默认关闭）
 app:
@@ -102,70 +98,4 @@ app:
   knowledge-graph:
     enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
 
-# LLM 配置（本地开发）
-llm:
-  invoke-timeout-seconds: 120
-  max-retries: 2
-  retry-backoff-millis: 1000
-  providers:
-    - name: deepseek
-      type: rest
-      base-url: https://api.deepseek.com
-      path: /chat/completions
-      api-key: ${DEEPSEEK_API_KEY:}
-      models:
-        - deepseek-chat
-        - deepseek-reasoner
-    - name: qwen
-      type: rest
-      base-url: https://dashscope.aliyuncs.com/compatible-mode
-      path: /v1/chat/completions
-      api-key: ${QWEN_API_KEY:}
-      models:
-        - qwen-plus
-        - qwen-max
-        - qwen-turbo
-    - name: doubao
-      type: rest
-      base-url: https://ark.cn-beijing.volces.com/api/v3
-      path: /chat/completions
-      api-key: ${DOUBAO_API_KEY:}
-      models:
-        - doubao-seed-2-0-pro-260215
-        - doubao-seed-2-0-lite-260215
-
-# Resilience4j（本地开发简化配置）
-resilience4j:
-  circuitbreaker:
-    instances:
-      llm-cb-default:
-        failure-rate-threshold: 50
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-  retry:
-    instances:
-      llm-retry-default:
-        max-attempts: 3
-        wait-duration: 500ms
-  ratelimiter:
-    instances:
-      llm-rate-default:
-        limit-for-period: 10
-        limit-refresh-period: 1s
-
-# Actuator
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics,circuitbreakers,retries,ratelimiters
-  endpoint:
-    health:
-      show-details: always
-
-# Logging
-logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-N/A}] %logger{36} - %msg%n"
-  level:
-    com.example.chat.llm: DEBUG
+# LLM 网关 / Resilience4j / Actuator / Logging 等基础配置见 application-common.yml

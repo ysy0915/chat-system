@@ -6,7 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -21,9 +21,13 @@ import java.util.List;
  * 提供关键词召回，由 {@link HybridSearchService} 与向量结果做 RRF 融合。</p>
  *
  * <p>全部操作幂等 / 可降级：建表失败、检索失败均不影响主链路（向量检索）。</p>
+ *
+ * <p>条件装配：与 {@link LegacyVectorStoreService} 等一致，仅 milvus 持久化后端
+ * （{@code app.rag.enabled=true} 且 {@code app.rag.backend=milvus}）时创建。
+ * standalone（backend=memory）无 MySQL 依赖，自动跳过，关键词检索由纯向量检索降级兜底。</p>
  */
 @Service
-@ConditionalOnProperty(name = "app.rag.enabled", havingValue = "true")
+@ConditionalOnExpression("'${app.rag.enabled:false}' == 'true' and '${app.rag.backend:milvus}' == 'milvus'")
 public class KeywordSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(KeywordSearchService.class);

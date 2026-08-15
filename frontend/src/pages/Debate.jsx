@@ -43,6 +43,7 @@ export default function Debate() {
   const [finalAnswer, setFinalAnswer] = useState(null)
   const [synthesizing, setSynthesizing] = useState(false)
   const [synthesizer, setSynthesizer] = useState('')
+  const [reflecting, setReflecting] = useState(false)
   const [error, setError] = useState(null)
   const [modelNames, setModelNames] = useState({})
   const [, setWsStatus] = useState('connecting')
@@ -122,6 +123,7 @@ export default function Debate() {
       if (p.models?.length) summaryModelIdRef.current = p.models[p.models.length - 1].id
     } else if (p.type === 'round_start') {
       setCurrentRound(p.round)
+      setReflecting(false)
       // 每轮参与辩论的模型 id 由后端动态下发（0..N-1）；兼容旧版事件则回退为 [0..modelCount-1]
       setThinking(p.model_ids?.length ? [...p.model_ids] : Array.from({ length: modelCount }, (_, i) => i))
       setRounds(prev => {
@@ -167,8 +169,11 @@ export default function Debate() {
         next[roundIdx] = [...next[roundIdx], { modelId: p.model_id, provider: p.provider, answer: extractAnswer(p.answer) }]
         return next
       })
+    } else if (p.type === 'reflecting') {
+      setReflecting(true)
     } else if (p.type === 'synthesizing') {
       setThinking([])
+      setReflecting(false)
       setSynthesizing(true)
       setSynthesizer(p.synthesizer || modelNamesRef.current[summaryModelIdRef.current] || t('debate.synthesizer'))
     } else if (p.type === 'done') {
@@ -176,12 +181,14 @@ export default function Debate() {
         setFinalAnswer(extractAnswer(p.answer))
         setDebating(false)
         setSynthesizing(false)
+        setReflecting(false)
         setThinking([])
       }
     } else if (p.type === 'error') {
       setError(p.message)
       setDebating(false)
       setSynthesizing(false)
+      setReflecting(false)
       setThinking([])
     }
   }
@@ -231,6 +238,7 @@ export default function Debate() {
     setFinalAnswer(null)
     setSynthesizing(false)
     setSynthesizer('')
+    setReflecting(false)
     setThinking([])
     setError(null)
     setModelNames({})
@@ -393,6 +401,13 @@ export default function Debate() {
               </div>
             </div>
           ))}
+
+          {reflecting && (
+            <div className="debate-reflecting">
+              <div className="debate-synth-spinner"></div>
+              <span>{t('debate.reflecting')}</span>
+            </div>
+          )}
 
           {synthesizing && (
             <div className="debate-synthesizing">

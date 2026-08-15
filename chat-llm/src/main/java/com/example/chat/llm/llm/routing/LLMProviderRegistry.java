@@ -36,6 +36,9 @@ public class LLMProviderRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(LLMProviderRegistry.class);
 
+    /** 未配置 maxTokens 时的默认上限 */
+    private static final int DEFAULT_MAX_TOKENS = 4096;
+
     /** providerName → RouteContext */
     private final Map<String, RouteContext> routes = new ConcurrentHashMap<>();
 
@@ -93,7 +96,7 @@ public class LLMProviderRegistry {
                 mr.setName(modelName);
                 mr.setDisplayName(modelName);
                 mr.setModelType("chat");
-                mr.setMaxTokens(4096);
+                mr.setMaxTokens(DEFAULT_MAX_TOKENS);
                 mr.setEnabled(true);
                 mr.setDefault(i == 0);   // 第一个为默认
                 mr.setPriority(i);

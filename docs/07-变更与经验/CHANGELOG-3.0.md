@@ -4,6 +4,44 @@
 
 ---
 
+## 〇〇〇〇〇〇〇、观点辩论场第二轮提速：Reflection 事件可见化 + 提示词增强 + Redis 外存记忆（2026-08-15）
+
+### 1. 背景
+
+用户反馈观点辩论"第二轮启动比较慢"：每轮辩论 = `debate`(3 分支并行 LLM) + `reflect`(3 分支并行 LLM) 共 6 次 LLM 串行调用，但 reflect 节点事件此前全部落入 `default → ignore` 不广播，前端在 `round_end` 后长时间无任何反馈，形成静默期（几秒~几十秒），造成"第二轮启动慢"的体验。
+
+### 2. 变更内容（三层优化）
+
+| 层级 | 内容 |
+|------|------|
+| P0 提示词增强 | debate 分支 prompt 注入「对方上一轮反思立场」`{{state.conReflections[-1]}}`（反方/中立类推），reflect 分支新增"对方立场是否影响我的判断"自我审视；仅取 `[-1]` 负索引、窗口定长 ≤200 字，**零 token 增长** |
+| P1 Redis 外存记忆 | 新增 `debate:memory:{userId}:{topicHash}` JSON 定长窗口（每方仅存最后一条反思立场 + rounds + updatedAt），TTL 7 天；辩论结束 `saveHistoryMemory` 落库、启动时 `loadHistorySummary` 注入 `historySummary`——**同话题二次辩论首轮即带历史立场**；Redis 未配置时静默降级不 NPE |
+| P2 reflecting 事件 | reflect 节点 `branch_start`/`branch_end` 事件广播 `reflecting` WS 事件，前端展示「模型正在批判性反思上一轮观点，修正各自立场...」提示，消除静默期 |
+
+### 3. 实现
+
+| 文件 | 改动 |
+|------|------|
+| `DebateGraphService.java` | 新增 `RedisTemplate`/`ObjectMapper` 注入（`@Autowired(required = false)`）、`loadHistorySummary`/`saveHistoryMemory`/`appendMemory`/`last`/`memoryKey` 工具方法；`buildGraph` 增加 8 参重载注入 `historySummary`；debate/reflect prompt 引用 `{{state.conReflections[-1]}}` 与 `{{state.historySummary}}` |
+| `frontend/src/pages/Debate.jsx` | 新增 `reflecting` state，`reflecting` 事件时展示提示块，`round_start`/`synthesizing`/`done`/`error` 时重置 |
+| `frontend/src/i18n/translations.js` | 新增 `debate.reflecting` 中英文案 |
+| `frontend/src/styles/debate.css` | 新增 `.debate-reflecting` 样式（蓝紫色提示块 + 动画） |
+
+### 4. 验证与部署
+
+- chat-core 全量测试：**248 用例全绿**（含新增 `buildGraph_withHistoryMemory_injectsSummaryAndReflections`、`execute_savesHistoryMemoryToRedis`）
+- 测试日志确认 `key=debate:memory:4:11885b rounds=1` 落库
+- 前端 `npm run build` 通过
+- 生产部署：core 9090/9092 重启健康（`/actuator/health` UP），Redis 7.2.5 连接正常（记忆功能可用）
+
+### 5. 说明
+
+- 同话题二次辩论命中 `debate:memory:{userId}:{topicHash}` → 首轮即注入历史立场，实现"跨会话记忆"（与个人对话历史记忆不同，此为辩论立场级记忆）
+- 提示词窗口定长：仅取最后一条反思立场，不随轮次膨胀
+- reflect 事件属增强提示，不改变 `round_start → round_response → round_end` 主流程
+
+---
+
 ## 〇〇〇〇〇〇、RAG 能力升级：联网搜索 + 语义重排 + 引文溯源 + BM25 混合检索（2026-08-15）
 
 ### 1. 背景
@@ -686,7 +724,7 @@ POST   /api/v1/llm/admin/providers/reload   # 全量重载（reset → YAML → 
 
 - **reflect 反思节点**：每轮 `debate` 之后新增 N 方并行反思分支，各自读取「本轮自己观点 + 对方观点」，输出：1) 被反驳得有道理的点 2) 是否修正 3) 修正后的立场（≤100 字）
 - **裁决式汇总**：`summary` 基于反思后的最终立场（`{{state.proReflections[-1]}}` 等）输出【正方强调 / 反方强调 / 中立评价 / 关键分歧 / 共识结论】，替代机械归纳
-- **对前端无感**：reflect 节点事件（nodeId=`reflect`）不匹配现有 WS 协议分支，静默执行；前端看到的仍是 `round_start → round_response → round_end`，无协议变更
+- **事件可见化（2026-08-15 追加）**：reflect 节点事件现广播 `reflecting` WS 事件，前端展示「模型正在批判性反思上一轮观点...」提示，消除「第二轮启动慢」的静默期；`round_start → round_response → round_end` 主流程不变（详见顶部最新 CHANGELOG 条目）
 - **成本**：每轮辩论 LLM 调用从 3 次增至 6 次（3 辩论 + 3 反思），`maxSteps` 相应调整为 `rounds*4+2`
 
 ### 实现

@@ -7,13 +7,17 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.service.BroadcastService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,6 +49,15 @@ public class DebateGraphService {
     private BroadcastService broadcastService;
     @Autowired
     private ModelConfigRepository modelConfigRepository;
+
+    /** Redis 外存：跨会话话题记忆（可选依赖，无 Redis 时静默降级） */
+    @Autowired(required = false)
+    private RedisTemplate<String, String> redisTemplate;
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
+
+    private static final String DEBATE_MEMORY_PREFIX = "debate:memory:";
+    private static final Duration MEMORY_TTL = Duration.ofDays(7);
 
     @Value("${app.langgraph4j.debate.rounds:3}")
     private int maxRounds;
@@ -81,7 +94,8 @@ public class DebateGraphService {
                 .filter(m -> "qwen".equalsIgnoreCase(m.provider)).findFirst()
                 .orElseThrow(() -> new RuntimeException("需要千问模型"));
 
-        LangGraphRequest graphReq = buildGraph(reqId, userId, topic, proModel, conModel, summaryModel, effectiveRounds);
+        LangGraphRequest graphReq = buildGraph(reqId, userId, topic, proModel, conModel, summaryModel, effectiveRounds,
+                loadHistorySummary(userId, topic));
 
         DebateState result = new DebateState();
         result.setTopic(topic);
@@ -95,6 +109,9 @@ public class DebateGraphService {
         List<String> proArgs = new ArrayList<>();
         List<String> conArgs = new ArrayList<>();
         List<String> neutralArgs = new ArrayList<>();
+        List<String> proReflections = new ArrayList<>();
+        List<String> conReflections = new ArrayList<>();
+        List<String> neutralReflections = new ArrayList<>();
 
         final Long uid = userId;
         final String rid = reqId;
@@ -121,6 +138,9 @@ public class DebateGraphService {
                                     WsMessage.of("round_start").withReqId(rid).with("round", round.get())
                                             .with("model_ids", List.of(1, 2, 3)).toMap());
                         }
+                    } else if ("reflect".equals(event.getNodeId()) && uid != null && uid != 0) {
+                        broadcastService.broadcast("/topic/debate." + uid,
+                                WsMessage.of("reflecting").withReqId(rid).with("round", round.get()).toMap());
                     } else if ("summary".equals(event.getNodeId()) && uid != null && uid != 0) {
                         broadcastService.broadcast("/topic/debate." + uid,
                                 WsMessage.of("synthesizing").withReqId(rid)
@@ -160,6 +180,14 @@ public class DebateGraphService {
                                             .with("round", round.get()).with("model_id", modelId)
                                             .with("provider", provider).with("answer", answer).toMap());
                         }
+                    } else if ("reflect".equals(event.getNodeId()) && event.getBranchId() != null) {
+                        String answer = event.getData() != null ? event.getData() : "";
+                        switch (event.getBranchId()) {
+                            case "pro" -> proReflections.add(answer);
+                            case "con" -> conReflections.add(answer);
+                            case "neutral" -> neutralReflections.add(answer);
+                            default -> { /* ignore */ }
+                        }
                     }
                 }
                 case GraphStreamEventDto.TYPE_NODE_END -> {
@@ -190,9 +218,11 @@ public class DebateGraphService {
         result.setConArguments(conArgs);
         result.setNeutralArguments(neutralArgs);
         result.setSummary(success ? summaryBuilder.toString() : null);
+        saveHistoryMemory(userId, topic, proReflections, conReflections, neutralReflections);
 
-        log.info("[DebateGraph] 辩论完成 rounds={} pro={} con={} neutral={} success={} summaryLen={}",
-                round.get(), proArgs.size(), conArgs.size(), neutralArgs.size(), success,
+        log.info("[DebateGraph] 辩论完成 rounds={} pro={} con={} neutral={} reflect={}/{}/{} success={} summaryLen={}",
+                round.get(), proArgs.size(), conArgs.size(), neutralArgs.size(),
+                proReflections.size(), conReflections.size(), neutralReflections.size(), success,
                 summaryBuilder.length());
 
         return result;
@@ -203,6 +233,12 @@ public class DebateGraphService {
     private LangGraphRequest buildGraph(String reqId, Long userId, String topic,
                                         ModelConfig proModel, ModelConfig conModel,
                                         ModelConfig summaryModel, int maxRounds) {
+        return buildGraph(reqId, userId, topic, proModel, conModel, summaryModel, maxRounds, null);
+    }
+
+    private LangGraphRequest buildGraph(String reqId, Long userId, String topic,
+                                        ModelConfig proModel, ModelConfig conModel,
+                                        ModelConfig summaryModel, int maxRounds, String historySummary) {
         LangGraphRequest req = new LangGraphRequest();
         req.setProvider(conModel.provider);
         req.setModel(conModel.model);
@@ -216,6 +252,7 @@ public class DebateGraphService {
         state.put("reqId", reqId != null ? reqId : "");
         state.put("currentRound", 0);
         state.put("maxRounds", maxRounds);
+        state.put("historySummary", historySummary != null ? historySummary : "");
         state.put("proArguments", new ArrayList<String>());
         state.put("conArguments", new ArrayList<String>());
         state.put("neutralArguments", new ArrayList<String>());
@@ -229,18 +266,24 @@ public class DebateGraphService {
         inc.setNodeType("logic");
         inc.setLogic("increment:currentRound:1");
 
-        // debate：三方并行分支
+        // debate：三方并行分支（引用上一轮反思后的立场，避免反驳修正前的观点；外存历史记忆保证跨会话精度）
         LangGraphRequest.GraphNode debate = node("debate");
         debate.setBranches(List.of(
                 branch("pro", proModel, "你是辩论的正方。话题：「{{state.topic}}」\n" +
                         "反方上一轮观点：{{state.conArguments[-1]}}（若为空，说明是首轮，请直接阐述正方观点，无需反驳）\n" +
+                        "反方上一轮反思立场：{{state.conReflections[-1]}}（若为空，说明暂无反思记录，可忽略）\n" +
+                        "历史辩论记忆：{{state.historySummary}}（若为空，说明是首次辩论本话题，可忽略）\n" +
                         "请用 100 字以内给出你的观点。"),
                 branch("con", conModel, "你是辩论的反方。话题：「{{state.topic}}」\n" +
                         "正方上一轮观点：{{state.proArguments[-1]}}（若为空，说明是首轮，请直接阐述反方观点，无需反驳）\n" +
+                        "正方上一轮反思立场：{{state.proReflections[-1]}}（若为空，说明暂无反思记录，可忽略）\n" +
+                        "历史辩论记忆：{{state.historySummary}}（若为空，说明是首次辩论本话题，可忽略）\n" +
                         "请用 100 字以内给出你的观点。"),
                 branch("neutral", summaryModel, "你是辩论的中立方评论员。话题：「{{state.topic}}」\n" +
                         "正方上一轮观点：{{state.proArguments[-1]}}；反方上一轮观点：{{state.conArguments[-1]}}\n" +
+                        "正方上一轮反思立场：{{state.proReflections[-1]}}；反方上一轮反思立场：{{state.conReflections[-1]}}\n" +
                         "（若以上观点为空，说明是首轮，请直接针对话题给出 100 字以内的客观分析，无需评价双方）\n" +
+                        "历史辩论记忆：{{state.historySummary}}（若为空，说明是首次辩论本话题，可忽略）\n" +
                         "请用 100 字以内给出你的客观分析。")
         ));
         debate.getBranches().get(0).setSink("proArguments");
@@ -250,24 +293,28 @@ public class DebateGraphService {
         debate.getBranches().get(2).setSink("neutralArguments");
         debate.getBranches().get(2).setSinkAppend(true);
 
-        // reflect：三方批判性反思（Reflection 循环——审视自己/对方观点后修正立场）
+        // reflect：三方批判性反思（Reflection 循环——审视自己/对方观点后修正立场，
+        // 并参考对方上一轮反思立场实现跨轮立场演进）
         LangGraphRequest.GraphNode reflect = node("reflect");
         reflect.setBranches(List.of(
                 branch("pro", proModel, "你是辩论的正方。话题：「{{state.topic}}」\n" +
                         "你的本轮观点：{{state.proArguments[-1]}}\n" +
                         "反方本轮观点：{{state.conArguments[-1]}}\n" +
+                        "反方上一轮反思立场：{{state.conReflections[-1]}}（若为空，说明是首轮反思，可忽略）\n" +
                         "中立方本轮观点：{{state.neutralArguments[-1]}}\n\n" +
-                        "请批判性反思（100 字以内）：1) 我的观点哪一点被对方反驳得有道理？2) 我是否要修正或补充？3) 修正后的最终立场是什么？"),
+                        "请批判性反思（100 字以内）：1) 我的观点哪一点被对方反驳得有道理？2) 对方上一轮反思立场是否影响我的判断？3) 我是否要修正或补充？4) 修正后的最终立场是什么？"),
                 branch("con", conModel, "你是辩论的反方。话题：「{{state.topic}}」\n" +
                         "你的本轮观点：{{state.conArguments[-1]}}\n" +
                         "正方本轮观点：{{state.proArguments[-1]}}\n" +
+                        "正方上一轮反思立场：{{state.proReflections[-1]}}（若为空，说明是首轮反思，可忽略）\n" +
                         "中立方本轮观点：{{state.neutralArguments[-1]}}\n\n" +
-                        "请批判性反思（100 字以内）：1) 我的观点哪一点被对方反驳得有道理？2) 我是否要修正或补充？3) 修正后的最终立场是什么？"),
+                        "请批判性反思（100 字以内）：1) 我的观点哪一点被对方反驳得有道理？2) 对方上一轮反思立场是否影响我的判断？3) 我是否要修正或补充？4) 修正后的最终立场是什么？"),
                 branch("neutral", summaryModel, "你是辩论的中立方评论员。话题：「{{state.topic}}」\n" +
                         "你的本轮分析：{{state.neutralArguments[-1]}}\n" +
                         "正方本轮观点：{{state.proArguments[-1]}}\n" +
-                        "反方本轮观点：{{state.conArguments[-1]}}\n\n" +
-                        "请批判性反思（100 字以内）：1) 正方与反方哪方论证更严谨？2) 双方各自的漏洞是什么？3) 修正后的客观评价是什么？")
+                        "反方本轮观点：{{state.conArguments[-1]}}\n" +
+                        "正方上一轮反思立场：{{state.proReflections[-1]}}；反方上一轮反思立场：{{state.conReflections[-1]}}\n\n" +
+                        "请批判性反思（100 字以内）：1) 正方与反方哪方论证更严谨？2) 双方各自的漏洞是什么？3) 双方立场是否因反思而靠近？4) 修正后的客观评价是什么？")
         ));
         reflect.getBranches().get(0).setSink("proReflections");
         reflect.getBranches().get(0).setSinkAppend(true);
@@ -311,6 +358,70 @@ public class DebateGraphService {
     }
 
     // ---- 工具 ----
+
+    /**
+     * 从 Redis 外存加载该用户该话题的历史辩论记忆（各取最后一条反思立场，固定大小不膨胀）。
+     * 无 Redis 或首次辩论时返回空串。
+     */
+    private String loadHistorySummary(Long userId, String topic) {
+        if (redisTemplate == null || objectMapper == null || userId == null || topic == null || topic.isBlank()) {
+            return "";
+        }
+        try {
+            String raw = redisTemplate.opsForValue().get(memoryKey(userId, topic));
+            if (raw == null || raw.isBlank()) {
+                return "";
+            }
+            JsonNode node = objectMapper.readTree(raw);
+            StringBuilder sb = new StringBuilder();
+            appendMemory(sb, node, "proReflection", "正方上次立场");
+            appendMemory(sb, node, "conReflection", "反方上次立场");
+            appendMemory(sb, node, "neutralReflection", "中立方上次评价");
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("[DebateGraph] 读取历史记忆失败 key={}", memoryKey(userId, topic), e);
+            return "";
+        }
+    }
+
+    /** 把本轮反思后的最终立场写入 Redis（TTL 7 天），供同话题二次辩论复用。 */
+    private void saveHistoryMemory(Long userId, String topic, List<String> proReflections,
+                                   List<String> conReflections, List<String> neutralReflections) {
+        if (redisTemplate == null || objectMapper == null || userId == null || topic == null || topic.isBlank()) {
+            return;
+        }
+        try {
+            Map<String, Object> mem = new LinkedHashMap<>();
+            mem.put("topic", topic);
+            mem.put("updatedAt", System.currentTimeMillis());
+            mem.put("proReflection", last(proReflections));
+            mem.put("conReflection", last(conReflections));
+            mem.put("neutralReflection", last(neutralReflections));
+            mem.put("rounds", proReflections == null ? 0 : proReflections.size());
+            redisTemplate.opsForValue().set(memoryKey(userId, topic),
+                    objectMapper.writeValueAsString(mem), MEMORY_TTL);
+            log.info("[DebateGraph] 已写入历史记忆 key={} rounds={}", memoryKey(userId, topic), mem.get("rounds"));
+        } catch (Exception e) {
+            log.warn("[DebateGraph] 写入历史记忆失败 key={}", memoryKey(userId, topic), e);
+        }
+    }
+
+    private static void appendMemory(StringBuilder sb, JsonNode node, String field, String label) {
+        if (node.hasNonNull(field)) {
+            String text = node.get(field).asText("");
+            if (!text.isBlank()) {
+                sb.append(label).append('：').append(text).append("；");
+            }
+        }
+    }
+
+    private static String last(List<String> list) {
+        return list == null || list.isEmpty() ? "" : list.get(list.size() - 1);
+    }
+
+    private static String memoryKey(Long userId, String topic) {
+        return DEBATE_MEMORY_PREFIX + userId + ':' + Integer.toHexString(topic.hashCode());
+    }
 
     private LangGraphRequest.GraphNode node(String id) {
         LangGraphRequest.GraphNode n = new LangGraphRequest.GraphNode();

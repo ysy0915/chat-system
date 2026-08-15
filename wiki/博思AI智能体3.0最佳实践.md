@@ -207,6 +207,9 @@ Fluent API风格统一：
   - 轮数由参数透传（默认3轮，可选1-10轮）
   - Reflection反思：每轮辩论后 N 方批判性审视，修正立场
   - 裁决式汇总：基于反思后的最终立场输出，替代机械归纳
+  - 提示词增强（2026-08-15）：debate 引用对方上一轮反思立场 {{state.conReflections[-1]}}，reflect 自审视"对方立场是否影响我的判断"，窗口定长零 token 增长
+  - 外存记忆（2026-08-15）：Redis debate:memory:{userId}:{topicHash} 跨会话注入 historySummary（TTL 7 天，无 Redis 静默降级），同话题二次辩论首轮即带历史立场
+  - 事件可见化（2026-08-15）：reflect 阶段广播 reflecting WS 事件，前端显示"模型正在批判性反思上一轮观点..."提示，消除第二轮静默期
 
 5.2 树状辩论：Plan-and-Execute混合模式
 ------------------------

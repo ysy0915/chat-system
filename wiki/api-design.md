@@ -254,6 +254,7 @@
 | `round_start` | S→C | 辩论轮次开始 `{type, round, model_ids}` |
 | `round_response` | S→C | 辩论轮次响应 |
 | `round_end` | S→C | 辩论轮次结束 |
+| `reflecting` | S→C | 辩论反思中（Reflection 阶段提示，2026-08-15 新增）`{type}` |
 | `synthesis` | S→C | 辩论汇总 |
 
 ---
@@ -267,8 +268,8 @@
 | chat-llm 内部端点 | **15** |
 | chat-games 端点 | **4** |
 | chat-media 端点 | **4** |
-| WebSocket 事件 | **8** |
-| **合计** | **~103 个端点 + 8 个 WS 事件** |
+| WebSocket 事件 | **9** |
+| **合计** | **~103 个端点 + 9 个 WS 事件** |
 
 ---
 
@@ -394,7 +395,7 @@ Schemas（简要）:
 - GET /users/{id}/history
 - POST /messages  (入库并推 MQ，返回 202)
 - GET /messages/{id}
-- POST /debate    (启动辩论：`{topic, rounds, model_count, mode}`；`model_count` 默认 3 限 3~6，从已配置 chat 模型随机组队，WS 推送 round_start/round_response/stream_token/synthesis 等事件)
+- POST /debate    (启动辩论：`{topic, rounds, model_count, mode}`；`model_count` 默认 3 限 3~6，从已配置 chat 模型随机组队，WS 推送 round_start/round_response/reflecting/stream_token/synthesis 等事件)
 - Admin: /admin/models CRUD
 
 行为说明：POST /messages 校验后入库(status=queued)并 publish 到 MQ，返回 202 Accepted 与消息 id，前端通过 WS 接收流式更新或后续 GET 获取最终结果。

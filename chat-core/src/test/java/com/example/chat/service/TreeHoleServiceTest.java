@@ -45,7 +45,7 @@ class TreeHoleServiceTest {
     }
 
     @Test
-    @DisplayName("情绪树洞简单输出 → 无 thinking 标签，全部为回答")
+    @DisplayName("情绪树洞简单输出 → 无分隔符/标签时按初始态归为思考")
     void shouldHandleNoThinkingInTreeHoleMode() {
         List<String> thinkingTokens = new ArrayList<>();
         List<String> answerTokens = new ArrayList<>();
@@ -56,12 +56,15 @@ class TreeHoleServiceTest {
                 () -> {}
         );
 
-        // LLM 判断问题简单，未生成 thinking 标签
+        // 解析器初始态为 IN_THINKING（LLM 先输出思考），无 ---answer--- 分隔符或 <thinking> 标签时
+        // 全部内容按思考兜底处理；树洞模式 LLM 始终输出分隔符，此场景仅作防御验证
         parser.feed("你好呀！今天想聊些什么呢？");
         parser.flush();
 
-        assertTrue(thinkingTokens.isEmpty(), "无标签时不产生 thinking");
-        assertTrue(answerTokens.stream().anyMatch(t -> t.contains("你好")));
+        assertFalse(thinkingTokens.isEmpty(), "无分隔符时内容应归为思考内容");
+        // 流式安全 emit 可能拆分 token（feed 时保留尾部防截断分隔符，flush 输出剩余）
+        assertTrue(String.join("", thinkingTokens).contains("你好"), "思考内容应保留原文");
+        assertTrue(answerTokens.isEmpty(), "未出现分隔符，不应产生 answer");
     }
 
     @Test

@@ -44,13 +44,19 @@
     <module name="TreeWalker">
 
         <!-- ========== 命名规范 ========== -->
-        <module name="ConstantName"/>
+        <module name="ConstantName">
+            <!-- 项目统一使用 private static final Logger log，允许小写 log 常量 -->
+            <property name="format" value="^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$|^log$"/>
+        </module>
         <module name="LocalFinalVariableName"/>
         <module name="LocalVariableName"/>
         <module name="MemberName">
             <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
         </module>
-        <module name="MethodName"/>
+        <module name="MethodName">
+            <!-- 测试方法采用 snake_case（如 extract_okJson_extracts），camelCase 亦合法 -->
+            <property name="format" value="^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"/>
+        </module>
         <module name="PackageName">
             <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
         </module>

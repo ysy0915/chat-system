@@ -2,12 +2,14 @@ package com.example.chat.llm.rag.controller;
 
 import com.example.chat.dto.LangChainRequest;
 import com.example.chat.dto.LangChainResponse;
+import com.example.chat.llm.rag.hybrid.HybridSearchService;
 import com.example.chat.llm.rag.legacy.ConversationMemoryService;
 import com.example.chat.llm.rag.legacy.LegacyEmbeddingService;
 import com.example.chat.llm.rag.legacy.UserFactMemory;
 import com.example.chat.llm.rag.legacy.VectorStoreLegacy;
 import com.example.chat.llm.service.LLMInvokeService;
 import org.slf4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -45,6 +47,7 @@ public class LegacyRagController {
     private final LegacyEmbeddingService embeddingService;
     private final LLMInvokeService llmInvokeService;
     private final UserFactMemory factMemoryService;
+    private final HybridSearchService hybridSearchService;
 
     private final ExecutorService streamExecutor = new ThreadPoolExecutor(
             2, 8, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>(100),
@@ -63,12 +66,14 @@ public class LegacyRagController {
                                ConversationMemoryService memoryService,
                                LegacyEmbeddingService embeddingService,
                                LLMInvokeService llmInvokeService,
-                               UserFactMemory factMemoryService) {
+                               UserFactMemory factMemoryService,
+                               @Autowired(required = false) HybridSearchService hybridSearchService) {
         this.vectorStoreService = vectorStoreService;
         this.memoryService = memoryService;
         this.embeddingService = embeddingService;
         this.llmInvokeService = llmInvokeService;
         this.factMemoryService = factMemoryService;
+        this.hybridSearchService = hybridSearchService;
     }
 
     // ──────────── 知识库检索 ────────────────────────────
@@ -79,13 +84,14 @@ public class LegacyRagController {
         String query = (String) req.get("query");
         int k = req.get("topK") != null ? ((Number) req.get("topK")).intValue() : topK;
 
-        List<VectorStoreLegacy.SearchResult> results = vectorStoreService.search(kbId, query, k);
+        List<VectorStoreLegacy.SearchResult> results = retrieve(kbId, query, k);
         List<Map<String, Object>> list = results.stream().map(r -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("text", r.text);
             m.put("source", r.source);
             m.put("docId", r.docId);
             m.put("score", r.score);
+            m.put("page", r.page);
             return m;
         }).toList();
         return Map.of("success", true, "results", list, "total", list.size());
@@ -264,8 +270,23 @@ public class LegacyRagController {
         return lmReq;
     }
 
+    /**
+     * 统一检索入口：优先走混合检索（向量 + BM25 → RRF → Rerank），
+     * hybrid 未启用时降级纯向量检索。
+     */
+    private List<VectorStoreLegacy.SearchResult> retrieve(Long kbId, String query, int k) {
+        if (hybridSearchService != null) {
+            try {
+                return hybridSearchService.search(kbId, query, k);
+            } catch (Exception e) {
+                log.warn("[RAG] 混合检索失败，降级纯向量: {}", e.getMessage());
+            }
+        }
+        return vectorStoreService.search(kbId, query, k);
+    }
+
     private String retrieveContext(Long kbId, String query, int k) {
-        List<VectorStoreLegacy.SearchResult> results = vectorStoreService.search(kbId, query, k);
+        List<VectorStoreLegacy.SearchResult> results = retrieve(kbId, query, k);
         if (results.isEmpty()) return null;
 
         StringBuilder sb = new StringBuilder();
@@ -273,7 +294,8 @@ public class LegacyRagController {
         for (VectorStoreLegacy.SearchResult r : results) {
             if (r.score < scoreThreshold) continue;
             if (totalChars + r.text.length() > maxContextChars) break;
-            sb.append("--- 来源: ").append(r.source).append(" (相似度: ")
+            String pageInfo = r.page > 0 ? " 第" + r.page + "页" : "";
+            sb.append("--- 来源: ").append(r.source).append(pageInfo).append(" (相似度: ")
               .append(String.format("%.2f", r.score)).append(") ---\n");
             sb.append(r.text).append("\n\n");
             totalChars += r.text.length();

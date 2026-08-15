@@ -79,6 +79,7 @@ public class InMemoryVectorStoreService implements VectorStore, VectorStoreLegac
                             chunks.get(i).chunkIndex,
                             chunks.get(i).text,
                             source,
+                            chunks.get(i).page,
                             vectors.get(i)));
                 }
             }
@@ -173,7 +174,7 @@ public class InMemoryVectorStoreService implements VectorStore, VectorStoreLegac
         List<SearchResult> results = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             ScoredChunk s = scored.get(i);
-            results.add(new SearchResult(s.chunk.text, s.chunk.source, s.chunk.docId, s.score));
+            results.add(new SearchResult(s.chunk.text, s.chunk.source, s.chunk.docId, s.score, s.chunk.page));
         }
         return results;
     }
@@ -234,14 +235,16 @@ public class InMemoryVectorStoreService implements VectorStore, VectorStoreLegac
         final int chunkIndex;
         final String text;
         final String source;
+        final int page;
         final float[] vector;
 
-        MemChunk(long id, long docId, int chunkIndex, String text, String source, float... vector) {
+        MemChunk(long id, long docId, int chunkIndex, String text, String source, int page, float... vector) {
             this.id = id;
             this.docId = docId;
             this.chunkIndex = chunkIndex;
             this.text = text;
             this.source = source;
+            this.page = page;
             this.vector = vector.clone();   // 防御性拷贝，避免外部数组被直接存储
         }
     }

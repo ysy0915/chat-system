@@ -1,7 +1,9 @@
 package com.example.chat.llm.rag.controller;
 
 import com.example.chat.config.ThreadPoolFactory;
+import com.example.chat.llm.rag.hybrid.HybridSearchService;
 import com.example.chat.llm.rag.legacy.DocumentParser;
+import com.example.chat.llm.rag.legacy.KeywordSearchService;
 import com.example.chat.llm.rag.legacy.KnowledgeBase;
 import com.example.chat.llm.rag.legacy.KnowledgeDocument;
 import com.example.chat.llm.rag.legacy.RAGRepository;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -61,6 +64,8 @@ public class KnowledgeController {
     private final DocumentParser documentParser;
     private final TextChunker textChunker;
     private final JwtUtil jwtUtil;
+    private final KeywordSearchService keywordSearchService;
+    private final HybridSearchService hybridSearchService;
 
     /** 文档解析/向量化异步线程池：不阻塞 HTTP 上传线程 */
     private final ExecutorService ragExecutor;
@@ -76,12 +81,16 @@ public class KnowledgeController {
                                @org.springframework.beans.factory.annotation.Autowired(required = false) VectorStoreLegacy vectorStoreService,
                                DocumentParser documentParser,
                                TextChunker textChunker,
-                               JwtUtil jwtUtil) {
+                               JwtUtil jwtUtil,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false) KeywordSearchService keywordSearchService,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false) HybridSearchService hybridSearchService) {
         this.ragRepository = ragRepository;
         this.vectorStoreService = vectorStoreService;
         this.documentParser = documentParser;
         this.textChunker = textChunker;
         this.jwtUtil = jwtUtil;
+        this.keywordSearchService = keywordSearchService;
+        this.hybridSearchService = hybridSearchService;
         this.ragExecutor = ThreadPoolFactory.create(2, 4, 50, "rag-ingest-");
     }
 
@@ -143,6 +152,10 @@ public class KnowledgeController {
         if (vectorStoreService != null) {
             vectorStoreService.dropCollection(id);
         }
+        // 删除 BM25 关键词分片（可开关，失败不影响主删除）
+        if (keywordSearchService != null) {
+            keywordSearchService.deleteByKb(id);
+        }
         ragRepository.deleteKnowledgeBase(id);
         log.info("[RAG] 删除知识库 id={}", id);
         return ResponseEntity.ok(Map.of("message", "已删除"));
@@ -196,16 +209,27 @@ public class KnowledgeController {
     /** 异步执行文档解析 → 分片 → 向量化入库 → 状态更新 */
     private void ingestDocumentAsync(long kbId, long docId, String fileName, byte[] bytes) {
         try {
-            // 2. 解析文档为纯文本
-            String text = documentParser.parse(fileName, bytes);
+            // 2. 分页解析：PDF 保留物理页码（引文溯源「第 X 页」），docx/txt 视为单页
+            List<DocumentParser.PageText> pages = documentParser.parsePages(fileName, bytes);
 
-            // 3. 分片
-            List<VectorStoreLegacy.ChunkText> chunks = textChunker.chunk(text);
-            log.info("[RAG] 文档 {} 解析+分片完成 共 {} 片", fileName, chunks.size());
+            // 3. 逐页分片，chunkIndex 全局递增
+            List<VectorStoreLegacy.ChunkText> chunks = new ArrayList<>();
+            int globalIndex = 0;
+            for (DocumentParser.PageText page : pages) {
+                for (VectorStoreLegacy.ChunkText c : textChunker.chunk(page.text())) {
+                    chunks.add(new VectorStoreLegacy.ChunkText(c.text, globalIndex++, page.pageNo()));
+                }
+            }
+            log.info("[RAG] 文档 {} 解析+分片完成 共 {} 片（{} 页）", fileName, chunks.size(), pages.size());
 
-            // 4. 向量化入库
+            // 4. 向量化入库（Milvus / 内存，含 page 字段）
             if (vectorStoreService != null) {
                 vectorStoreService.insertChunks(kbId, docId, chunks, fileName);
+            }
+
+            // 4.5 关键词分片落 MySQL（BM25 混合检索通道，可开关）
+            if (keywordSearchService != null) {
+                keywordSearchService.insertChunks(kbId, docId, chunks, fileName);
             }
 
             // 5. 更新文档状态
@@ -243,6 +267,10 @@ public class KnowledgeController {
         // 注意：Milvus 按 doc_id 删除向量需要额外实现 deleteEntities
         // 当前简化为只删除 MySQL 记录，向量残留可定期重建 Collection 清理
         ragRepository.deleteDocument(id);
+        // 删除 BM25 关键词分片（可开关，失败不影响主删除）
+        if (keywordSearchService != null) {
+            keywordSearchService.deleteByDoc(id);
+        }
         log.info("[RAG] 删除文档 id={}", id);
         return ResponseEntity.ok(Map.of("message", "已删除"));
     }
@@ -264,12 +292,18 @@ public class KnowledgeController {
             return ResponseEntity.internalServerError().body(ApiResponse.error(ErrorCode.INTERNAL_ERROR, "向量库未启用"));
         }
 
-        List<VectorStoreLegacy.SearchResult> results = vectorStoreService.search(kbId, query, topK);
+        List<VectorStoreLegacy.SearchResult> results;
+        if (hybridSearchService != null) {
+            results = hybridSearchService.search(kbId, query, topK);
+        } else {
+            results = vectorStoreService.search(kbId, query, topK);
+        }
         return ResponseEntity.ok(results.stream().map(r -> Map.of(
                 "text", r.text,
                 "source", r.source,
                 "docId", r.docId,
-                "score", r.score
+                "score", r.score,
+                "page", r.page
         )).toList());
     }
 

@@ -86,6 +86,19 @@ app:
       score-threshold: 0.3
     context:
       max-chars: 3000
+    # 语义重排（Rerank）—— 标准 RAG 精排层；provider=none 关闭
+    rerank:
+      enabled: ${RERANK_ENABLED:false}
+      provider: ${RERANK_PROVIDER:none}                 # none | jina | local
+      base-url: ${RERANK_BASE_URL:https://api.jina.ai/v1/rerank}
+      model: ${RERANK_MODEL:jina-reranker-v2-base-multilingual}
+      api-key: ${RERANK_API_KEY:}
+      timeout-seconds: 10
+    # 混合检索（Hybrid Search）—— 向量 + BM25 关键词 → RRF 融合
+    hybrid:
+      keyword-enabled: ${HYBRID_KEYWORD_ENABLED:false}   # 开启后需 MySQL ngram（建表自动幂等）
+      recall-factor: 3                                    # 召回放大系数
+      rrf-k: 60                                           # RRF 融合常数
   knowledge-graph:
     enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
 

@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -22,6 +24,37 @@ import java.util.Locale;
 public class DocumentParser {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentParser.class);
+
+    /** 分页解析结果：pageNo 为物理页码（从 1 开始），text 为该页纯文本 */
+    public record PageText(int pageNo, String text) {}
+
+    /**
+     * 分页解析文档：PDF 按物理页逐页提取（用于引文溯源「第 X 页」）；
+     * docx/txt 等无分页概念视为单页（pageNo=1）。
+     *
+     * @param fileName 文件名（用于判断类型）
+     * @param bytes 文件内容
+     * @return 分页文本列表（空文档返回空列表）
+     */
+    public List<PageText> parsePages(String fileName, byte[] bytes) {
+        if (fileName == null || bytes == null) {
+            return List.of();
+        }
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        try {
+            if (lower.endsWith(".pdf")) {
+                return parsePdfPages(bytes);
+            }
+            String text = parse(fileName, bytes);
+            if (text == null || text.isBlank()) {
+                return List.of();
+            }
+            return List.of(new PageText(1, text));
+        } catch (Exception e) {
+            log.error("[DocParser] 分页解析失败 file={} error={}", fileName, e.getMessage());
+            throw new ChatServiceException("文档解析", "PARSE_FAILED", "文档解析失败: " + fileName, e);
+        }
+    }
 
     /**
      * 根据文件名后缀解析文档
@@ -56,6 +89,24 @@ public class DocumentParser {
             PDFTextStripper stripper = new PDFTextStripper();
             return stripper.getText(doc);
         }
+    }
+
+    /** PDF 逐页提取文本，空白页跳过（页码仍保留物理页号，便于引文溯源） */
+    private List<PageText> parsePdfPages(byte[] bytes) throws Exception {
+        List<PageText> pages = new ArrayList<>();
+        try (PDDocument doc = Loader.loadPDF(bytes)) {
+            int total = doc.getNumberOfPages();
+            for (int i = 1; i <= total; i++) {
+                PDFTextStripper stripper = new PDFTextStripper();
+                stripper.setStartPage(i);
+                stripper.setEndPage(i);
+                String text = stripper.getText(doc);
+                if (text != null && !text.isBlank()) {
+                    pages.add(new PageText(i, text));
+                }
+            }
+        }
+        return pages;
     }
 
     private String parseDocx(byte[] bytes) throws Exception {

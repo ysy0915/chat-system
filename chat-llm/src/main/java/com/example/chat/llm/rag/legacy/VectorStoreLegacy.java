@@ -53,10 +53,17 @@ public interface VectorStoreLegacy {
     final class ChunkText {
         public final String text;
         public final int chunkIndex;
+        /** 所在页码（PDF 物理页码；docx/txt 为 1；无页概念为 0） */
+        public final int page;
 
         public ChunkText(String text, int chunkIndex) {
+            this(text, chunkIndex, 0);
+        }
+
+        public ChunkText(String text, int chunkIndex, int page) {
             this.text = text;
             this.chunkIndex = chunkIndex;
+            this.page = page;
         }
     }
 
@@ -66,12 +73,19 @@ public interface VectorStoreLegacy {
         public final String source;
         public final long docId;
         public final float score;
+        /** 引文页码（便于前端溯源展示「第 X 页」） */
+        public final int page;
 
         public SearchResult(String text, String source, long docId, float score) {
+            this(text, source, docId, score, 0);
+        }
+
+        public SearchResult(String text, String source, long docId, float score, int page) {
             this.text = text;
             this.source = source;
             this.docId = docId;
             this.score = score;
+            this.page = page;
         }
     }
 }

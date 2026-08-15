@@ -125,6 +125,15 @@ app:
       rounds: 3
   observability:
     enabled: ${OBSERVABILITY_ENABLED:true}
+  # ═══ 联网搜索（web_search / web_fetch 工具，对标 DeepSeek 联网搜索） ═══
+  web-search:
+    enabled: ${WEB_SEARCH_ENABLED:true}
+    provider: ${WEB_SEARCH_PROVIDER:duckduckgo}   # duckduckgo(免费无key) | serpapi(需 api-key)
+    api-key: ${WEB_SEARCH_API_KEY:}
+    max-results: 5                                   # 每次搜索返回条数
+    max-chars: 3000                                  # web_fetch 抓取正文最大字符数
+    timeout-seconds: 10
+
   # ═══ 意图识别 — 三层漏斗架构 ═══
   #   L1 规则层：关键词 Trie / 正则 / 状态机     — 0-1ms，命中率 5-15%
   #   L2 上下文层：Embedding + Milvus 语义匹配   — 30-80ms，命中率 70-85%

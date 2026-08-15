@@ -71,11 +71,16 @@ public class RagClient {
             if (results == null) return List.of();
             List<SearchResult> list = new ArrayList<>(results.size());
             for (Map<String, Object> r : results) {
+                int page = 0;
+                if (r.get("page") instanceof Number n) {
+                    page = n.intValue();
+                }
                 list.add(new SearchResult(
                         (String) r.get("text"),
                         (String) r.get("source"),
                         ((Number) r.get("docId")).longValue(),
-                        ((Number) r.get("score")).floatValue()));
+                        ((Number) r.get("score")).floatValue(),
+                        page));
             }
             return list;
         } catch (Exception e) {
@@ -310,5 +315,10 @@ public class RagClient {
 
     // ──────────── DTO ───────────────────────────────────
 
-    public record SearchResult(String text, String source, long docId, float score) {}
+    public record SearchResult(String text, String source, long docId, float score, int page) {
+        /** 兼容无页码旧调用 */
+        public SearchResult(String text, String source, long docId, float score) {
+            this(text, source, docId, score, 0);
+        }
+    }
 }

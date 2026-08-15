@@ -98,6 +98,11 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
                 .withDataType(DataType.Int64)
                 .build();
 
+        FieldType pageField = FieldType.newBuilder()
+                .withName("page")
+                .withDataType(DataType.Int64)
+                .build();
+
         FieldType textField = FieldType.newBuilder()
                 .withName("text")
                 .withDataType(DataType.VarChar)
@@ -122,6 +127,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
                 .addFieldType(idField)
                 .addFieldType(docIdField)
                 .addFieldType(chunkIndexField)
+                .addFieldType(pageField)
                 .addFieldType(textField)
                 .addFieldType(sourceField)
                 .addFieldType(embeddingField)
@@ -180,6 +186,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
         // 构建插入数据
         List<Long> docIds = new ArrayList<>();
         List<Long> chunkIndices = new ArrayList<>();
+        List<Long> pageList = new ArrayList<>();
         List<String> textList = new ArrayList<>();
         List<String> sourceList = new ArrayList<>();
         List<List<Float>> embeddingList = new ArrayList<>();
@@ -187,6 +194,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
         for (int i = 0; i < chunks.size(); i++) {
             docIds.add(docId);
             chunkIndices.add((long) chunks.get(i).chunkIndex);
+            pageList.add((long) chunks.get(i).page);
             textList.add(chunks.get(i).text);
             sourceList.add(source);
 
@@ -198,6 +206,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
         List<InsertParam.Field> fields = new ArrayList<>();
         fields.add(new InsertParam.Field("doc_id", docIds));
         fields.add(new InsertParam.Field("chunk_index", chunkIndices));
+        fields.add(new InsertParam.Field("page", pageList));
         fields.add(new InsertParam.Field("text", textList));
         fields.add(new InsertParam.Field("source", sourceList));
         fields.add(new InsertParam.Field("embedding", embeddingList));
@@ -234,7 +243,7 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
                 .withTopK(topK)
                 .withVectors(List.of(vec))
                 .withVectorFieldName("embedding")
-                .withOutFields(List.of("text", "source", "doc_id", "chunk_index"))
+                .withOutFields(List.of("text", "source", "doc_id", "chunk_index", "page"))
                 .withParams("{\"ef\":" + searchEf + "}")
                 .build();
 
@@ -248,8 +257,14 @@ public class LegacyVectorStoreService implements VectorStore, VectorStoreLegacy 
                 String text = wrapper.getFieldData("text", 0).get(i).toString();
                 String source = wrapper.getFieldData("source", 0).get(i).toString();
                 long docId = Long.parseLong(wrapper.getFieldData("doc_id", 0).get(i).toString());
+                int page = 0;
+                try {
+                    page = Integer.parseInt(wrapper.getFieldData("page", 0).get(i).toString());
+                } catch (Exception ignored) {
+                    // 老数据无 page 字段，兼容为 0
+                }
 
-                results.add(new VectorStoreLegacy.SearchResult(text, source, docId, score.getScore()));
+                results.add(new VectorStoreLegacy.SearchResult(text, source, docId, score.getScore(), page));
             }
             log.info("[VectorStore] 检索 collection={} topK={} 命中={}", collectionName, topK, results.size());
             return results;

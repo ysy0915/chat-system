@@ -45,9 +45,9 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [announcementOpen, setAnnouncementOpen] = useState(false)
 
-    // 公告未读红点：用户首次看到公告前显示（v4：8月14日第三次更新，重置未读红点）
+    // 公告未读红点：用户首次看到公告前显示（v5：8月15日第四次更新，重置未读红点）
     const userId = authUser?.id || localStorage.getItem('online_presence_guest_id') || 'guest'
-    const seenKey = `announcement_seen_v4_${userId}`
+    const seenKey = `announcement_seen_v5_${userId}`
     const [announcementUnread, setAnnouncementUnread] = useState(() => !localStorage.getItem(seenKey))
 
     const handleOpenAnnouncement = () => {
@@ -175,9 +175,6 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
 
                             <p style={{ fontWeight: 700 }}>{t('nav.announcement.s6Title')}</p>
                             <p>{t('nav.announcement.s6Body')}</p>
-
-                            <p style={{ fontWeight: 700 }}>{t('nav.announcement.s7Title')}</p>
-                            <p>{t('nav.announcement.s7Body')}</p>
 
                             <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(0,0,0,0.35)' }}>{t('nav.announcement.date')}</p>
                         </div>

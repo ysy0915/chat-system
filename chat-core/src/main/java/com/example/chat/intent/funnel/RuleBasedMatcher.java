@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -50,10 +51,12 @@ public class RuleBasedMatcher {
     private final List<IntentRule> regexRules = Collections.synchronizedList(new ArrayList<>());
 
     // ────── 状态机引擎 ──────
-    /** userId:scene → current state */
-    private final ConcurrentHashMap<String, String> stateMachine = new ConcurrentHashMap<>();
+    /** userId:scene → current state（含最后活跃时间，30 分钟无活跃自动清理，防止无界增长） */
+    private final ConcurrentHashMap<String, StateEntry> stateMachine = new ConcurrentHashMap<>();
     /** sourceState → List of state-transition rules */
     private final Map<String, List<IntentRule>> stateRules = new ConcurrentHashMap<>();
+    /** 状态过期时间：超过该时长未活跃的状态将被定时清理 */
+    private static final long STATE_TTL_MILLIS = 30 * 60 * 1000L;
 
     // ────── 元数据 ──────
     private final AtomicLong trieHitCount = new AtomicLong();
@@ -83,8 +86,12 @@ public class RuleBasedMatcher {
 
         // 1) 状态机优先（多轮命令流中，当前状态决定匹配范围）
         String stateKey = stateKey(userId, scene);
-        String currentState = stateMachine.get(stateKey);
+        StateEntry entry = stateMachine.get(stateKey);
+        String currentState = entry != null ? entry.state() : null;
         if (currentState != null) {
+            // 刷新活跃时间（30 分钟无对话则过期清理）
+            stateMachine.compute(stateKey, (k, e) -> e != null
+                    ? new StateEntry(e.state(), System.currentTimeMillis()) : null);
             Optional<RuleMatch> r = matchStateTransition(text, currentState, stateKey);
             if (r.isPresent()) return r;
         }
@@ -99,12 +106,13 @@ public class RuleBasedMatcher {
 
     /** 手动设置用户状态（如外部业务流程需要） */
     public void setState(String userId, String scene, String state) {
-        stateMachine.put(stateKey(userId, scene), state);
+        stateMachine.put(stateKey(userId, scene), new StateEntry(state, System.currentTimeMillis()));
     }
 
     /** 查询当前状态 */
     public String getState(String userId, String scene) {
-        return stateMachine.get(stateKey(userId, scene));
+        StateEntry entry = stateMachine.get(stateKey(userId, scene));
+        return entry != null ? entry.state() : null;
     }
 
     /** 清除用户状态 */
@@ -116,6 +124,19 @@ public class RuleBasedMatcher {
     public void reload() {
         synchronized (this) {
             loadRules();
+        }
+    }
+
+    /** 定期清理过期状态（防止 userId:scene 状态无界增长导致内存泄漏） */
+    @Scheduled(fixedDelay = 10 * 60 * 1000L)
+    public void evictExpiredStates() {
+        long now = System.currentTimeMillis();
+        int before = stateMachine.size();
+        stateMachine.entrySet().removeIf(e ->
+                now - e.getValue().lastActiveAt() > STATE_TTL_MILLIS);
+        int removed = before - stateMachine.size();
+        if (removed > 0) {
+            log.info("[RuleMatcher] 清理过期状态机条目 {} 个 (剩余 {})", removed, stateMachine.size());
         }
     }
 
@@ -208,7 +229,7 @@ public class RuleBasedMatcher {
                 // 状态转移
                 String toState = rule.getTargetState();
                 if (toState != null && !toState.isEmpty()) {
-                    stateMachine.put(stateKey, toState);
+                    stateMachine.put(stateKey, new StateEntry(toState, System.currentTimeMillis()));
                 } else {
                     // 没有目标状态 = 规则命中后退出当前状态
                     stateMachine.remove(stateKey);
@@ -309,6 +330,9 @@ public class RuleBasedMatcher {
 
     /** 评分规则（Trie 匹配排序用） */
     private record ScoredRule(IntentRule rule, double score) {}
+
+    /** 状态机条目：当前状态 + 最后活跃时间（用于过期清理） */
+    private record StateEntry(String state, long lastActiveAt) {}
 
     /** 规则层匹配结果 */
     public record RuleMatch(IntentRule rule, String engine) {

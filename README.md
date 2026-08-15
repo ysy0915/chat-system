@@ -254,14 +254,14 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ## 运行测试
 
 ```bash
-# 全量测试（715 用例全绿）
+# 全量测试（884 用例全绿）
 mvn clean test
 
 # 单模块
-mvn test -pl chat-common  # 272 个测试
-mvn test -pl chat-core    # 212 个测试
-mvn test -pl chat-web     # 87 个测试
-mvn test -pl chat-llm     # 74 个测试
+mvn test -pl chat-common  # 277 个测试
+mvn test -pl chat-core    # 249 个测试
+mvn test -pl chat-web     # 90 个测试
+mvn test -pl chat-llm     # 198 个测试
 mvn test -pl chat-games   # 44 个测试
 mvn test -pl chat-media   # 26 个测试
 ```
@@ -287,7 +287,7 @@ mvn test -pl chat-media   # 26 个测试
 
 | 维度 | 指标 |
 |------|------|
-| 测试 | 全量 **715 用例全绿**，含 @SpringBootTest 集成测试、Mapper 契约测试 |
+| 测试 | 全量 **884 用例全绿**，含 @SpringBootTest 集成测试、Mapper 契约测试 |
 | 代码规范 | Checkstyle **0 违规** · PMD 2000+→92 · SpotBugs 0 阻断 |
 | 架构设计 | 双 core/双 web 高可用 + stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流 |
 | 模型抽象 | Provider 策略 + SPI 策略工厂 + 注册中心 + 动态路由 + 模型自助管理面 + 工具平台化 + 存储 SPI 热插拔 |

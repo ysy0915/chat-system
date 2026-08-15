@@ -15,25 +15,53 @@ export const options = {
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+const USERNAME = __ENV.USERNAME || 'testuser';
+const PASSWORD = __ENV.PASSWORD || 'test123';
+// 发送消息（完整 AI 链路）的迭代比例，默认 20%，其余迭代只打读接口
+const SEND_RATIO = Number(__ENV.SEND_RATIO || 0.2);
 
-export default function () {
-  // 1. 登录获取 JWT
-  const loginRes = http.post(`${BASE_URL}/api/v1/auth/login`, JSON.stringify({
-    username: 'testuser',
-    password: 'test123',
-  }), { headers: { 'Content-Type': 'application/json' } });
+// setup 只执行一次：登录获取 JWT 供所有 VU 共享。
+// 重要：不要每迭代登录——auth/login 有敏感接口 IP 限流（10 次/分钟/IP，超限 429"操作过于频繁"），
+// 压测机单 IP 高并发登录会直接触发限流，测不出真实链路。
+export function setup() {
+  const loginRes = http.post(`${BASE_URL}/api/v1/auth/login`,
+    JSON.stringify({ username: USERNAME, password: PASSWORD }),
+    { headers: { 'Content-Type': 'application/json' } });
+  check(loginRes, { '登录 200': (r) => r.status === 200 });
+  const token = loginRes.json('data.token') || loginRes.json('token');
+  if (!token) {
+    throw new Error(`登录失败，请检查账号或限流: ${loginRes.status} ${loginRes.body}`);
+  }
+  return { token };
+}
 
-  // 2. 获取消息列表
-  const msgRes = http.get(`${BASE_URL}/api/v1/messages?user_id=1`);
+export default function (data) {
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${data.token}`,
+  };
+  const params = { headers };
 
-  // 3. 树洞历史
-  const treeHoleRes = http.get(`${BASE_URL}/api/v1/treehole/recent`);
+  // ---- 读接口（核心链路）----
+  const recentRes = http.get(`${BASE_URL}/api/v1/messages/recent`, params);
+  check(recentRes, { 'recent 200': (r) => r.status === 200 });
 
-  // 4. 在线人数
-  http.get(`${BASE_URL}/api/v1/messages/online-count?page=/`);
+  const searchRes = http.get(`${BASE_URL}/api/v1/messages/search?keyword=${encodeURIComponent('你好')}&page=1&size=5`, params);
+  check(searchRes, { 'search 200': (r) => r.status === 200 });
 
-  check(msgRes, { '消息列表 200': (r) => r.status === 200 });
-  check(treeHoleRes, { '树洞 200': (r) => r.status === 200 });
+  const treeHoleRes = http.get(`${BASE_URL}/api/v1/treehole/recent`, params);
+  check(treeHoleRes, { 'treehole 200': (r) => r.status === 200 });
+
+  http.get(`${BASE_URL}/api/v1/messages/online-count?page=/`, params);
+
+  // ---- 写接口（完整 AI 链路，按比例触发）----
+  if (Math.random() < SEND_RATIO) {
+    const reqId = `k6-${__VU}-${__ITER}-${Date.now()}`;
+    const sendRes = http.post(`${BASE_URL}/api/v1/messages`,
+      JSON.stringify({ req_id: reqId, question: '你好，请用一句话介绍你自己' }),
+      params);
+    check(sendRes, { 'send 202/200': (r) => r.status === 200 || r.status === 202 });
+  }
 
   sleep(1);
 }

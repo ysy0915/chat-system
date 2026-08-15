@@ -1,86 +1,38 @@
 package com.example.chat.observability;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeUnit;
 
 /**
- * 简易熔断器（无第三方依赖）
+ * 基于 Resilience4j 的熔断器（按 LLM provider 分实例）。
  *
- * 工作原理：
- * - CLOSED（正常）：请求正常通过，记录失败次数
- * - OPEN（熔断）：连续失败达到阈值，直接拒绝请求（快速失败）
- * - HALF_OPEN（半开）：冷却时间过后，放行1个探测请求；成功则恢复CLOSED，失败则重回OPEN
+ * <p>配置来源于 chat-common 的 {@code ResilienceConfig} 默认规则：
+ * 滑动窗口 10 次、最少 5 次调用、失败率 ≥50% 熔断、冷却 30s、半开放行 3 次探测。
+ * 相比自研"连续失败 N 次"实现，Resilience4j 使用滑动窗口失败率统计，
+ * 且熔断指标自动上报 Micrometer/Prometheus（{@code resilience4j_circuitbreaker_*}）。</p>
  *
- * 配置：
- * - failureThreshold：连续失败阈值（默认5次）
- * - recoveryTimeout：熔断恢复冷却时间（默认60秒）
+ * <p>对外保持原 {@code allowRequest / recordSuccess / recordFailure / getAllStatus}
+ * 方法签名，调用方（LLMInvoker）无感知。</p>
  */
 @Component
 public class CircuitBreaker {
 
     private static final Logger log = LoggerFactory.getLogger(CircuitBreaker.class);
 
-    private static final int FAILURE_THRESHOLD = 5;
-    private static final long RECOVERY_TIMEOUT_MS = 60_000L;
+    private final CircuitBreakerRegistry registry;
 
-    /** 每个 provider 一个独立的熔断状态 */
-    private final ConcurrentHashMap<String, BreakerState> breakers = new ConcurrentHashMap<>();
+    public CircuitBreaker(CircuitBreakerRegistry registry) {
+        this.registry = registry;
+    }
 
-    private static class BreakerState {
-        volatile String state = "CLOSED"; // CLOSED / OPEN / HALF_OPEN
-        final AtomicInteger consecutiveFailures = new AtomicInteger(0);
-        volatile long openedAt; // 熔断打开的时间戳
-
-        /**
-         * 判断是否允许请求通过
-         */
-        boolean allowRequest() {
-            if ("CLOSED".equals(state)) {
-                return true;
-            }
-            if ("OPEN".equals(state)) {
-                // 检查是否已过冷却期
-                if (System.currentTimeMillis() - openedAt > RECOVERY_TIMEOUT_MS) {
-                    state = "HALF_OPEN";
-                    log.info("[CircuitBreaker] 状态切换 OPEN -> HALF_OPEN，放行探测请求");
-                    return true;
-                }
-                return false; // 熔断中，拒绝请求
-            }
-            // HALF_OPEN 或其他状态：都放行（简化实现，靠 onSuccess/onFailure 纠正）
-            return true;
-        }
-
-        void recordSuccess() {
-            if (!"CLOSED".equals(state)) {
-                log.info("[CircuitBreaker] 状态切换 {} -> CLOSED", state);
-            }
-            state = "CLOSED";
-            consecutiveFailures.set(0);
-        }
-
-        void recordFailure() {
-            int failures = consecutiveFailures.incrementAndGet();
-            if ("HALF_OPEN".equals(state)) {
-                // 半开状态下失败，立即重回OPEN
-                state = "OPEN";
-                openedAt = System.currentTimeMillis();
-                log.warn("[CircuitBreaker] HALF_OPEN 探测失败，重回 OPEN");
-            } else if (failures >= FAILURE_THRESHOLD && "CLOSED".equals(state)) {
-                state = "OPEN";
-                openedAt = System.currentTimeMillis();
-                log.warn("[CircuitBreaker] 连续失败 {} 次，状态切换 CLOSED -> OPEN", failures);
-            }
-        }
-
-        String getStatus() {
-            return state + "(failures=" + consecutiveFailures.get() + ")";
-        }
+    private io.github.resilience4j.circuitbreaker.CircuitBreaker breaker(String provider) {
+        return registry.circuitBreaker("llm-" + provider);
     }
 
     /**
@@ -89,8 +41,7 @@ public class CircuitBreaker {
      * @return true=允许通过，false=熔断中拒绝
      */
     public boolean allowRequest(String provider) {
-        BreakerState breaker = breakers.computeIfAbsent(provider, k -> new BreakerState());
-        boolean allowed = breaker.allowRequest();
+        boolean allowed = breaker(provider).tryAcquirePermission();
         if (!allowed) {
             log.warn("[CircuitBreaker] provider={} 已熔断，拒绝请求", provider);
         }
@@ -101,26 +52,30 @@ public class CircuitBreaker {
      * 记录成功
      */
     public void recordSuccess(String provider) {
-        BreakerState breaker = breakers.get(provider);
-        if (breaker != null) {
-            breaker.recordSuccess();
-        }
+        breaker(provider).onSuccess(0, TimeUnit.MILLISECONDS);
     }
 
     /**
      * 记录失败
      */
     public void recordFailure(String provider) {
-        BreakerState breaker = breakers.computeIfAbsent(provider, k -> new BreakerState());
-        breaker.recordFailure();
+        breaker(provider).onError(0, TimeUnit.MILLISECONDS,
+                new RuntimeException("llm-" + provider + " call failed"));
     }
 
     /**
      * 获取所有 provider 的熔断状态（用于监控）
      */
     public Map<String, String> getAllStatus() {
-        Map<String, String> status = new java.util.LinkedHashMap<>();
-        breakers.forEach((provider, breaker) -> status.put(provider, breaker.getStatus()));
+        Map<String, String> status = new LinkedHashMap<>();
+        registry.getAllCircuitBreakers().forEach(cb -> {
+            var metrics = cb.getMetrics();
+            status.put(cb.getName(),
+                    cb.getState().name()
+                            + "(failureRate=" + Math.round(metrics.getFailureRate())
+                            + "% calls=" + metrics.getNumberOfBufferedCalls()
+                            + " notPermitted=" + metrics.getNumberOfNotPermittedCalls() + ")");
+        });
         return status;
     }
 }

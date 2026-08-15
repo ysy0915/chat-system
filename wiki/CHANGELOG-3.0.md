@@ -4,6 +4,47 @@
 
 ---
 
+## 〇〇〇〇〇〇〇〇、性能与稳定性加固：缓存 Key 双写修复 + 流式 Token 合并广播 + Resilience4j 熔断 + 连接池扩容（2026-08-15）
+
+### 1. 背景
+
+压测与代码走查发现多处性能/稳定性隐患：对话答案缓存因**读写 key 不一致**完全失效（每次请求都穿透打 LLM）；流式回答**每个 token 一次 MQ 同步广播**，双 core 实例下消息量巨大；自研熔断器仅"连续失败 5 次"无法识别慢请求与偶发抖动；`RuleBasedMatcher`/`DebateTreeProcessor` 存在无界增长/OOM 风险；SQL 危险词正则误伤 `created_at` 等字段。
+
+### 2. 变更内容
+
+| 项 | 内容 |
+|----|------|
+| 缓存 Key 双写修复 | `ChatCacheManager.save` 原仅写**模型级 key**（`sha256(question::provider::model)`），而 `hitAndServe` 读**问题级 key**（`sha256(question::model-pool)`）→ 永不命中。修复为**双写两个 key**：问题级供命中（所有模型共用）+ 模型级保留区分能力，缓存从"永远失效"恢复为真实命中 |
+| 流式 Token 合并广播 | 新增 `StreamTokenBatcher`：token 按 **30ms 窗口 / 256 字符阈值**合并后广播一次，流式结束 `close()` 冲刷；广播在锁外执行不阻塞 LLM 流式线程。MQ 消息量降一个数量级，前端延迟 ≤30ms 无感知 |
+| Resilience4j 熔断 | 自研"连续失败 5 次"替换为 **Resilience4j 滑动窗口失败率**：窗口 10 次 / 最少 5 次 / 失败率 50% 熔断 / 冷却 30s / 半开放放行 3 次，指标自动上报 Prometheus |
+| 消费可靠性 | `ChatRequestConsumer` 改 MANUAL ack + `basicNack`（requeue=false），失败消息进死信队列重试（DLX 指数退避），杜绝"消费者重启即丢消息" |
+| 连接池扩容 | HikariCP `maximum-pool-size`：chat-common 10→20、chat-llm 10→20；nacos 配置同步（chat-common-prod 20 / chat-core-prod 30） |
+| RabbitConfig 兼容 | Spring AMQP 3.0 移除 `QueueProperties`，改用 `QueueInformation`（`rabbitAdmin.getQueueInfo()` + `getMessageCount()`） |
+| 内存防护 | `RuleBasedMatcher` 状态机条目带最后活跃时间，**30 分钟 TTL 定时清理**过期状态；`DebateTreeProcessor` 无界队列 → `ThreadPoolFactory` 有界队列（`BoundedQueue` + CallerRuns），批量池类级复用不再每请求新建 |
+| 在线人数观感 | `WebSocketSessionTracker` 虚拟在线人数下限 0→30（范围 30-300），不再显示"0 人在线"冷清感 |
+| SQL 危险词正则 | `SqlExecutorController` 危险词匹配改**词边界正则**（`\b`），不再误伤 `created_at` 等含子串的字段 |
+| 压测脚本 | `stress-test/k6-http-test.js` 增加 `setup()` 单次登录共享 JWT（规避敏感接口 10 次/分钟 IP 限流），带鉴权打核心读接口 + 按 `SEND_RATIO` 触发 AI 链路 |
+
+### 3. 数据库
+
+`docs/db-migrations/V1.2.0__add_reqid_unique_and_fulltext_indexes.sql`（**需低峰期人工执行**）：
+
+- `messages.req_id` 唯一索引（幂等、先查重）
+- `messages.content` ngram 全文索引（MySQL 8.0+，中文二元分词）
+
+### 4. 验证
+
+- chat-core 全量测试：**249 用例全绿**（含新增 `ChatCacheManagerTest.save_writesTwoDistinctKeys` 双 key 断言；`CircuitBreakerTest` 重写为滑动窗口语义 8/8）
+- 修复过程中发现并修正：`ChatCacheManagerTest.save_writesCache` 原断言单次写入，双写后改为 `times(2)` + ArgumentCaptor 验证两 key 不同
+
+### 5. 说明
+
+- 缓存双写不引入新 key 前缀冲突：问题级 `question:{sha256(question::model-pool)}` 与模型级 `question:{sha256(question::provider::model)}` 哈希不同源
+- 熔断器外部 API 不变（`LLMInvoker` 无感），指标名沿用 Prometheus 现有采集
+- 部署需重打包 chat-common + chat-core（`mvn clean install -DskipTests`），重启 core 双实例（9090/9092）
+
+---
+
 ## 〇〇〇〇〇〇〇、观点辩论场第二轮提速：Reflection 事件可见化 + 提示词增强 + Redis 外存记忆（2026-08-15）
 
 ### 1. 背景

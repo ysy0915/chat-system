@@ -38,7 +38,9 @@ public class WebSocketSessionTracker {
     private static final long IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 分钟无操作清理
     private static final int SESSION_PAGE_MAP_TTL_MINUTES = 30;
 
-    /** 随机在线人数上限（0-300） */
+    /** 随机在线人数下限（避免展示 0 人的冷清感） */
+    private static final int RANDOM_TOTAL_MIN = 30;
+    /** 随机在线人数上限（30-300） */
     private static final int RANDOM_TOTAL_MAX = 301;
 
     private final StringRedisTemplate redisTemplate;
@@ -75,8 +77,8 @@ public class WebSocketSessionTracker {
         if (pages == null) pages = DEFAULT_PAGES;
         Map<String, Integer> realCounts = collectRealCounts(pages);
 
-        // 2. 计算并更新虚拟在线数
-        int newTotal = ThreadLocalRandom.current().nextInt(RANDOM_TOTAL_MAX);
+        // 2. 计算并更新虚拟在线数（下限 RANDOM_TOTAL_MIN，避免显示 0 人）
+        int newTotal = ThreadLocalRandom.current().nextInt(RANDOM_TOTAL_MAX - RANDOM_TOTAL_MIN) + RANDOM_TOTAL_MIN;
         int realTotal = realCounts.values().stream().mapToInt(Integer::intValue).sum();
         if (realTotal > 0) {
             allocateByRealCount(realCounts, newTotal, realTotal);

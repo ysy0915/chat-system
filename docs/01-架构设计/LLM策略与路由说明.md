@@ -154,26 +154,29 @@ LlmBundleClient (统一多模型调用)
 ### 4.1 熔断器 (`CircuitBreaker`)
 
 ```
-        正常
+        正常（CLOSED）
          │
-    [连续失败 N 次]
-         │
-         ▼
-       熔断打开
-    (拒绝新请求)
-         │
-    [等待时间窗口结束]
+    [滑动窗口失败率 ≥ 50%]
+      （窗口 10 次 / 最少 5 次）
          │
          ▼
-       半开状态
-    (放行少量请求探测)
+       熔断打开（OPEN）
+    (拒绝新请求，冷却 30s)
+         │
+    [冷却期结束]
+         │
+         ▼
+       半开状态（HALF_OPEN）
+    (放行 3 次请求探测)
          │
     ┌────┴────┐
     ▼         ▼
    成功      失败
     │         │
-   关闭    重新熔断
+   CLOSED   重新 OPEN
 ```
+
+> 2026-08-15 起基于 **Resilience4j**（`CircuitBreaker.java`，chat-core 内），替换自研"连续失败 N 次"实现：滑动窗口统计失败率，慢请求/偶发抖动也能触发熔断，指标自动上报 Prometheus（`resilience4j_circuitbreaker_*`）。
 
 ### 4.2 自愈服务 (`SelfHealingService`)
 

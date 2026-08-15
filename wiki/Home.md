@@ -187,7 +187,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d   # 生产
 
 | 维度 | 指标 |
 |------|------|
-| 测试 | 全量 **715 用例全绿**（含集成测试、Mapper 契约测试 32 例） |
+| 测试 | 全量 **884 用例全绿**（含集成测试、Mapper 契约测试 32 例） |
 | 代码规范 | Checkstyle 0 违规 · PMD 92 · SpotBugs 0 阻断 |
 | 架构设计 | 双 core/双 web 高可用 + Multi-Agent 并行工作流（DLX 死信重试 + Reconciler 对账） |
 | 模型抽象 | SPI 策略工厂 + 动态路由 + 工具平台化 + 存储 SPI 热插拔 |

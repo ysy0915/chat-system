@@ -43,6 +43,12 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
+        <!-- Resilience4j 熔断器（BOM 统一版本 2.2.0，registry bean 由 chat-common ResilienceConfig 提供） -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+        </dependency>
+
         <!-- Apache POI for Excel/PPT parsing（FileContentExtractor） -->
         <dependency>
             <groupId>org.apache.poi</groupId>

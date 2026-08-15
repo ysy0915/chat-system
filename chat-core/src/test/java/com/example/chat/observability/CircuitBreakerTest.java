@@ -1,18 +1,29 @@
 package com.example.chat.observability;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * CircuitBreaker 真实行为断言（内存熔断状态机）：
- * 连续 5 次失败 CLOSED→OPEN 拒绝请求、成功恢复 CLOSED、provider 独立、状态上报。
+ * CircuitBreaker（Resilience4j 驱动）行为断言：
+ * 滑动窗口失败率触发 OPEN、半开放探测成功恢复 CLOSED、provider 独立、状态上报。
  */
 class CircuitBreakerTest {
 
-    private final CircuitBreaker breaker = new CircuitBreaker();
+    /** 测试用 registry：waitDuration 置 1ms（最小合法值），便于单测中验证 OPEN→HALF_OPEN→CLOSED 恢复链路 */
+    private final CircuitBreaker breaker = new CircuitBreaker(CircuitBreakerRegistry.of(
+            CircuitBreakerConfig.custom()
+                    .failureRateThreshold(50)
+                    .waitDurationInOpenState(Duration.ofMillis(1))
+                    .permittedNumberOfCallsInHalfOpenState(1)
+                    .slidingWindowSize(10)
+                    .minimumNumberOfCalls(5)
+                    .build()));
 
     @Test
     void initial_stateAllowsRequest() {
@@ -21,7 +32,7 @@ class CircuitBreakerTest {
 
     @Test
     void failuresBelowThreshold_stillAllows() {
-        // 4 次失败 < 阈值 5，仍放行
+        // 4 次失败，未达 minimumNumberOfCalls(5)，不参与失败率统计，仍放行
         for (int i = 0; i < 4; i++) {
             breaker.recordFailure("qwen");
         }
@@ -35,22 +46,25 @@ class CircuitBreakerTest {
             breaker.recordFailure("qwen");
         }
 
-        assertFalse(breaker.allowRequest("qwen"), "连续 5 次失败后应熔断拒绝");
-        assertTrue(breaker.getAllStatus().get("qwen").contains("OPEN"),
+        assertFalse(breaker.allowRequest("qwen"), "失败率达到阈值后应熔断拒绝");
+        assertTrue(breaker.getAllStatus().get("llm-qwen").contains("OPEN"),
                 "状态应含 OPEN, got: " + breaker.getAllStatus());
     }
 
     @Test
-    void recordSuccess_resetsToClosed() {
+    void halfOpen_success_resetsToClosed() throws InterruptedException {
         for (int i = 0; i < 5; i++) {
             breaker.recordFailure("qwen");
         }
-        assertFalse(breaker.allowRequest("qwen"));
+        assertFalse(breaker.allowRequest("qwen"), "OPEN 状态应拒绝请求");
 
+        // 等冷却(1ms)过后状态机转 HALF_OPEN，放行 1 次探测请求
+        Thread.sleep(10);
+        assertTrue(breaker.allowRequest("qwen"), "半开放应放行探测请求");
         breaker.recordSuccess("qwen");
 
         assertTrue(breaker.allowRequest("qwen"));
-        assertTrue(breaker.getAllStatus().get("qwen").contains("CLOSED"));
+        assertTrue(breaker.getAllStatus().get("llm-qwen").contains("CLOSED"));
     }
 
     @Test
@@ -75,15 +89,15 @@ class CircuitBreakerTest {
         breaker.recordFailure("doubao");
 
         assertEquals(1, breaker.getAllStatus().size());
-        assertTrue(breaker.getAllStatus().get("doubao").contains("failures=1"));
+        assertTrue(breaker.getAllStatus().get("llm-doubao").contains("calls=1"));
     }
 
     @Test
-    void getAllStatus_reportsFailureCount() {
+    void getAllStatus_reportsCallCount() {
         breaker.recordFailure("qwen");
         breaker.recordFailure("qwen");
 
         Map<String, String> status = breaker.getAllStatus();
-        assertTrue(status.get("qwen").contains("failures=2"), "应报告失败次数, got: " + status);
+        assertTrue(status.get("llm-qwen").contains("calls=2"), "应报告调用次数, got: " + status);
     }
 }

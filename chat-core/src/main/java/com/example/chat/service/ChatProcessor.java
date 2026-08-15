@@ -127,7 +127,7 @@ public class ChatProcessor {
         this.llmConfig = llmConfig;
         this.chatRagEnhancer = chatRagEnhancer;
         this.chatCacheManager = chatCacheManager;
-        this.modelExecutor = ThreadPoolFactory.create(5, 20, 100, "llm-worker");
+        this.modelExecutor = ThreadPoolFactory.create(10, 30, 200, "llm-worker");
     }
 
     public void process(Map<String, Object> payload) {
@@ -190,6 +190,12 @@ public class ChatProcessor {
                                      List<ModelConfig> allConfigs) {
         if (chatCacheManager.hitAndServe(reqId, userId, question)) {
             log.info("[handlePersonalChat] req_id={} userId={} cache hit, skip LLM", reqId, userId);
+            return;
+        }
+        // 防缓存击穿：拿不到构建锁说明已有请求在构建，等待其回填缓存
+        if (!chatCacheManager.tryAcquireBuildLock(question)
+                && chatCacheManager.waitAndServe(reqId, userId, question)) {
+            log.info("[handlePersonalChat] req_id={} userId={} wait-and-serve cache hit", reqId, userId);
             return;
         }
 
@@ -394,17 +400,20 @@ public class ChatProcessor {
                     //  1) 原生思考（deepseek-reasoner 等）：reasoning_content 经 \u0001R: 前缀走 thinking_token（前端灰色展示），content 即最终回答
                     //  2) 无原生思考的模型：回退 ---answer--- 分隔提示词，由 ThinkingStreamParser 状态机拆出思考/回答
                     AtomicBoolean nativeReasoning = new AtomicBoolean(false);
+                    // 合并广播：缓冲 token 按 30ms/256字符 合并后推送，避免每 token 一次 MQ 广播
+                    StreamTokenBatcher thinkingBatcher =
+                            new StreamTokenBatcher(topic, reqId, WsMessage.TYPE_THINKING_TOKEN, broadcastService);
+                    StreamTokenBatcher answerBatcher =
+                            new StreamTokenBatcher(topic, reqId, WsMessage.TYPE_STREAM_TOKEN, broadcastService);
                     ThinkingStreamParser parser = new ThinkingStreamParser(
                             thinkingToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
-                                broadcastService.broadcast(topic,
-                                        WsMessage.thinkingToken(thinkingToken).withReqId(reqId).toMap());
+                                thinkingBatcher.append(thinkingToken);
                             },
                             answerToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
                                 answerCollector.append(answerToken);
-                                broadcastService.broadcast(topic,
-                                        WsMessage.streamToken(answerToken).withReqId(reqId).toMap());
+                                answerBatcher.append(answerToken);
                             },
                             () -> {}
                     );
@@ -416,8 +425,7 @@ public class ChatProcessor {
                                 if (nativeReasoning.get()) {
                                     // 已有原生思考：content 即最终回答，直接透传
                                     answerCollector.append(token);
-                                    broadcastService.broadcast(topic,
-                                            WsMessage.streamToken(token).withReqId(reqId).toMap());
+                                    answerBatcher.append(token);
                                 } else {
                                     parser.feed(token);
                                 }
@@ -425,20 +433,24 @@ public class ChatProcessor {
                             reasoningToken -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
                                 nativeReasoning.set(true);
-                                broadcastService.broadcast(topic,
-                                        WsMessage.thinkingToken(reasoningToken).withReqId(reqId).toMap());
+                                thinkingBatcher.append(reasoningToken);
                             });
                     parser.flush();
+                    // 冲刷合并缓冲，确保最后一批 token 不滞留
+                    thinkingBatcher.close();
+                    answerBatcher.close();
                 } else {
                     // 非思考链模式：直接流式输出（无延迟）
+                    StreamTokenBatcher answerBatcher =
+                            new StreamTokenBatcher(topic, reqId, WsMessage.TYPE_STREAM_TOKEN, broadcastService);
                     fullAnswer = llmInvoker.invokeStream(config, effectiveHistory, temperature,
                             "personal", llmConfig.getBaseUrl(), llmConfig.getApiKey(),
                             token -> {
                                 if (streamStopManager.getOrDefault(reqId).get()) return;
                                 answerCollector.append(token);
-                                broadcastService.broadcast(topic,
-                                        WsMessage.streamToken(token).withReqId(reqId).toMap());
+                                answerBatcher.append(token);
                             });
+                    answerBatcher.close();
                 }
 
                 // 思考链模式下 fullAnswer 可能含思考内容/分隔符；优先用 answerCollector 的纯净回答，

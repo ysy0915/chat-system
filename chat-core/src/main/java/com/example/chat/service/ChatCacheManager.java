@@ -33,6 +33,10 @@ public class ChatCacheManager {
     private final MessageRepository messageRepository;
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
+    /** 构建锁 TTL：同一问题 30s 内仅一个请求真正调 LLM，其余等待回填（防缓存击穿） */
+    private static final Duration BUILD_LOCK_TTL = Duration.ofSeconds(30);
+    /** 等待回填的最长时间 */
+    private static final Duration MAX_WAIT_FILL = Duration.ofSeconds(3);
 
     public ChatCacheManager(RedisTemplate<String, String> redisTemplate,
                             ObjectMapper objectMapper,
@@ -71,14 +75,59 @@ public class ChatCacheManager {
         return true;
     }
 
-    /** 写入问题+模型级缓存 */
+    /**
+     * 写入问题级 + 模型级缓存（双写）。
+     * <p>问题级 key 供 {@link #hitAndServe} 命中（所有模型共用）；模型级 key 保留区分能力，
+     * 避免读写 key 不一致导致缓存永不命中。</p>
+     */
     public void save(String question, String provider, String model, String answer) {
-        String cacheKey = buildCacheKey(question, provider, model);
+        String[] cacheKeys = {buildCacheKey(question), buildCacheKey(question, provider, model)};
         try {
-            redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
+            for (String cacheKey : cacheKeys) {
+                redisTemplate.opsForValue().set(cacheKey, answer, CACHE_TTL);
+            }
         } catch (DataAccessException ex) {
             log.warn("[WARN] Redis write failed: {}", ex.getMessage());
         }
+    }
+
+    /**
+     * 尝试获取"构建锁"（防缓存击穿的单飞锁）。
+     * <p>同一问题并发未命中缓存时，仅一个请求能拿到锁真正调用 LLM，
+     * 其余请求应调用 {@link #waitAndServe} 等待缓存回填后直接命中。</p>
+     *
+     * @return true 表示当前请求获得构建权（应继续调 LLM 并在完成后 save）
+     */
+    public boolean tryAcquireBuildLock(String question) {
+        String lockKey = "question:lock:" + sha256(question);
+        try {
+            Boolean ok = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", BUILD_LOCK_TTL);
+            return Boolean.TRUE.equals(ok);
+        } catch (DataAccessException ex) {
+            log.warn("Redis lock failed, degrade to build: {}", ex.getMessage());
+            return true; // Redis 不可用时降级为直接构建，避免死锁
+        }
+    }
+
+    /**
+     * 等待构建锁持有者回填缓存（最多 MAX_WAIT_FILL 秒），期间若缓存命中则直接服务。
+     *
+     * @return true 表示等待期间已命中缓存并完成服务；false 表示超时未命中
+     */
+    public boolean waitAndServe(String reqId, Long userId, String question) {
+        long deadline = System.currentTimeMillis() + MAX_WAIT_FILL.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            if (hitAndServe(reqId, userId, question)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

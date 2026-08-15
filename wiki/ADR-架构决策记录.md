@@ -176,3 +176,17 @@
 - **背景**：`LlmApplication.MapperScanConfig` 的 `@MapperScan` 扫描 `com.example.chat.llm.rag.legacy` 包时未限制 `annotationClass`，MyBatis 把包下所有接口（含无注解的领域接口 `MemoryKVStore` / `VectorStoreLegacy` / `UserFactMemory`）注册为 Mapper 代理 bean。`MemoryKVStore` 被注册为 `memoryKVStore`，与 `@Component` 的 `RedisMemoryKVStore`（`redisMemoryKVStore`）同时成为 `ConversationMemoryService.setMemoryStore()` 注入候选，报 "expected single matching bean but found 2" 冲突。本地 standalone profile 因 `app.mapper-scan.enabled=false` 关闭 MapperScan 不触发，生产 prod profile 才暴露。
 - **决策**：`@MapperScan` 加 `annotationClass = Mapper.class`，仅注册带 `@Mapper` 注解的接口。已核实 `com.example.chat.repository` 下 10 个接口、`RAGRepository`、`LlmRoutingRepository` 均带 `@Mapper`，不受影响。
 - **后果**：✅ 无注解领域接口不再被误注册为 Mapper bean，bean 冲突根除；✅ chat-llm 双实例 9095/9096 prod 启动正常（health UP）；⚠️ 新增 Mapper 接口必须标注 `@Mapper` 注解，否则不会被扫描注册（比无差别包扫描更安全，但要求开发者遵守注解约定）。
+
+## ADR-025 性能与稳定性加固：缓存双写 + 流式 Token 合并 + Resilience4j 熔断（2026-08-15）
+
+- **状态**：Accepted（2026-08-15 上线）
+- **背景**：压测与代码走查发现：① 对话答案缓存因**读写 key 不一致**完全失效（`save` 写 `sha256(question::provider::model)` 模型级 key，`hitAndServe` 读 `sha256(question::model-pool)` 问题级 key，永不相等），每次请求穿透打 LLM；② 流式回答**每 token 一次 MQ 同步广播**，双 core 实例下消息量巨大；③ 自研熔断器仅"连续失败 5 次"无法识别慢请求与偶发抖动；④ `RuleBasedMatcher` 状态机无界增长、`DebateTreeProcessor` 无界线程池存在 OOM 风险；⑤ SQL 危险词正则误伤 `created_at` 等含子串字段。
+- **决策**：
+  1. **缓存双写**：`ChatCacheManager.save` 同时写问题级 key（供 `hitAndServe` 命中）+ 模型级 key（保留区分），哈希 key 不同源无冲突
+  2. **流式 Token 合并**：新增 `StreamTokenBatcher`，thinking/answer token 按 **30ms 窗口 / 256 字符阈值**合并后广播一次，流式结束 `close()` 冲刷；广播在锁外执行不阻塞 LLM 流式线程
+  3. **Resilience4j 熔断**：自研实现替换为 Resilience4j 滑动窗口失败率（窗口 10 / 最少 5 次 / 失败率 ≥50% → OPEN / 冷却 30s / HALF_OPEN 放行 3 次），外部 API 不变（`LLMInvoker` 无感），指标自动上报 Prometheus
+  4. **消费可靠性**：`ChatRequestConsumer` 改 MANUAL ack + `basicNack(requeue=false)`，失败消息进死信队列（DLX 指数退避），杜绝消费者重启丢消息
+  5. **内存/并发防护**：`RuleBasedMatcher` 状态条目带最后活跃时间，30 分钟 TTL 定时清理；`DebateTreeProcessor` 无界队列 → `ThreadPoolFactory` 有界队列 + CallerRuns，批量池类级复用
+  6. **连接池扩容**：HikariCP `maximum-pool-size` chat-common/chat-llm 10→20（nacos 同步），chat-core prod 30
+  7. **SQL 危险词词边界**：`SqlExecutorController` 危险词匹配改 `\b` 词边界正则
+- **后果**：✅ 缓存从"永远失效"恢复真实命中；✅ MQ 消息量降一个数量级（前端延迟 ≤30ms 无感知）；✅ 熔断能识别慢请求/偶发抖动，指标可观测；✅ 失败消息可重试不丢失、状态机/线程池无 OOM 风险；⚠️ 缓存双写多一次 Redis set（可忽略）；⚠️ 流式合并广播需保证超时冲刷（30ms 窗口），极端低延迟场景延迟略增；⚠️ `V1.2.0` DDL（req_id 唯一索引 + content ngram 全文索引）需低峰期人工执行；chat-core 249 / 全量 884 用例全绿。

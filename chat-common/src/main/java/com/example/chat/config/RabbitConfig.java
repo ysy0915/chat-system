@@ -4,8 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueInformation;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
@@ -81,20 +82,35 @@ public class RabbitConfig {
         return new RabbitAdmin(connectionFactory);
     }
 
+    /**
+     * 启动时检查消息队列积压量，仅告警不清理。
+     * <p>原实现启动即 purge 队列，双实例滚动重启时会把在途消息直接丢弃（数据丢失风险）。
+     * 改为：积压为 0 正常启动；积压 > 0 记录告警，由人工确认积压来源后决定是否清理。</p>
+     */
     @Bean
-    public CommandLineRunner purgeOldQueue(RabbitAdmin rabbitAdmin) {
+    public CommandLineRunner checkQueueBacklog(RabbitAdmin rabbitAdmin) {
         return args -> {
-            Thread purgeThread = new Thread(() -> {
+            Thread checkThread = new Thread(() -> {
                 try {
-                    log.info("[INFO] Purging queue: {}", CHAT_REQUESTS_QUEUE);
-                    rabbitAdmin.purgeQueue(CHAT_REQUESTS_QUEUE, true);
-                    log.info("[INFO] Queue purged successfully");
+                    QueueInformation info = rabbitAdmin.getQueueInfo(CHAT_REQUESTS_QUEUE);
+                    if (info == null) {
+                        log.warn("[RabbitConfig] 队列 {} 不存在或无法查询", CHAT_REQUESTS_QUEUE);
+                        return;
+                    }
+                    int backlog = info.getMessageCount();
+                    if (backlog > 0) {
+                        log.warn("[RabbitConfig] 队列 {} 启动时积压 {} 条消息，"
+                                        + "请确认是否来自旧实例在途请求；如需清理请人工执行 rabbitmqctl purge_queue {}",
+                                CHAT_REQUESTS_QUEUE, backlog, CHAT_REQUESTS_QUEUE);
+                    } else {
+                        log.info("[RabbitConfig] 队列 {} 积压为 0，正常启动", CHAT_REQUESTS_QUEUE);
+                    }
                 } catch (Exception ex) {
-                    log.warn("[WARN] Failed to purge queue: {}", ex.getMessage());
+                    log.warn("[RabbitConfig] 队列积压检查失败: {}", ex.getMessage());
                 }
             });
-            purgeThread.setDaemon(true);
-            purgeThread.start();
+            checkThread.setDaemon(true);
+            checkThread.start();
         };
     }
 }

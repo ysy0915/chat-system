@@ -48,10 +48,22 @@ public class SqlExecutorController {
     /** 执行频率限制：同一 IP 每分钟最多执行 30 次 SQL */
     private static final int MAX_EXEC_PER_MIN = 30;
 
-    private static final Set<String> DANGEROUS_KEYWORDS = Set.of(
+    /** 危险词（顺序保持与 DANGEROUS_PATTERNS 索引一致，故用 List） */
+    private static final List<String> DANGEROUS_KEYWORDS = List.of(
             "DROP", "TRUNCATE", "ALTER", "GRANT", "REVOKE", "CREATE", "SHUTDOWN", "DELETE",
-            "OUTFILE", "DUMPFILE", "LOAD_FILE", "INTO OUTFILE", "SLEEP", "BENCHMARK"
+            "OUTFILE", "DUMPFILE", "LOAD_FILE", "SLEEP", "BENCHMARK"
     );
+
+    /**
+     * 危险词正则（词边界匹配，避免误伤字段名/字符串值，如 created_at、user_profile 等）。
+     * "INTO OUTFILE" 需多词匹配，单独处理。
+     */
+    private static final java.util.regex.Pattern[] DANGEROUS_PATTERNS =
+            DANGEROUS_KEYWORDS.stream()
+                    .map(kw -> java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(kw) + "\\b"))
+                    .toArray(java.util.regex.Pattern[]::new);
+    private static final java.util.regex.Pattern INTO_OUTFILE_REGEX =
+            java.util.regex.Pattern.compile("\\bINTO\\s+OUTFILE\\b");
 
     private static final Set<String> READ_ONLY_KEYWORDS = Set.of(
             "SELECT", "SHOW", "DESC", "EXPLAIN"
@@ -143,10 +155,11 @@ public class SqlExecutorController {
             auditLog.warn("[SQL_AUDIT] MULTI_STATEMENT_BLOCKED ip={}", clientIp);
             return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "禁止一次执行多条SQL语句"));
         }
-        for (String keyword : DANGEROUS_KEYWORDS) {
-            if (upperSql.contains(keyword)) {
+        // 危险词词边界匹配（\bDROP\b 等），避免误伤 created_at、user_profile 等含子串的标识符
+        for (int i = 0; i < DANGEROUS_KEYWORDS.size(); i++) {
+            if (DANGEROUS_PATTERNS[i].matcher(upperSql).find()) {
                 auditLog.warn("[SQL_AUDIT] DANGEROUS_SQL_BLOCKED ip={} sql={}", clientIp, sql.substring(0, Math.min(200, sql.length())));
-                return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "禁止执行危险SQL: " + keyword));
+                return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "禁止执行危险SQL: " + DANGEROUS_KEYWORDS.get(i)));
             }
         }
         return null;

@@ -1,5 +1,6 @@
 package com.example.chat.service;
 
+import com.example.chat.config.ThreadPoolFactory;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
@@ -19,7 +20,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * 树状观点博弈处理器
@@ -38,7 +39,13 @@ public class DebateTreeProcessor {
     private static final Logger log = LoggerFactory.getLogger(DebateTreeProcessor.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final ExecutorService treeExecutor = Executors.newFixedThreadPool(8);
+    /**
+     * 整场辩论的调度线程池（有界队列，避免任务无限堆积导致 OOM）。
+     * 原 Executors.newFixedThreadPool(8) 内部为无界 LinkedBlockingQueue。
+     */
+    private final ExecutorService treeExecutor = ThreadPoolFactory.create(4, 8, 200, "debate-tree");
+    /** 视角级并行线程池（有界，类级复用，避免每请求新建+泄漏） */
+    private final ExecutorService batchPool = ThreadPoolFactory.create(2, 4, 100, "debate-batch");
     private final LLMInvoker llmInvoker;
     private final BroadcastService broadcastService;
     private final TreePerspectiveGraphService perspectiveGraphService;
@@ -128,7 +135,6 @@ public class DebateTreeProcessor {
         ModelConfig conModel = debaters.get(2);
         ModelConfig neutralModel = debaters.get(1);
 
-        ExecutorService batchPool = Executors.newFixedThreadPool(Math.min(perspectives.size(), 4));
         List<CompletableFuture<Void>> perspectiveFutures = new ArrayList<>();
         // 存储每视角的逐轮详细论点 (perspectiveId → [{role→answer}, ...])
         Map<String, List<Map<String, String>>> perspectiveRoundDetails = new ConcurrentHashMap<>();
@@ -165,7 +171,6 @@ public class DebateTreeProcessor {
             perspectiveFutures.add(future);
         }
         CompletableFuture.allOf(perspectiveFutures.toArray(new CompletableFuture[0])).join();
-        batchPool.shutdown();
 
         // 4. 最终汇总 (汇集各视角所有轮次的论点，再调 LLM)
         String finalAnswer;

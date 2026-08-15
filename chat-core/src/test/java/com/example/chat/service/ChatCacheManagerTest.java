@@ -14,6 +14,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import java.util.Map;
+import org.mockito.ArgumentCaptor;
 
 /**
  * ChatCacheManager 单元测试
@@ -71,10 +72,20 @@ class ChatCacheManagerTest {
     }
 
     @Test
-    @DisplayName("save 写入缓存 TTL 24h")
+    @DisplayName("save 双写问题级 + 模型级缓存（TTL 24h）")
     void save_writesCache() {
         cacheManager.save("什么是AI", "doubao", "doubao-pro", "AI是人工智能");
-        verify(valueOps).set(anyString(), eq("AI是人工智能"), any(java.time.Duration.class));
+        verify(valueOps, times(2)).set(anyString(), eq("AI是人工智能"), any(java.time.Duration.class));
+    }
+
+    @Test
+    @DisplayName("save 写入两个不同 key（问题级与模型级）")
+    void save_writesTwoDistinctKeys() {
+        cacheManager.save("什么是AI", "doubao", "doubao-pro", "AI是人工智能");
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps, times(2)).set(keyCaptor.capture(), eq("AI是人工智能"), any(java.time.Duration.class));
+        assertEquals(2, keyCaptor.getAllValues().stream().distinct().count(),
+                "问题级与模型级 key 必须不同，否则双写退化为单 key");
     }
 
     @Test

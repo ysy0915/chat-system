@@ -4,6 +4,15 @@
 >
 > 制作者：杨思义 · 博思AI团队 · 2026年8月
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
+[![Java](https://img.shields.io/badge/Java-17-orange.svg)](pom.xml)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1-brightgreen.svg)](pom.xml)
+[![Tests](https://img.shields.io/badge/Tests-892%20passed-success.svg)](#运行测试)
+[![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
+
+**许可证**：本项目采用 [Apache License 2.0](LICENSE) 开源协议，可自由使用、修改、分发。
+
 ---
 
 ## 产品简介
@@ -130,6 +139,29 @@ chat-system-project/
 ---
 
 ## 快速开始
+
+### 方式一：Docker 一键启动（推荐）
+
+```bash
+# 一键启动全部中间件 + 编译 + 后端 + 前端
+bash scripts/quickstart.sh
+
+# 或只启动中间件（MySQL/Redis/RabbitMQ/Nacos/Milvus/Neo4j）
+bash scripts/quickstart.sh infra
+
+# 停止
+bash scripts/quickstart.sh stop
+```
+
+> 前置要求：Docker + JDK 17 + Maven 3.8+ + Node 18+
+>
+> 也可直接使用 Docker Compose：
+> ```bash
+> docker compose --profile all up -d    # 完整部署（后端 + 前端 + 中间件）
+> docker compose --profile dev up -d    # 仅中间件（本地开发）
+> ```
+
+### 方式二：本机开发（手动启动）
 
 ### 环境要求
 
@@ -330,10 +362,38 @@ mvn test -pl chat-media   # 26 个测试
 
 ---
 
+## 贡献
+
+欢迎贡献！无论是提交 Bug、新功能还是改进文档，请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解贡献流程与代码规范。
+
+- 报告 Bug / 提需求：使用 [Issue 模板](.github/ISSUE_TEMPLATE/)
+- 提交代码：Fork → 特性分支 → PR（需通过 CI）
+- 行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 开源协议。
+
+---
+
 ## 关于
 
 - **制作者**：杨思义 · 博思AI团队
 - **GitHub**：https://github.com/ysy0915/chat-system
 - **在线体验**：http://112.124.106.108/chat/home
+
+### 项目历程
+
+本项目于 **2026 年 8 月** 完成从设计到上线的完整迭代，核心演进轨迹：
+
+| 时间 | 里程碑 |
+|------|--------|
+| 08-11 | 项目立项，多模型协作架构设计，性能基线压测 |
+| 08-12 | 模型抽象 SPI 策略工厂 + 模型自助管理面落地 |
+| 08-13 | Multi-Agent 并行工作流全链路 + 工具平台化 + 存储 SPI 热插拔 + 测试质量专项（892 用例全绿） |
+| 08-14 | chat-llm 独立部署 standalone 模式 + 树状辩论多模型化 |
+| 08-15 | 性能与稳定性加固（熔断/缓存双写/DLX）+ V1.2.0 DDL 上线 + 文档开源规范化 |
+
+> 说明：本仓库为归档重建，完整迭代细节见 [架构评估报告.md](docs/01-架构设计/架构评估报告.md) 与 [CHANGELOG-3.0.md](docs/07-变更与经验/CHANGELOG-3.0.md)。
 
 > 博思AI智能体 — 让 AI 不止于回答，更懂得辩论、推理与共情。

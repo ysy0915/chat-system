@@ -117,7 +117,7 @@ AI 能力层 chat-llm（端口 9095）  多 Provider 策略 + 图执行引擎 + 
 | **AI 引擎** | chat-llm 独立 LLM 服务（多 Provider：OpenAI 兼容 / DeepSeek / 豆包）+ 自研 LangGraph 风格图执行引擎 |
 | **知识库** | Milvus 向量数据库 + Embedding + RAG 检索增强 |
 | **消息中间件** | RabbitMQ（跨节点广播 · Multi-Agent 子任务分发 · DLX 死信重试） |
-| **数据库** | MySQL + Redis + Neo4j + Elasticsearch + Kafka + Flink |
+| **数据库** | MySQL + Redis + Neo4j |
 | **可观测性** | Prometheus + Alertmanager + Micrometer Tracing + AOP 切面业务指标 |
 | **前端** | React 18 + Vite + Router v6 + WebSocket 流式 |
 | **部署** | Docker + Docker Compose + Nginx + 双服务器架构 |
@@ -134,7 +134,6 @@ chat-system-project/
 ├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、知识图谱、gRPC） 端口 9095
 ├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
 ├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
-├── flink-log-analyzer/# 日志分析（Kafka → Flink → ES 实时流式处理）
 ├── frontend/          # 前端 SPA（React + Vite）
 ├── scripts/           # 运维脚本（部署、重启、监控、迁移）
 └── docs/              # 完整文档（7 类文档中心 + ADR + 部署配置资产）

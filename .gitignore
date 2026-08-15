@@ -4,6 +4,9 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+### Maven shade plugin ###
+dependency-reduced-pom.xml
+
 ### Sensitive / local ###
 # 历史备份（含旧生产配置明文密码），开源时不得提交
 backup/

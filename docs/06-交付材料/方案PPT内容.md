@@ -68,7 +68,6 @@
 - `chat-llm`：独立 LLM 服务（多 Provider、自研图执行引擎、RAG、gRPC）
 - `chat-games`：AI 多人游戏
 - `chat-media`：多模态生成（图/视频/3D）
-- `flink-log-analyzer`：日志实时分析
 
 **部署形态**：Docker + Docker Compose + 双服务器架构
 - 主服务器：Nginx + Redis + RabbitMQ

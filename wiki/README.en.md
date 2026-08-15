@@ -117,7 +117,7 @@ Infra         MySQL (RDS) · Redis · RabbitMQ · Nacos · Neo4j · Milvus
 | **AI Engine** | chat-llm standalone LLM service (multi-provider: OpenAI-compatible / DeepSeek / Doubao) + self-built LangGraph-style graph execution engine |
 | **Knowledge Base** | Milvus vector DB + Embedding + RAG |
 | **Messaging** | RabbitMQ (cross-node broadcast · multi-agent subtask distribution · DLX dead-letter retry) |
-| **Databases** | MySQL + Redis + Neo4j + Elasticsearch + Kafka + Flink |
+| **Databases** | MySQL + Redis + Neo4j |
 | **Observability** | Prometheus + Alertmanager + Micrometer Tracing + AOP business metrics |
 | **Frontend** | React 18 + Vite + Router v6 + WebSocket streaming |
 | **Deployment** | Docker + Docker Compose + Nginx + dual-server architecture |
@@ -134,7 +134,6 @@ chat-system-project/
 ├── chat-llm/          # Standalone LLM service (multi-provider, graph engine, RAG, KG, gRPC) port 9095
 ├── chat-games/        # Game service (castle siege, pong, snake)                           port 8083
 ├── chat-media/        # Multimodal service (text-to-image/video, image-to-3D)              port 8084
-├── flink-log-analyzer/# Log analysis (Kafka → Flink → ES real-time streaming)
 ├── frontend/          # Frontend SPA (React + Vite)
 ├── scripts/           # Ops scripts (deploy, restart, monitor, migrate)
 └── docs/              # Full documentation (7-category doc center + ADR + deployment assets)

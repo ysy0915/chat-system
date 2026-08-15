@@ -1,14 +1,11 @@
 package com.example.chat.intent.funnel;
 
-import com.example.chat.intent.IntentCategory;
 import com.example.chat.intent.IntentRecognitionService;
 import com.example.chat.intent.IntentResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
-import java.util.Optional;
 
 /**
  * 意图漏斗 — 第三层：LLM / MCP 深度理解。
@@ -53,28 +50,4 @@ public class ToolIntentMatcher {
         }
     }
 
-    /**
-     * MCP 工具执行（预留扩展点）。
-     *
-     * <pre>
-     *   当意图为 TASK_EXECUTION 时，尝试查找匹配的 MCP Tool：
-     *     1. 提取 entities 中的 action / target
-     *     2. 在 MCP Server 中匹配 tool 定义
-     *     3. 调用并返回结果
-     * </pre>
-     */
-    public Optional<MCPToolResult> executeTool(IntentResult intent, String userId) {
-        if (intent == null || intent.category() != IntentCategory.TASK_EXECUTION) {
-            return Optional.empty();
-        }
-        // 扩展点（预留）：MCP 集成，引入 MCPClient 后启用
-        // MCPClient client = mcpClientFactory.getClient("default");
-        // List<Tool> tools = client.listTools();
-        // Tool matched = matchTool(intent.entities(), tools);
-        // return client.callTool(matched.name(), params);
-        return Optional.empty();
-    }
-
-    /** MCP 工具执行结果 */
-    public record MCPToolResult(String toolName, String result, long durationMs) {}
 }

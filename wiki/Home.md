@@ -31,7 +31,7 @@
 | **AI 引擎** | chat-llm 独立 LLM 服务（多 Provider：OpenAI 兼容 / DeepSeek / 豆包 / OpenAI SDK）+ 自研 LangGraph 风格图执行引擎；chat-core 保留 LangChain4j 个人对话 / 树洞服务 |
 | **知识库** | Milvus 向量数据库 + Embedding + RAG 检索增强 |
 | **消息中间件** | RabbitMQ (跨节点广播, 聊天分流) |
-| **数据库** | MySQL + Redis + Elasticsearch + Kafka + Flink |
+| **数据库** | MySQL + Redis + Neo4j |
 | **可观测性** | 熔断器、错误聚合、调用链追踪、自愈服务 |
 | **前端** | React 18 + Vite + Router v6 + Axios + WebSocket |
 | **部署** | Docker + Docker Compose (开发/生产/全部三套环境) |
@@ -46,7 +46,6 @@ chat-system-project/
 ├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、知识图谱、gRPC） 端口 9095 / gRPC 9195
 ├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
 ├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
-├── flink-log-analyzer/# 日志分析（Kafka → Flink → ES 实时流式处理）
 ├── frontend/          # 前端 SPA（React + Vite）
 ├── scripts/           # 运维脚本（部署、重启、监控、迁移）
 └── docs/              # 完整文档（部署运维手册 + Prometheus 生产配置 + Nginx + 排障等）

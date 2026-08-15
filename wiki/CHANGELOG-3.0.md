@@ -4,6 +4,39 @@
 
 ---
 
+## 〇〇〇〇〇〇、RAG 能力升级：联网搜索 + 语义重排 + 引文溯源 + BM25 混合检索（2026-08-15）
+
+### 1. 背景
+
+对标 DeepSeek 等头部产品，补齐标准 RAG 分层方案的关键能力：检索结果经重排精排、向量检索与 BM25 关键词混合召回、回答附引文页码溯源，并支持 LLM 联网搜索。四项能力全部实现，并默认提供**逐级降级**保障——任一环节未启用或失败自动退回纯向量检索，不阻塞主链路。
+
+### 2. 变更内容
+
+| 能力 | 实现 | 默认 | 开启方式 |
+|------|------|------|---------|
+| 联网搜索 | chat-core 新增 `WebSearchTool`（`web_search`，DuckDuckGo 免 key / SerpAPI）、`WebFetchTool`（`web_fetch`，剥标签抓正文），复用既有 Tool/Function Calling 链路 | ✅ 开 | 无需配置 |
+| 语义重排 Rerank | chat-llm 新增 `RerankService`，支持 jina / local / none，失败降级原序 | 关 | `RERANK_ENABLED=true` + `RERANK_API_KEY`（Jina） |
+| 引文溯源 | `page` 字段贯穿 PDF 逐物理页解析 → 分片 → 向量库/内存 → 检索结果 → prompt，展示"来源 xxx 第 N 页" | ✅ 开 | 新上传 PDF 自动带页码 |
+| BM25 混合检索 | chat-llm 新增 `HybridSearchService`：向量召回(×3) ∪ MySQL ngram FULLTEXT → RRF(rrf-k=60) → Rerank → topK | 关 | `HYBRID_KEYWORD_ENABLED=true`（启动自动幂等建 `rag_chunks` 表） |
+
+### 3. 关键设计
+
+- **降级编排**：`HybridSearchService.search()` 任一环失败（含未启用）逐级降级，最终退回 `LegacyVectorStoreService` 纯向量；`LegacyRagController` 统一入口 `retrieve()` 兜底
+- **BM25 方案**：`rag_chunks` 表 + ngram `FULLTEXT` 索引（MySQL 5.7.6+/8.0 中文二元分词），`MATCH...AGAINST` 召回 + sigmoid 归一化；按 kb/doc 删除联动
+- **Rerank 模型**：默认 `jina-reranker-v2-base-multilingual`，支持 jina/local/none 三档
+- **引文格式**：prompt 上下文输出 `--- 来源: {source} 第{page}页 (相似度: 0.xx) ---`
+- **兼容旧数据**：Milvus 旧 chunk 无 `page` 字段，读取时缺字段置 0，不报错
+
+### 4. 验证与部署
+
+- `mvn test-compile` + checkstyle 全绿；`DocumentParserTest` / `TextChunkerTest` / `LegacyEmbeddingServiceTest` 通过
+- 重新打包上传 `chat-core`（94M）/ `chat-llm`（119M）jar，重启双实例
+- 9090 / 9092 / 9095 / 9096 `/actuator/health` 全部 UP（MySQL/Nacos 正常）
+- core 日志确认 `web_search` / `web_fetch` 注册（共 6 个工具启用）
+- 生产默认：联网搜索开、Rerank/BM25 关；启用需在服务器 `.env` 配 `RERANK_ENABLED` / `HYBRID_KEYWORD_ENABLED` 后重启 llm
+
+---
+
 ## 〇〇〇〇〇、前端全站中英文翻译（i18n）上线（2026-08-15）
 
 ### 1. 背景

@@ -189,4 +189,4 @@
   5. **内存/并发防护**：`RuleBasedMatcher` 状态条目带最后活跃时间，30 分钟 TTL 定时清理；`DebateTreeProcessor` 无界队列 → `ThreadPoolFactory` 有界队列 + CallerRuns，批量池类级复用
   6. **连接池扩容**：HikariCP `maximum-pool-size` chat-common/chat-llm 10→20（nacos 同步），chat-core prod 30
   7. **SQL 危险词词边界**：`SqlExecutorController` 危险词匹配改 `\b` 词边界正则
-- **后果**：✅ 缓存从"永远失效"恢复真实命中；✅ MQ 消息量降一个数量级（前端延迟 ≤30ms 无感知）；✅ 熔断能识别慢请求/偶发抖动，指标可观测；✅ 失败消息可重试不丢失、状态机/线程池无 OOM 风险；⚠️ 缓存双写多一次 Redis set（可忽略）；⚠️ 流式合并广播需保证超时冲刷（30ms 窗口），极端低延迟场景延迟略增；⚠️ `V1.2.0` DDL（req_id 唯一索引 + content ngram 全文索引）需低峰期人工执行；chat-core 249 / 全量 884 用例全绿。
+- **后果**：✅ 缓存从"永远失效"恢复真实命中；✅ MQ 消息量降一个数量级（前端延迟 ≤30ms 无感知）；✅ 熔断能识别慢请求/偶发抖动，指标可观测；✅ 失败消息可重试不丢失、状态机/线程池无 OOM 风险；⚠️ 缓存双写多一次 Redis set（可忽略）；⚠️ 流式合并广播需保证超时冲刷（30ms 窗口），极端低延迟场景延迟略增；⚠️ `V1.2.0` DDL（req_id 唯一索引 + question ngram 全文索引）已于 2026-08-15 执行完成；chat-core 257 / 全量 892 用例全绿。

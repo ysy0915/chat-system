@@ -333,7 +333,7 @@ CREATE TABLE messages (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY uq_messages_reqid (req_id),
+  UNIQUE KEY uk_req_id (req_id),
   INDEX idx_user_created (user_id, created_at),
   INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -353,7 +353,7 @@ CREATE TABLE attachments (
 
 备注：可选将流式片段拆到 message_chunks 表以便回放或更细粒度持久化。
 
-> **V1.2.0 迁移（2026-08-15）**：`docs/db-migrations/V1.2.0__add_reqid_unique_and_fulltext_indexes.sql` —— ① `messages.req_id` 建唯一索引 `uq_messages_reqid`（幂等防重）；② `messages` 与 `tree_hole_messages` 两表建 ngram 全文索引 `idx_ft_content_ngram`（全文搜索；脚本模板列名 `content` 按实际表列 `question` 调整）。线上大表需**低峰期人工执行**（加锁耗时）。
+> **V1.2.0 迁移（2026-08-15 已执行）**：`docs/db-migrations/V1.2.0__add_reqid_unique_and_fulltext_indexes.sql` —— ① `messages.req_id` 唯一索引（幂等防重，线上已存在 `uk_req_id`，脚本幂等跳过）；② `messages` 与 `tree_hole_messages` 两表 ngram 全文索引 `idx_ft_question_ngram`（全文搜索，列名 `question`）。已上线：唯一索引 `uk_req_id` 既存、全文索引 `idx_ft_question_ngram`（两表）于 2026-08-15 执行完成，冒烟 `MATCH(question) AGAINST('测试')` 通过。
 
 ## 4 Redis 设计（键、类型、TTL、目的）
 - Key patterns:
@@ -448,7 +448,7 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 
 ## 9 索引、性能与容量建议
 - messages: UNIQUE(req_id), INDEX(user_id, created_at), INDEX(status)
-- messages.question / tree_hole_messages.question: FULLTEXT ngram 全文索引 `idx_ft_content_ngram`（V1.2.0 新增，消息/树洞全文搜索）
+- messages.question / tree_hole_messages.question: FULLTEXT ngram 全文索引 `idx_ft_question_ngram`（V1.2.0 新增，消息/树洞全文搜索）
 - model_configs: INDEX(provider, model)
 - users: UNIQUE(email)
 - DB：视高并发做分表/分区；messages 可按时间分区

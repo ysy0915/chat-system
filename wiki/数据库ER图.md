@@ -1,7 +1,7 @@
 # 数据库 ER 图
 
-> 版本：2026-08-13 ｜ 数据库：MySQL（阿里云 RDS `your-rds-host`，库名 `test_data`）
-> 表数量：**18 张**（废弃表 `model_configs` / `llm_data_source*` / `llm_vector_store*` 已于 2026-08-13 删除）
+> 版本：2026-08-15 ｜ 数据库：MySQL（阿里云 RDS `your-rds-host`，库名 `test_data`）
+> 表数量：**19 张**（废弃表 `model_configs` / `llm_data_source*` / `llm_vector_store*` 已于 2026-08-13 删除；2026-08-15 新增 `rag_chunks` BM25 分片表）
 > 渲染方式：Mermaid（VS Code / GitHub 原生支持），或用 [mermaid.live](https://mermaid.live) 在线渲染
 
 ---
@@ -174,6 +174,16 @@ erDiagram
         text error_message "失败原因"
         datetime created_at
     }
+    rag_chunks {
+        bigint id PK
+        bigint kb_id "FK→rag_knowledge_bases.id"
+        bigint doc_id "FK→rag_documents.id"
+        int chunk_index "分片序号"
+        varchar source "来源文件名"
+        int page "页码(PDF)"
+        mediumtext text "分片文本(全文索引)"
+        datetime created_at
+    }
 
     %% ==================== AI 能力域 ====================
     skill_registry {
@@ -222,7 +232,7 @@ erDiagram
     llm_model_config ||--o{ llm_model_props : "model_config_id (物理FK)"
     users ||--o{ user_registrations : "user_id (物理FK)"
 
-    %% —— 逻辑关联（业务外键，无物理约束，9 条）——
+    %% —— 逻辑关联（业务外键，无物理约束，11 条）——
     users ||--o{ messages : "user_id (逻辑)"
     users ||--o{ debate_records : "user_id (逻辑)"
     users ||--o{ tree_hole_messages : "user_id (逻辑)"
@@ -232,6 +242,8 @@ erDiagram
     messages ||--o{ attachments : "message_id (逻辑)"
     attachments }o--|| users : "uploaded_by (逻辑)"
     rag_knowledge_bases ||--o{ rag_documents : "knowledge_base_id (逻辑)"
+    rag_knowledge_bases ||--o{ rag_chunks : "kb_id (逻辑)"
+    rag_documents ||--o{ rag_chunks : "doc_id (逻辑)"
 ```
 
 ---
@@ -255,6 +267,7 @@ erDiagram
 | | `llm_model_props` | 模型 KV 属性（base_url 覆盖等） |
 | RAG 域 | `rag_knowledge_bases` | 知识库（legacy RAG 体系） |
 | | `rag_documents` | 知识库文档（分片/解析状态） |
+| | `rag_chunks` | BM25 关键词分片表（2026-08-15 新增，`KeywordSearchService` 幂等建表，混合检索关键词侧） |
 | AI 能力域 | `skill_registry` | 技能注册表（Agent 可执行函数代码） |
 | | `tool_registry` | 工具平台化注册表（元数据声明 + DB 覆盖） |
 | | `media_gen_records` | 多模态生成记录（文生图/视频/3D） |
@@ -272,7 +285,7 @@ erDiagram
 
 > 说明：`llm_*` 四表构成「提供商 → 模型」两级级联（删提供商自动删其模型与 KV 属性），支撑模型管理面的级联删除。
 
-## 四、逻辑关联明细（业务外键，无物理约束，9 条）
+## 四、逻辑关联明细（业务外键，无物理约束，11 条）
 
 | 关系 | 子表字段 | 父表 | 说明 |
 |------|---------|------|------|
@@ -285,6 +298,8 @@ erDiagram
 | 1:N | `attachments.message_id` | `messages.id` | 消息附件 |
 | N:1 | `attachments.uploaded_by` | `users.id` | 上传者 |
 | 1:N | `rag_documents.knowledge_base_id` | `rag_knowledge_bases.id` | 知识库文档 |
+| 1:N | `rag_chunks.kb_id` | `rag_knowledge_bases.id` | 知识库分片（应用层联动清理） |
+| 1:N | `rag_chunks.doc_id` | `rag_documents.id` | 文档分片（删除文档联动删分片） |
 
 > 业务约定：对话/辩论/树洞类记录**不设物理外键**（避免级联删除误删用户历史），由应用层软处理；`rag_*` 为 legacy RAG 体系，`knowledge_base_id` 关联由应用层维护。
 
@@ -295,7 +310,7 @@ erDiagram
 ER 图基于 `information_schema` 实时导出生成，维护时可重新执行：
 
 ```bash
-# 字段结构（18 表全量）
+# 字段结构（19 表全量）
 mysql -h <HOST> -u <USER> -p test_data -N -e \
 "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY,
         IFNULL(COLUMN_DEFAULT,'NULL'), COLUMN_COMMENT

@@ -10,14 +10,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
@@ -38,18 +34,13 @@ public class WebSocketSessionTracker {
     private static final long IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 分钟无操作清理
     private static final int SESSION_PAGE_MAP_TTL_MINUTES = 30;
 
-    /** 随机在线人数下限（避免展示 0 人的冷清感） */
-    private static final int RANDOM_TOTAL_MIN = 30;
-    /** 随机在线人数上限（30-300） */
-    private static final int RANDOM_TOTAL_MAX = 301;
-
     private final StringRedisTemplate redisTemplate;
     private final OnlineCountRedisService onlineCountRedisService;
     private final BroadcastService broadcastService;
 
-    /** 全局虚拟在线总数（随机生成，定时刷新） */
+    /** 全局在线总数（真实连接数，定时刷新） */
     private final AtomicInteger virtualTotal = new AtomicInteger(0);
-    /** 各页面的虚拟在线数（key=page, value=分配后的人数） */
+    /** 各页面的在线数（key=page, value=真实连接数） */
     private final ConcurrentHashMap<String, AtomicInteger> virtualPageCounts = new ConcurrentHashMap<>();
 
     public WebSocketSessionTracker(StringRedisTemplate redisTemplate,
@@ -62,13 +53,12 @@ public class WebSocketSessionTracker {
             redisTemplate.opsForSet().add(KNOWN_PAGES_KEY, page);
             virtualPageCounts.put(page, new AtomicInteger(0));
         }
-        // 不在构造器中生成随机数，初始化为真实值（0），
-        // 等 60 秒后第一次定时任务再生成虚拟随机数
+        // 初始化为 0，等 60 秒后第一次定时任务统计真实连接数并刷新
     }
 
     /**
-     * 每 60 秒刷新一次虚拟在线数
-     * 生成 0-300 的随机总数，按各页面真实连接数比例分配
+     * 每 60 秒刷新一次在线数。
+     * 直接统计各页面真实 WebSocket 连接数并广播（不做随机放大，如实展示）。
      */
     @Scheduled(fixedRate = 60000)
     public void refreshVirtualCounts() {
@@ -77,16 +67,13 @@ public class WebSocketSessionTracker {
         if (pages == null) pages = DEFAULT_PAGES;
         Map<String, Integer> realCounts = collectRealCounts(pages);
 
-        // 2. 计算并更新虚拟在线数（下限 RANDOM_TOTAL_MIN，避免显示 0 人）
-        int newTotal = ThreadLocalRandom.current().nextInt(RANDOM_TOTAL_MAX - RANDOM_TOTAL_MIN) + RANDOM_TOTAL_MIN;
+        // 2. 直接用真实连接数作为展示值（不生成随机数）
         int realTotal = realCounts.values().stream().mapToInt(Integer::intValue).sum();
-        if (realTotal > 0) {
-            allocateByRealCount(realCounts, newTotal, realTotal);
-        } else {
-            allocateToHotPages(pages, newTotal);
+        virtualTotal.set(realTotal);
+        for (String page : pages) {
+            setVirtualCount(page, realCounts.getOrDefault(page, 0));
         }
-        virtualTotal.set(newTotal);
-        log.info("[OnlineCount] 刷新虚拟在线数 total={} pages={}", newTotal, virtualPageCounts);
+        log.info("[OnlineCount] 刷新真实在线数 total={} pages={}", realTotal, virtualPageCounts);
 
         // 3. 广播新的在线数
         broadcastAll();
@@ -109,56 +96,9 @@ public class WebSocketSessionTracker {
     }
 
     /**
-     * 按真实连接数比例分配虚拟总数。最后一个页面分配剩余值，保证总和精确。
-     * @param realCounts 各页面真实连接数
-     * @param newTotal 虚拟总目标数
-     * @param realTotal 真实连接总数
-     */
-    private void allocateByRealCount(Map<String, Integer> realCounts, int newTotal, int realTotal) {
-        List<String> pageList = new ArrayList<>(realCounts.keySet());
-        int allocated = 0;
-        for (int i = 0; i < pageList.size(); i++) {
-            String page = pageList.get(i);
-            int realCnt = realCounts.get(page);
-            if (i == pageList.size() - 1) {
-                setVirtualCount(page, newTotal - allocated);
-            } else {
-                int v = (int) ((long) newTotal * realCnt / realTotal);
-                allocated += v;
-                setVirtualCount(page, v);
-            }
-        }
-    }
-
-    /**
-     * 无真实连接时，将虚拟总数随机分配到几个热门页面，其余页面置 0。
-     * @param pages 全部已知页面集合（非热门页面将被置 0）
-     * @param newTotal 虚拟总目标数
-     */
-    private void allocateToHotPages(Set<String> pages, int newTotal) {
-        String[] hotPages = {"chat", "personal", "debate", "games", "landing"};
-        int allocated = 0;
-        for (int i = 0; i < hotPages.length; i++) {
-            if (i == hotPages.length - 1) {
-                setVirtualCount(hotPages[i], newTotal - allocated);
-            } else {
-                int v = newTotal / hotPages.length;
-                allocated += v;
-                setVirtualCount(hotPages[i], v);
-            }
-        }
-        // 其他页面置 0
-        for (String page : pages) {
-            if (!Arrays.asList(hotPages).contains(page)) {
-                setVirtualCount(page, 0);
-            }
-        }
-    }
-
-    /**
-     * 设置指定页面的虚拟在线数（负值会被截断为 0）。
+     * 设置指定页面的在线数（负值会被截断为 0）。
      * @param page 页面标识
-     * @param count 虚拟在线数
+     * @param count 在线数
      */
     private void setVirtualCount(String page, int count) {
         virtualPageCounts.computeIfAbsent(page, k -> new AtomicInteger(0)).set(Math.max(0, count));
@@ -293,19 +233,19 @@ public class WebSocketSessionTracker {
         return size != null ? size.intValue() : 0;
     }
 
-    /** 获取页面的虚拟在线数（对外展示用） */
+    /** 获取页面的在线数（对外展示用，真实连接数） */
     public int getCount(String page) {
         String pageKey = normalizePage(page);
         AtomicInteger v = virtualPageCounts.get(pageKey);
         return v != null ? v.get() : 0;
     }
 
-    /** 获取全局虚拟在线总数 */
+    /** 获取全局在线总数（真实连接数） */
     public int getTotalCount() {
         return virtualTotal.get();
     }
 
-    /** 获取各页面虚拟在线数（保证总和 = getTotalCount()） */
+    /** 获取各页面在线数（保证总和 = getTotalCount()） */
     public Map<String, Integer> getAllCounts() {
         Map<String, Integer> result = new LinkedHashMap<>();
         Set<String> pages = redisTemplate.opsForSet().members(KNOWN_PAGES_KEY);
@@ -343,7 +283,7 @@ public class WebSocketSessionTracker {
     }
 
     /**
-     * 广播单个页面的虚拟在线数到对应 topic。
+     * 广播单个页面的在线数到对应 topic。
      */
     private void broadcastPage(String pageKey) {
         int count = getCount(pageKey);
@@ -353,15 +293,16 @@ public class WebSocketSessionTracker {
     }
 
     /**
-     * 广播全局在线数（虚拟总数/各页面数 + 真实总数/各页面数）到总 topic。
+     * 广播全局在线数（真实总数/各页面数）到总 topic。
+     * total/pages 与 realTotal/realPages 现在含义一致，均保留以兼容前端与监控页面。
      */
     private void broadcastAll() {
         broadcastService.broadcast("/topic/online-count/all",
                 Map.of(
-                        "total", getTotalCount(),           // 虚拟总数（首页展示用）
-                        "pages", getAllCounts(),             // 虚拟各页面数（展示用）
-                        "realTotal", getRealTotalCount(),    // 真实总数（监控用）
-                        "realPages", getAllRealCounts()      // 真实各页面数（监控用）
+                        "total", getTotalCount(),           // 总数（首页展示用）
+                        "pages", getAllCounts(),             // 各页面数（展示用）
+                        "realTotal", getRealTotalCount(),    // 总数（监控用）
+                        "realPages", getAllRealCounts()      // 各页面数（监控用）
                 ));
     }
 

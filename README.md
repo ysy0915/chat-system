@@ -22,6 +22,8 @@
 - **在线体验**：http://112.124.106.108/chat/home
 - **源码仓库**：https://github.com/ysy0915/chat-system
 
+> 在线环境已启用安全拦截（UA 校验），脚本调用 API 请携带浏览器 `User-Agent` 头；浏览器正常访问不受影响。
+
 ### 与传统 AI 产品的区别
 
 | 传统 AI 产品 | 博思AI智能体 |
@@ -203,6 +205,11 @@ cd frontend && npm install && npm run dev
 - 前端：http://localhost:5173
 - API：http://localhost:8080/api/v1/*
 - Swagger UI：http://localhost:8080/swagger-ui.html
+
+> **API 调用提示**：生产环境启用了安全拦截（UA 校验 + 敏感接口限流），脚本/工具调用 API 时请携带浏览器 `User-Agent` 头，否则会返回 `403`。示例：
+> ```bash
+> curl -H "User-Agent: Mozilla/5.0" http://localhost:8080/api/v1/messages/online-count
+> ```
 
 ### LLM 独立部署（standalone 纯内存模式）
 

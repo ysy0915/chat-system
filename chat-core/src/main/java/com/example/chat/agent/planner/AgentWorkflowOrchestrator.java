@@ -59,6 +59,14 @@ public class AgentWorkflowOrchestrator {
     private static final String KEY_CONVERGED = "agent:plan:%s:converged";
 
     /**
+     * 收敛锁 TTL：正常触发路径（ResultCollector）与对账路径（Reconciler）共用同一锁键，
+     * 必须使用相同（且足够长）的 TTL——收敛会调用 LLM 流式总结，可能超过数分钟，
+     * 若正常路径锁先过期，Reconciler 下一轮会误判"收敛卡住"而重复触发，导致双重收敛。
+     * 取 5min 覆盖绝大多数收敛耗时，同时短于 Redis 数据 30min 生命周期。
+     */
+    public static final java.time.Duration CONVERGE_LOCK_TTL = java.time.Duration.ofMinutes(5);
+
+    /**
      * Reconciler 扫描索引（ZSet）：成员为进行中的 planId，score=下次对账检查时间戳。
      * 结果未到齐时 score 保持“未来”（不被扫描）；结果到齐后置 0（立即进入扫描）；
      * 收敛成功移除成员。O(N) keys 全量扫描 → O(logN) 定位 + 少量读取。
@@ -244,10 +252,37 @@ public class AgentWorkflowOrchestrator {
             return true;
         } catch (Exception e) {
             log.error("[MultiAgent] 工作流启动失败 planId={}: {}", planId, e.getMessage());
+            // 部分任务可能已发出但未发齐：必须回滚已写入的 plan 状态，否则该 plan 永远
+            // 凑不齐 total（Reconciler 对 received<total 直接跳过）而卡满 30min TTL，
+            // 已发出的子任务白白执行、结果无处归集。回滚后已发子任务的回传结果会因
+            // total key 缺失被 ResultCollector 忽略（total=0 不会触发收敛）。
+            rollbackPlan(planId);
             broadcastService.broadcast("/topic/user." + userId,
                     WsMessage.of(WsMessage.TYPE_PLAN_ERROR).withReqId(reqId)
                             .with("message", "任务并行拆分启动失败: " + e.getMessage()).toMap());
             return false;
+        }
+    }
+
+    /**
+     * 回滚一个启动失败的 plan：删除其全部 Redis 状态（元信息/计划/计数/结果/锁/收敛标记）
+     * 并从 Reconciler 扫描索引移除，避免残留脏状态导致 plan 永久卡住或 permit 泄漏。
+     * 幂等：重复调用安全。
+     */
+    private void rollbackPlan(String planId) {
+        try {
+            redisTemplate.delete(List.of(
+                    key(KEY_PLAN, planId),
+                    key(KEY_META, planId),
+                    key(KEY_TOTAL, planId),
+                    key(KEY_RECEIVED, planId),
+                    key(KEY_RESULT_HASH, planId),
+                    key(KEY_LOCK, planId),
+                    key(KEY_CONVERGED, planId)));
+            removeFromReconciler(planId);
+            log.info("[MultiAgent] planId={} 启动失败已回滚清理 Redis 状态", planId);
+        } catch (Exception rollbackEx) {
+            log.warn("[MultiAgent] planId={} 回滚清理异常: {}", planId, rollbackEx.getMessage());
         }
     }
 

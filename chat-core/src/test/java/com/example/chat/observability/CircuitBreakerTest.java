@@ -69,12 +69,22 @@ class CircuitBreakerTest {
 
     @Test
     void state_isIsolatedPerProvider() {
+        // 独立 registry：冷却时间足够长（1s），避免 5 次失败后 allowRequest 因 1ms 冷却
+        // 已过而立即转 HALF_OPEN 放行探测请求（与 halfOpen 测试共享极短冷却会时序敏感）
+        CircuitBreaker isolated = new CircuitBreaker(CircuitBreakerRegistry.of(
+                CircuitBreakerConfig.custom()
+                        .failureRateThreshold(50)
+                        .waitDurationInOpenState(Duration.ofSeconds(1))
+                        .permittedNumberOfCallsInHalfOpenState(1)
+                        .slidingWindowSize(10)
+                        .minimumNumberOfCalls(5)
+                        .build()));
         for (int i = 0; i < 5; i++) {
-            breaker.recordFailure("qwen");
+            isolated.recordFailure("qwen");
         }
 
-        assertFalse(breaker.allowRequest("qwen"));
-        assertTrue(breaker.allowRequest("deepseek"), "其他 provider 不受影响");
+        assertFalse(isolated.allowRequest("qwen"));
+        assertTrue(isolated.allowRequest("deepseek"), "其他 provider 不受影响");
     }
 
     @Test

@@ -92,7 +92,8 @@ public class SubTaskResultCollector {
             // 3. 全部到齐 → 分布式锁 → 异步收敛（保证双实例只收敛一次）
             if (complete) {
                 Boolean locked = redisTemplate.opsForValue()
-                        .setIfAbsent(AgentWorkflowOrchestrator.keyLock(planId), "1", Duration.ofMinutes(2));
+                        .setIfAbsent(AgentWorkflowOrchestrator.keyLock(planId), "1",
+                                AgentWorkflowOrchestrator.CONVERGE_LOCK_TTL);
                 if (Boolean.TRUE.equals(locked)) {
                     log.info("[SubTaskCollector] planId={} 全部 {} 个结果已到齐，触发收敛", planId, total);
                     CompletableFuture.runAsync(() -> orchestrator.converge(planId), collectExecutor);

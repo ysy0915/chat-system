@@ -13,7 +13,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
@@ -53,8 +52,7 @@ public class WorkflowReconciler {
     private static final String RECONCILER_ZSET = "agent:reconciler:plans";
     /** 单轮对账最多处理的候选数：超过则下轮继续（score=0 的候选不会被移除，不会丢失） */
     private static final int SCAN_LIMIT = 500;
-    /** 对账触发的收敛锁 TTL：比正常路径（2min）更长，避免收敛超过 2 分钟时被重复触发 */
-    private static final Duration RECONCILE_LOCK_TTL = Duration.ofMinutes(5);
+    /** 对账触发的收敛锁 TTL：与正常触发路径共用 {@link AgentWorkflowOrchestrator#CONVERGE_LOCK_TTL} */
 
     private final StringRedisTemplate redisTemplate;
     private final MessageRepository messageRepository;
@@ -164,7 +162,8 @@ public class WorkflowReconciler {
 
             // 4. 抢占收敛锁（复用正常路径锁键；SETNX 保证双实例只触发一次）
             Boolean locked = redisTemplate.opsForValue()
-                    .setIfAbsent(AgentWorkflowOrchestrator.keyLock(planId), "1", RECONCILE_LOCK_TTL);
+                    .setIfAbsent(AgentWorkflowOrchestrator.keyLock(planId), "1",
+                            AgentWorkflowOrchestrator.CONVERGE_LOCK_TTL);
             if (!Boolean.TRUE.equals(locked)) {
                 log.debug("[Reconciler] planId={} 收敛锁被占用（收敛进行中），跳过", planId);
                 return false;

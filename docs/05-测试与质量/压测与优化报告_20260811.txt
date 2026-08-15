@@ -583,7 +583,7 @@ isComplexIntent() 判定方法：
   (8) 数据库索引（需低峰期人工执行）
       docs/db-migrations/V1.2.0__add_reqid_unique_and_fulltext_indexes.sql
       - messages.req_id 唯一索引（幂等）
-      - messages.content ngram 全文索引（MySQL 8.0+）
+      - messages 与 tree_hole_messages 两表 ngram 全文索引 idx_ft_content_ngram（MySQL 8.0+，脚本模板列 content 按实际 question 列调整）
 
   (9) 压测脚本升级
       stress-test/k6-http-test.js setup() 单次登录共享 JWT，

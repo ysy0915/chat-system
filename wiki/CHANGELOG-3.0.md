@@ -30,7 +30,7 @@
 `docs/db-migrations/V1.2.0__add_reqid_unique_and_fulltext_indexes.sql`（**需低峰期人工执行**）：
 
 - `messages.req_id` 唯一索引（幂等、先查重）
-- `messages.content` ngram 全文索引（MySQL 8.0+，中文二元分词）
+- `messages` 与 `tree_hole_messages` 两表 ngram 全文索引 `idx_ft_content_ngram`（MySQL 8.0+，中文二元分词；脚本模板列名 `content` 需按实际表列 `question` 调整）
 
 ### 4. 验证
 

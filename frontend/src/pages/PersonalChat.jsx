@@ -642,6 +642,8 @@ export default function PersonalChat() {
               </div>
               <div className="msg user">{m.content}</div>
             </div>
+          ) : m.role === 'ai' && m.streaming && !m.content ? (
+            <TypingIndicator key={idx} />
           ) : m.role === 'ai' ? (
             <div key={idx} className="msg-row msg-ai-row">
               <div className="msg-avatar ai-avatar">

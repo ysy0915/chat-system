@@ -37,7 +37,7 @@ export default function Debate() {
   const [rounds, setRounds] = useState([])
   const [currentRound, setCurrentRound] = useState(0)
   const [roundCount, setRoundCount] = useState(3)
-  const [modelCount, setModelCount] = useState(3)
+  const [modelCount] = useState(3)
   const [availableModels, setAvailableModels] = useState([])
   const [thinking, setThinking] = useState([])
   const [finalAnswer, setFinalAnswer] = useState(null)
@@ -72,9 +72,6 @@ export default function Debate() {
       })
       .catch(() => { /* 拉取失败不影响使用，按默认 3 个展示 */ })
   }, [])
-  // 可用模型上限（后端最多 6）
-  const maxModelCount = Math.min(Math.max(3, availableModels.length || 3), 6)
-
   const [userId] = useState(() => {
     try {
       const authStr = localStorage.getItem('auth_user')
@@ -450,38 +447,22 @@ export default function Debate() {
         </button>
       </div>
 
-      {/* 场次 & 模型数选择 — 输入框上方（仅线性模式） */}
+      {/* 场次选择 — 输入框上方（仅线性模式） */}
       {!treeMode && (
-        <>
-          <div className="debate-rounds-picker">
-            <span className="debate-rounds-label">{t('debate.roundsLabel')}</span>
-            {[1, 2, 3, 4, 5].map(n => (
-              <button
-                key={n}
-                type="button"
-                className={`debate-rounds-btn ${roundCount === n ? 'active' : ''}`}
-                disabled={debating}
-                onClick={() => setRoundCount(n)}
-              >
-                {t('debate.roundsN', { n })}
-              </button>
-            ))}
-          </div>
-          <div className="debate-rounds-picker">
-            <span className="debate-rounds-label">{t('debate.modelCountLabel')}</span>
-            {Array.from({ length: maxModelCount - 2 }, (_, i) => i + 3).map(n => (
-              <button
-                key={n}
-                type="button"
-                className={`debate-rounds-btn ${modelCount === n ? 'active' : ''}`}
-                disabled={debating}
-                onClick={() => setModelCount(n)}
-              >
-                {t('debate.modelsN', { n })}
-              </button>
-            ))}
-          </div>
-        </>
+        <div className="debate-rounds-picker">
+          <span className="debate-rounds-label">{t('debate.roundsLabel')}</span>
+          {[1, 2, 3, 4, 5].map(n => (
+            <button
+              key={n}
+              type="button"
+              className={`debate-rounds-btn ${roundCount === n ? 'active' : ''}`}
+              disabled={debating}
+              onClick={() => setRoundCount(n)}
+            >
+              {t('debate.roundsN', { n })}
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="chat-input-area">

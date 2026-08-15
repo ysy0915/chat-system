@@ -142,6 +142,12 @@ chat-system-project/
 
 ---
 
+## Preview
+
+![Homepage Preview](docs/screenshots/homepage.png)
+
+> Multi-model collaboration & intelligent debate platform homepage — integrating debate arena, knowledge graph, personal chat, emotion tree hole, AI group chat, and multimodal generation.
+
 ## Quick Start
 
 ### Option 1: Docker One-Click Start (Recommended)

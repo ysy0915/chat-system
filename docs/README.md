@@ -27,7 +27,7 @@
 | [架构全盘说明.md](01-架构设计/架构全盘说明.md) | 系统总纲：整体架构 → 模块细节 → 核心业务流程一册通览（阅读入口） |
 | [架构设计说明.md](01-架构设计/架构设计说明.md) | Architecture Design：架构决策与模块设计 |
 | [架构评估报告.md](01-架构设计/架构评估报告.md) | 系统架构评估 + 风险清单 |
-| [ADR-架构决策记录.md](01-架构设计/ADR-架构决策记录.md) | 架构决策记录（ADR）：23 条关键决策的背景·决策·后果 |
+| [ADR-架构决策记录.md](01-架构设计/ADR-架构决策记录.md) | 架构决策记录（ADR）：25 条关键决策的背景·决策·后果 |
 | [系统架构说明.md](01-架构设计/系统架构说明.md) | 前后端架构、数据流、核心调用链 |
 | [LLM策略与路由说明.md](01-架构设计/LLM策略与路由说明.md) | 多 LLM 调用策略、路由机制、已知问题与修复 |
 
@@ -35,9 +35,9 @@
 
 | 文档 | 说明 |
 |------|------|
-| [api-design.md](02-API与数据库/api-design.md) | API 设计（§1-15 V1.0 历史存档 + §16+ V3.0 全量端点清单 146 个；MySQL DDL / OpenAPI / Redis 键） |
+| [api-design.md](02-API与数据库/api-design.md) | API 设计（§1-15 V1.0 历史存档 + §16+ V3.0 全量端点清单，对外 ~123 + 内部 48 + WS 9；MySQL DDL / OpenAPI / Redis 键） |
 | [数据库设计说明.md](02-API与数据库/数据库设计说明.md) | 表结构、索引策略、数据字典 |
-| [数据库ER图.md](02-API与数据库/数据库ER图.md) | 18 张表 ER 图（Mermaid） |
+| [数据库ER图.md](02-API与数据库/数据库ER图.md) | 19 张表 ER 图（Mermaid） |
 | `db-migrations/` | 版本化 SQL 迁移脚本（V{版本}__{描述}.sql，见 `scripts/db-migrate.sh`） |
 | `sql/` | 功能模块 DDL/迁移脚本（llm_routing_schema / rag_schema / migrate_model_configs_to_llm 等） |
 

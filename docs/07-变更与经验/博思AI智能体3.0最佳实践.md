@@ -468,7 +468,7 @@ spring-boot-starter-aop）从返回值/异常横切埋点（@Around 三个切点
 10.2 指标化巡检替代手工
 ------------------------
 
-  - Prometheus 6条告警规则替代手工tail日志
+  - Prometheus 12条告警规则替代手工tail日志
   - 异常秒级推送钉钉
   - 每60s守护线程健康检查（Neo4j自动重连等）
 

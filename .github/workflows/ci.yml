@@ -82,6 +82,12 @@ jobs:
       - name: Compile & Unit Test
         run: mvn test -B -Pci
 
+      # ---- 阶段2.5: 文档同步一致性检查 ----
+      # docs/ 是唯一权威源，wiki/ 由 scripts/sync-wiki.sh 自动导出；
+      # 本步骤阻断「改了 docs 却忘同步 wiki」导致的文档漂移。
+      - name: Wiki Sync Consistency Check
+        run: bash scripts/sync-wiki.sh check
+
       - name: Publish Test Results
         uses: dorny/test-reporter@v1
         if: always()

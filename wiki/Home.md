@@ -42,7 +42,7 @@
 chat-system-project/
 ├── chat-common/       # 公共库（实体、DTO、安全、工具、拦截器）
 ├── chat-core/         # 核心 AI 服务（业务编排、Agent工具、意图识别）      端口 9090(主)/9092(从)，生产双实例
-├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081(生产单实例)
+├── chat-web/          # Web 接入层（Controller、WebSocket）              端口 8080(本地) / 8081+8082(生产双实例)
 ├── chat-llm/          # 独立 LLM 服务（多 Provider、图执行引擎、RAG、知识图谱、gRPC） 端口 9095 / gRPC 9195
 ├── chat-games/        # 游戏服务（城堡围攻、乒乓、贪吃蛇）                 端口 8083
 ├── chat-media/        # 多模态服务（文生图、文生视频、图生3D）             端口 8084
@@ -187,12 +187,12 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d   # 生产
 
 | 维度 | 指标 |
 |------|------|
-| 测试 | 全量 **884 用例全绿**（含集成测试、Mapper 契约测试 32 例） |
+| 测试 | 全量 **892 用例全绿**（含集成测试、Mapper 契约测试 32 例） |
 | 代码规范 | Checkstyle 0 违规 · PMD 92 · SpotBugs 0 阻断 |
 | 架构设计 | 双 core/双 web 高可用 + Multi-Agent 并行工作流（DLX 死信重试 + Reconciler 对账） |
 | 模型抽象 | SPI 策略工厂 + 动态路由 + 工具平台化 + 存储 SPI 热插拔 |
 | 可观测性 | Prometheus 监控栈（12 条告警规则）+ 全链路追踪 |
-| 文档 | 7 类文档中心 + ADR 24 条 + Swagger |
+| 文档 | 7 类文档中心 + ADR 25 条 + Swagger |
 | CI/CD | GitHub Actions CI + Deploy + Security + OWASP |
 | 安全性 | JWT 弱密钥校验 + 三层限流 + 内容安全过滤 |
 

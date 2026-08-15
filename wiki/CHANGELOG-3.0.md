@@ -1,6 +1,21 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-08-15
+
+---
+
+## 〇〇〇〇〇〇〇〇、Multi-Agent 并行工作流可靠性修复：部分分发失败回滚 + 收敛锁 TTL 对齐（2026-08-15）
+
+代码走查发现 Multi-Agent 并行工作流存在两处可靠性隐患，已修复并补测试：
+
+| 项 | 内容 |
+|----|------|
+| P1-1 部分任务分发失败回滚 | `AgentWorkflowOrchestrator.startWorkflow` 逐条 `sendTask`，中途失败时此前仅 catch 返回 false，导致已写入 Redis 的 plan 状态残留：部分任务已发出却永远凑不齐 `total`（Reconciler 对 `received < total` 直接跳过），plan 卡满 30min TTL、已发子任务白执行、permit 泄漏。修复为失败时 `rollbackPlan()` 清理该 plan 全部 Redis key（plan/meta/total/received/result/lock/converged）并从 Reconciler ZSet 移除；回滚后已发子任务的回传结果因 total key 缺失被 ResultCollector 忽略（total=0 不触发收敛） |
+| P1-2 收敛锁 TTL 对齐 | 正常触发路径（`SubTaskResultCollector`）收敛锁 TTL 原为 2min，而收敛要调 LLM 流式总结可能超时，锁过期后 Reconciler 下轮误判"卡住"重复触发 → 双重收敛。修复为抽出共享常量 `AgentWorkflowOrchestrator.CONVERGE_LOCK_TTL = 5min`，正常路径与 Reconciler 共用，消除锁过期窗口 |
+| 测试补齐 | 新增 `AgentWorkflowOrchestratorTest`（4 例：部分失败回滚/permit 释放/过载降级/计划生成失败）+ `SubTaskResultCollectorTest`（4 例：共享锁 TTL 收敛/未到齐不收敛/回滚后孤立结果不收敛/异常 nack requeue），chat-core 249 → **257 例全绿** |
+| 既有 flaky 修复 | `CircuitBreakerTest.state_isIsolatedPerProvider` 因与 `halfOpen` 测试共享 1ms 极短冷却而时序敏感（5 次失败后 allowRequest 已转 HALF_OPEN 放行探测），改为独立 1s 冷却 registry，8/8 稳定全绿 |
+
+验证：全量 **892 用例全绿**（chat-common 277 / chat-core 257 / chat-web 90 / chat-llm 198 / chat-games 44 / chat-media 26）。
 
 ---
 

@@ -11,6 +11,8 @@
 [![Tests](https://img.shields.io/badge/Tests-892%20passed-success.svg)](#运行测试)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
 
+[English](README.en.md) | 简体中文
+
 **许可证**：本项目采用 [Apache License 2.0](LICENSE) 开源协议，可自由使用、修改、分发。
 
 ---

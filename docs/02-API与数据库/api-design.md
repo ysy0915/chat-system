@@ -3,6 +3,8 @@
 > **版本演进**：§1-§15 为 V1.0 初始设计（历史存档），§16+ 为 V3.0 实际上线 API 全量清单（2026-08-15 更新）。
 >
 > 本文档包含 MySQL DDL、OpenAPI 概要、Redis 键设计、MQ 消息格式、WebSocket 流示例、完整 API 端点清单（146 个）、索引与运维/安全建议。
+>
+> **2026-08-15 性能与稳定性加固同步**：缓存 Key 双写、流式 Token 合并广播、MQ MANUAL ack + DLX、Resilience4j 熔断、虚拟在线人数下限 30、SQL 危险词词边界、V1.2.0 数据库迁移。详见 §3/§4/§5/§7/§9/§13 标注。
 
 ## 0 V3.0 完整 API 端点清单（2026-08-15）
 
@@ -30,7 +32,7 @@
 | GET | `/api/v1/messages/recent` | 最近私聊消息 | JWT |
 | GET | `/api/v1/messages/search?keyword=` | 搜索私聊消息（全文索引） | JWT |
 | GET | `/api/v1/messages/context?msg_id=` | 获取消息上下文 | JWT |
-| GET | `/api/v1/messages/online-count?page=` | 在线人数（按页面） | 公开 |
+| GET | `/api/v1/messages/online-count?page=` | 在线人数（按页面，虚拟值区间 30-300） | 公开 |
 | POST | `/api/v1/messages/regenerate` | 重新生成回答 | JWT |
 | POST | `/api/v1/messages/stop` | 停止流式生成（广播到所有 core 实例） | JWT |
 
@@ -112,8 +114,8 @@
 | 方法 | 路径 | 说明 | 鉴权 |
 |------|------|------|------|
 | POST | `/api/v1/monitor/login` | 监控面板登录 | 公开 |
-| GET | `/api/v1/monitor/online-history?days=` | 在线人数历史 | X-Admin-Password |
-| GET | `/api/v1/monitor/current` | 当前在线人数 | X-Admin-Password |
+| GET | `/api/v1/monitor/online-history?days=` | 在线人数历史（含虚拟值，下限 30） | X-Admin-Password |
+| GET | `/api/v1/monitor/current` | 当前在线人数（虚拟值 30-300，60s 刷新） | X-Admin-Password |
 | POST | `/api/v1/monitor/record` | 记录当前在线快照 | X-Admin-Password |
 | GET | `/api/v1/monitor/llm-stats?date=` | LLM 调用统计 | X-Admin-Password |
 | GET | `/api/v1/monitor/total-usage` | 总使用量 | X-Admin-Password |
@@ -226,7 +228,7 @@
 | 方法 | 路径 | 说明 | 鉴权 |
 |------|------|------|------|
 | POST | `/api/v1/sql/login` | SQL 台登录（5次失败锁15分钟） | 公开 |
-| POST | `/api/v1/sql/execute` | 执行 SQL（限频 30次/分钟，禁多语句） | X-Admin-Token |
+| POST | `/api/v1/sql/execute` | 执行 SQL（限频 30次/分钟，禁多语句，危险词 `\b` 词边界正则拦截） | X-Admin-Token |
 
 ---
 
@@ -247,7 +249,7 @@
 
 | 事件类型 | 方向 | 说明 |
 |----------|------|------|
-| `chunk` | S→C | 流式文本片段 `{type, req_id, seq, content}` |
+| `chunk` | S→C | 流式文本片段 `{type, req_id, seq, content}`（StreamTokenBatcher 30ms/256字符合并广播，契约不变） |
 | `done` | S→C | 流式完成 `{type, req_id, answer, metadata}` |
 | `cache_hit` | S→C | 缓存命中 `{type, req_id, answer}` |
 | `error` | S→C | 错误 `{type, req_id, code, message}` |
@@ -277,7 +279,7 @@
 - 功能边界：
   - 管理模块：ModelConfig 管理（provider、model、apiKey、优先级、启用/禁用）
   - 用户模块：注册/登录（JWT），用户资料
-  - 聊天模块：前端发问 -> 写入 MySQL(messages status=queued) -> 发布到 MQ -> 消费者检查 Redis 缓存 -> 命中直接返回；未命中调用大模型流式返回 -> 结果写 MySQL + 写 Redis + 推送到前端（WebSocket/SSE）
+  - 聊天模块：前端发问 -> 写入 MySQL(messages status=queued) -> 发布到 MQ -> 消费者检查 Redis 缓存（问题级 key 命中直接返回） -> 未命中调用大模型流式返回（token 经 30ms/256字符合并广播） -> 结果写 MySQL + 写 Redis 双 key（问题级+模型级） + 推送到前端（WebSocket/SSE）
   - 附件：图片上传（对象存储或本地/DB），消息可引用图片
   - 缓存/历史：Redis 保存 question cache + user history list
   - 中间件：RabbitMQ / Kafka（示例以 RabbitMQ JSON 消息为主）
@@ -350,13 +352,19 @@ CREATE TABLE attachments (
 
 备注：可选将流式片段拆到 message_chunks 表以便回放或更细粒度持久化。
 
+> **V1.2.0 迁移（2026-08-15）**：`docs/db-migrations/V1.2.0__add_reqid_unique_and_fulltext_indexes.sql` —— ① `messages.req_id` 建唯一索引 `uq_messages_reqid`（幂等防重）；② `messages.content` 建 ngram 全文索引 `ft_messages_content`（全文搜索）。线上大表需**低峰期人工执行**（加锁耗时）。
+
 ## 4 Redis 设计（键、类型、TTL、目的）
 - Key patterns:
-  - question:{sha256(question + model + provider)} -> JSON string (answer + metadata) TTL: 24h（可配置）
+  - question:{sha256(question + "::model-pool")} -> 问题级缓存 key（不区分 provider/model，所有模型共用），TTL: 24h（可配置）
+  - question:{sha256(question + "::" + provider + "::" + model)} -> 模型级缓存 key（区分 provider/model），TTL: 24h（可配置）
+  - question:lock:{sha256(question)} -> 构建锁（SETNX 防并发重复构建），TTL: 60s-300s
   - user:{uid}:history -> LIST of message IDs (LPUSH newest, LTRIM to N)
   - inflight:{req_id} -> STRING (consumer lock) TTL: 60s-300s
   - rate:{uid}:tokens -> COUNTER or 令牌桶结构
   - websocket:session:{sessionId} -> HASH {user_id, socket_id, last_seen}
+
+> **2026-08-15 双写修复**：`save()` 同时写问题级与模型级两个 key，`hitAndServe()` 读问题级 key（命中即所有模型共用）。此前仅写模型级 key 导致问题级读永不命中，已修复。
 
 建议：使用 Redis JSON 模块可提高可操作性；history 存 ID 以减小 Redis 大对象量，并从 MySQL 拉取完整内容。
 
@@ -375,7 +383,9 @@ Routing key: chat.request
   "metadata":{ "clientLang":"zh","trace_id":"..." }
 }
 
-消费者职责：获取 inflight 锁 -> 检查 Redis 缓存 -> 命中返回并更新 DB -> 未命中调用模型并流式返回 -> 写 Redis 与 DB -> 推送给前端。
+消费者职责：获取 inflight 锁 -> 检查 Redis 缓存（问题级 key） -> 命中返回并更新 DB -> 未命中调用模型并流式返回 -> 写 Redis（双 key）与 DB -> 推送给前端。
+
+> **2026-08-15 ack 改造**：消费者由 AUTO 改为 MANUAL ack；正常处理完 `basicAck`，反序列化失败/不可重试场景 `basicNack(requeue=false)` 进死信队列（DLX 指数退避重试），避免 AUTO ack 下异常消息被静默确认丢弃。
 
 ## 6 OpenAPI 概要
 Base: /api/v1
@@ -417,6 +427,8 @@ Frame 示例（JSON）：
 
 流式策略：consumer 在接收模型流时，将每个片段转发为 CHUNK；最终发送 DONE 并写入 DB/Redis。
 
+> **2026-08-15 合并广播**：token 经 `StreamTokenBatcher` 按 30ms 时间窗口 / 256 字符阈值合并后广播一次（锁外发送，避免长锁阻塞）；流结束 `close()` 冲刷剩余 token。前端按 `{type, req_id, seq, content}` 正常处理，契约不变。
+
 ## 8 示例请求/响应（节选）
 - 注册
 POST /api/v1/auth/register
@@ -435,11 +447,13 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 
 ## 9 索引、性能与容量建议
 - messages: UNIQUE(req_id), INDEX(user_id, created_at), INDEX(status)
+- messages.content: FULLTEXT ngram 全文索引 `ft_messages_content`（V1.2.0 新增，私聊/树洞全文搜索）
 - model_configs: INDEX(provider, model)
 - users: UNIQUE(email)
 - DB：视高并发做分表/分区；messages 可按时间分区
 - Redis：设置合理 TTL，使用 LRU 策略；history 存 ID
-- MQ：合理 consumer 并发、预取与 ack 策略
+- MQ：合理 consumer 并发、预取与 ack 策略（MANUAL ack + DLX）
+- 连接池：HikariCP 生产配置（Nacos 同步：chat-common 20 / chat-core 30），避免高并发连接不足
 
 ## 10 幂等、速率限制与抗刷
 - 客户端必须生成 req_id（UUID v4）用于幂等，服务端用 UNIQUE(req_id) 防止重复处理
@@ -459,10 +473,12 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 - 报警：MQ backlog 长、Redis 内存高、错误率上升 + 4 条业务告警（漏斗命中率/工作流降级率/收敛失败/LLM token 激增）
 
 ## 13 容错与运维策略
-- 消费者实现重试与死信队列(DLQ)
+- 消费者实现重试与死信队列(DLQ)：MANUAL ack + basicNack(requeue=false) 进 DLX 指数退避（2026-08-15）
+- 模型调用熔断：Resilience4j 滑动窗口（窗口 10 次/最少 5 次/失败率 50% → OPEN，冷却 30s，HALF_OPEN 放行 3 次），替代原"连续失败 5 次"自研实现；指标经 Micrometer 上报 Prometheus（2026-08-15）
 - 模型调用超时/取消策略
 - 当模型服务不可用时返回友好错误并入 DLQ
 - 定期清理与历史归档
+- 启动积压检查：RabbitConfig 启动时检查 chat.requests 积压量，>0 仅告警不清理（双实例滚动重启不丢消息）
 
 ## 14 可扩展功能（未来）
 - 多租户 model_configs

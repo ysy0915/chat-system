@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -66,6 +67,31 @@ public class LlmProviderAdminService {
                     n, registry.listProviderNames().size());
         } catch (Exception e) {
             log.error("[LLMAdmin] 启动加载 DB 提供商失败: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 定时刷新提供商路由（每 60 秒）：DB 为唯一真相源，自动覆盖 YAML 同名项。
+     *
+     * <p>解决「改 key 需重启 chat-llm」的问题：管理面或运维直接改
+     * <code>llm_provider_props</code> 表后，最长 60 秒内自动生效，
+     * 与 chat-core 的 {@code CachedModelConfigRepository} 刷新周期保持一致。</p>
+     *
+     * <p><b>为什么不用 {@link #reload()}</b>：{@code reload()} 会先
+     * {@code registry.reset()} 清空全部路由再重载，若清空后 DB 瞬时故障，
+     * 会留下「只剩 YAML 兜底（key 可能失效）」的脆弱窗口。定时刷新直接调用
+     * {@link #loadDbProviders()}，它只做「DB 覆盖同名项」，不清空已有路由；
+     * 失败时保留上一轮快照，线上请求不受影响。</p>
+     */
+    @Scheduled(fixedRate = 60000)
+    public void scheduledRefresh() {
+        try {
+            int n = loadDbProviders();
+            log.debug("[LLMAdmin] 定时刷新完成，DB 提供商 {} 个，当前路由总数 {}",
+                    n, registry.listProviderNames().size());
+        } catch (Exception e) {
+            // 刷新失败保留旧路由，避免误清空导致全线不可用
+            log.error("[LLMAdmin] 定时刷新失败，保留旧路由: {}", e.getMessage());
         }
     }
 

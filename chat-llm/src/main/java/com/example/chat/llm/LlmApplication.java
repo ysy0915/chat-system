@@ -12,6 +12,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.context.annotation.Import;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * <h2>chat-llm 启动类</h2>
@@ -49,6 +50,7 @@ import org.springframework.context.annotation.Import;
  */
 @SpringBootApplication
 @EnableAspectJAutoProxy
+@EnableScheduling
 @Import({LlmConfigProperties.class, DirectLLMClient.class, BaseUrlResolver.class, JwtUtil.class,
         GlobalExceptionHandler.class, StorageRegistry.class})
 public class LlmApplication {

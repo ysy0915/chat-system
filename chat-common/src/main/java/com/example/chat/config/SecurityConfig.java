@@ -32,7 +32,16 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil);
+        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil) {
+            @Override
+            protected boolean shouldNotFilterAsyncDispatch() {
+                // 关键：返回 false，让过滤器在 async dispatch 时也执行。
+                // 消息接口 createMessage 返回 Callable（异步执行内容安全检测），
+                // async dispatch 是独立的 dispatch（dispatcherType=ASYNC），
+                // 若跳过则 SecurityContext 为空，anyRequest().authenticated() 会拒绝（401）。
+                return false;
+            }
+        };
 
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))

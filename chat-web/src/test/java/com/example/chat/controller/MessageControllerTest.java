@@ -65,12 +65,12 @@ class MessageControllerTest {
     }
 
     @Test
-    void createMessage_rateLimited_429WithRetryAfter() {
+    void createMessage_rateLimited_429WithRetryAfter() throws Exception {
         authenticateAs(1L);
         when(rateLimitService.isAllowed(1L)).thenReturn(false);
         when(rateLimitService.getRemainingSeconds(1L)).thenReturn(15L);
 
-        ResponseEntity<?> resp = controller.createMessage(Map.of("user_id", 1L, "question", "hi"));
+        ResponseEntity<?> resp = controller.createMessage(Map.of("user_id", 1L, "question", "hi")).call();
 
         assertEquals(429, resp.getStatusCode().value());
         Map<?, ?> body = (Map<?, ?>) resp.getBody();
@@ -78,20 +78,20 @@ class MessageControllerTest {
     }
 
     @Test
-    void createMessage_sensitiveContent_400() {
+    void createMessage_sensitiveContent_400() throws Exception {
         authenticateAs(1L);
         when(rateLimitService.isAllowed(1L)).thenReturn(true);
         when(contentSafetyService.detectSensitive("暴力内容")).thenReturn("violence");
         when(contentSafetyService.getLabelHint("violence")).thenReturn("问题包含暴力内容，请修改后重试");
 
-        ResponseEntity<?> resp = controller.createMessage(Map.of("user_id", 1L, "question", "暴力内容"));
+        ResponseEntity<?> resp = controller.createMessage(Map.of("user_id", 1L, "question", "暴力内容")).call();
 
         assertEquals(400, resp.getStatusCode().value());
         verify(coreClient, never()).insertMessage(any());
     }
 
     @Test
-    void createMessage_newUser_createsAndInserts() {
+    void createMessage_newUser_createsAndInserts() throws Exception {
         authenticateAs(0L);
         when(rateLimitService.isAllowed(0L)).thenReturn(true);
         when(contentSafetyService.detectSensitive("你好")).thenReturn(null);
@@ -102,7 +102,7 @@ class MessageControllerTest {
                         "email", "user_0@chat.local"));
         when(coreClient.insertUser(any())).thenReturn(null);
 
-        ResponseEntity<?> resp = controller.createMessage(Map.of("question", "你好"));
+        ResponseEntity<?> resp = controller.createMessage(Map.of("question", "你好")).call();
 
         assertEquals(202, resp.getStatusCode().value());
         Map<?, ?> body = (Map<?, ?>) resp.getBody();
@@ -116,7 +116,7 @@ class MessageControllerTest {
     }
 
     @Test
-    void createMessage_aiAnswerTrue_forwardsModelConfig() {
+    void createMessage_aiAnswerTrue_forwardsModelConfig() throws Exception {
         authenticateAs(1L);
         when(rateLimitService.isAllowed(1L)).thenReturn(true);
         when(contentSafetyService.detectSensitive("hi")).thenReturn(null);
@@ -124,7 +124,7 @@ class MessageControllerTest {
                 .thenReturn(Map.of("id", 1L, "name", "alice", "nickname", "小爱", "role", "user", "email", "a@x.com"));
 
         controller.createMessage(Map.of("user_id", 1L, "question", "hi",
-                "ai_answer", "true", "preferred_model_config_id", 7));
+                "ai_answer", "true", "preferred_model_config_id", 7)).call();
 
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
         verify(coreClient).chatProcess(payload.capture());

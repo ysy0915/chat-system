@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.concurrent.Callable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -64,7 +65,28 @@ public class MessageController {
     @Operation(summary = "发送消息", description = "创建新消息并触发 AI 回答（速率限制 + 内容安全检测）")
     @PostMapping
     @SuppressWarnings("PMD.NPathComplexity") // 消息入口流水线：鉴权/限流/内容安全/落库/AI触发多分支，拆分破坏防御顺序
-    public ResponseEntity<?> createMessage(@RequestBody Map<String, Object> body) {
+    public Callable<ResponseEntity<?>> createMessage(@RequestBody Map<String, Object> body) {
+        // 返回 Callable：内容安全检测（阿里云 API，数百 ms）在独立异步线程池执行，
+        // Tomcat 工作线程立即释放，避免高并发下 Tomcat 线程池被「等待检测」占满导致排队。
+        // 检测无超时、fail-close：无论多慢都必须拿到结果，异常/挂掉则整条消息不能发出（安全第一）。
+        //
+        // 关键：SecurityContext 是 ThreadLocal，不会自动传递到 async 线程，
+        // 必须在主线程（进入异步前）提取 userId，通过闭包传给异步方法。
+        Long userId = AuthUtils.extractUserIdFromContext();
+        if (userId == null) {
+            return () -> ResponseEntity.status(401)
+                    .body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
+        }
+        return () -> doCreateMessage(body, userId);
+    }
+
+    /**
+     * 消息创建流水线（在异步线程池执行）。
+     * 内容安全检测为 fail-close 闸门：检测命中/异常均拦截，消息不落库、不触发 AI。
+     *
+     * @param userId 主线程已提取的用户 ID（不依赖 async 线程的 SecurityContext）
+     */
+    private ResponseEntity<?> doCreateMessage(Map<String, Object> body, Long userId) {
         Object reqIdObj = body.get("req_id");
         String reqId = (reqIdObj == null || "null".equals(String.valueOf(reqIdObj)) || String.valueOf(reqIdObj).isBlank())
                 ? UUID.randomUUID().toString()
@@ -73,11 +95,6 @@ public class MessageController {
         Object questionObj = body.get("question");
         String question = questionObj == null ? "" : questionObj.toString();
 
-        // 从 JWT 安全上下文取用户 ID，不信任客户端传入的 user_id（防伪造身份/横向越权）
-        Long userId = AuthUtils.extractUserIdFromContext();
-        if (userId == null) {
-            return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
-        }
         boolean isPrivate = "true".equals(String.valueOf(body.get("private")));
 
         if (!rateLimitService.isAllowed(userId)) {

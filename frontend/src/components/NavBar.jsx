@@ -118,7 +118,6 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                         </>
                     )}
                 </div>
-                <div className="navbar-credit">{t('nav.credit')}</div>
                 <div className="navbar-mobile-actions">
                     <LangSwitch className="navbar-lang-switch" />
                     <button

@@ -217,15 +217,17 @@ public class DebateTreeProcessor {
 
     private List<Perspective> decompose(String question, ModelConfig llm) throws Exception {
         String prompt = """
-                你是一个问题分析专家。请将以下问题拆解为2-3个独立的分析视角/维度。
-                每个视角从不同学科或立场切入，互不重叠。
+                你是一个问题分析专家。请将以下问题严格拆解为恰好3个独立的分析视角/维度。
+                每个视角从不同学科或立场切入，互不重叠。必须返回3个视角，不要少于3个。
 
                 问题: %s
 
                 请严格返回JSON格式（不要markdown代码块）:
                 {
                   "perspectives": [
-                    {"id": "p1", "label": "视角名称（10字以内）", "focus": "该视角的核心关注点（20字以内）"}
+                    {"id": "p1", "label": "视角名称（10字以内）", "focus": "该视角的核心关注点（20字以内）"},
+                    {"id": "p2", "label": "视角名称（10字以内）", "focus": "该视角的核心关注点（20字以内）"},
+                    {"id": "p3", "label": "视角名称（10字以内）", "focus": "该视角的核心关注点（20字以内）"}
                   ]
                 }
                 """.formatted(question);
@@ -253,7 +255,8 @@ public class DebateTreeProcessor {
         } catch (Exception e) {
             log.warn("[TreeDebate] 语义拆解解析失败: {}", e.getMessage());
         }
-        if (result.isEmpty() || result.size() > 4) {
+        // 不足 3 个或超过 4 个 → 使用默认 3 视角（保证树状博弈始终 3 棵树）
+        if (result.size() < 3 || result.size() > 4) {
             result = List.of(
                     new Perspective("p1", "理性分析", "基于事实和逻辑", question),
                     new Perspective("p2", "批判性观点", "对流行观点的质疑", question),

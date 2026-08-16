@@ -9,10 +9,10 @@ class ContentSafetyServiceTest {
     private final ContentSafetyService service = new ContentSafetyService();
 
     @Test
-    @DisplayName("detectSensitive 禁用时返回 null")
+    @DisplayName("detectSensitive 禁用时 fail-close 返回 ERROR_LABEL")
     void testDetectSensitive_disabled() {
-        // enabled 默认为 false (因为 @Value 在纯单元测试中不会注入)
-        assertNull(service.detectSensitive("测试文本"));
+        // enabled 默认为 false（@Value 不注入），非空文本且阿里云不可用 → 严格 fail-close 拦截
+        assertEquals(ContentSafetyService.ERROR_LABEL, service.detectSensitive("测试文本"));
     }
 
     @Test
@@ -85,5 +85,46 @@ class ContentSafetyServiceTest {
         assertDoesNotThrow(() -> {
             Class.forName("com.example.chat.service.ContentSafetyService");
         });
+    }
+
+    // ============ 本地敏感词预检 ============
+
+    @Test
+    @DisplayName("本地词库命中返回 local_blacklist 标签")
+    void testLocalBlacklist_hit() {
+        service.reloadLocalBlacklist("赌博,色情,违禁品");
+        assertEquals(ContentSafetyService.LOCAL_BLACKLIST_LABEL,
+                service.detectSensitive("这里可以赌博"));
+    }
+
+    @Test
+    @DisplayName("本地词库未命中 + 阿里云不可用 → fail-close 返回 ERROR_LABEL")
+    void testLocalBlacklist_miss() {
+        service.reloadLocalBlacklist("赌博,色情");
+        // 未命中本地词库，且 clientReady=false（无阿里云 client）→ 严格 fail-close 拦截
+        assertEquals(ContentSafetyService.ERROR_LABEL, service.detectSensitive("今天天气不错"));
+    }
+
+    @Test
+    @DisplayName("本地词库大小写不敏感匹配")
+    void testLocalBlacklist_caseInsensitive() {
+        service.reloadLocalBlacklist("GAMBLE");
+        assertEquals(ContentSafetyService.LOCAL_BLACKLIST_LABEL,
+                service.detectSensitive("let's gamble now"));
+    }
+
+    @Test
+    @DisplayName("空词库 + 阿里云不可用 → fail-close 拦截")
+    void testLocalBlacklist_empty() {
+        service.reloadLocalBlacklist("");
+        // 空词库未命中，但阿里云不可用 → fail-close
+        assertEquals(ContentSafetyService.ERROR_LABEL, service.detectSensitive("正常文本"));
+    }
+
+    @Test
+    @DisplayName("getLabelHint 本地词库标签")
+    void testGetLabelHint_localBlacklist() {
+        String hint = service.getLabelHint(ContentSafetyService.LOCAL_BLACKLIST_LABEL);
+        assertTrue(hint.contains("敏感"));
     }
 }

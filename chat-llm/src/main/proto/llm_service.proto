@@ -68,3 +68,21 @@ service LlmAdmin {
 }
 
 message ProviderListRequest {}
+
+// ---- 内容安全自检（大模型可插拔模块的安全属性 / 第二道防线）----
+
+service LlmSafety {
+  // 检测文本是否命中大模型 native guardrail（模型原生安全自检）
+  rpc Check (SafetyCheckRequest) returns (SafetyCheckResponse);
+}
+
+message SafetyCheckRequest {
+  string text = 1;                       // 待检测文本
+}
+
+message SafetyCheckResponse {
+  bool safe = 1;                         // true=安全通过; false=命中/异常
+  string label = 2;                      // 命中时的标签（safe=false 时有效）
+  string hint = 3;                       // 面向用户的中文提示
+  int32 available_guardrails = 4;        // 当前可用的自检提供者数量（观测用）
+}

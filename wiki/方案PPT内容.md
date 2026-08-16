@@ -210,7 +210,8 @@ Agent 决策 → 调用 ToolDispatcher → 执行工具 → 观察结果 → LLM
 
 ### 9.1 内容安全
 
-- 接入阿里云内容安全（Green）API，发消息前检测
+- 两道防线：通用闸门（本地敏感词库 + 阿里云内容安全 Green API，fail-close）+ 大模型自检（chat-llm native guardrail 可插拔 SPI）
+- 发消息前输入侧检测 + LLM 生成后输出侧检测
 - 色情、暴力、政治敏感、违禁内容自动拦截
 - 情绪树洞等模块额外做情感极性保护
 

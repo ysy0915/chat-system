@@ -138,6 +138,8 @@ content-safety:
   access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:}
   endpoint: green-cip.cn-beijing.aliyuncs.com
   region-id: cn-beijing
+  # 本地敏感词预检库（逗号分隔，命中即拦截；阿里云服务不可用时仍兜底生效）
+  local-blacklist: ${CONTENT_SAFETY_LOCAL_BLACKLIST:}
 
 # 阿里云 OSS
 oss:

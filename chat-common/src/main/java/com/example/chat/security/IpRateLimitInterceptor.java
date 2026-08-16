@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -29,12 +30,17 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
     private final StringRedisTemplate redis;
     private final RateLimitChecker rateLimitChecker;
 
-    // 全站限流：单 IP 每分钟 600 次（多页面+多标签同时访问）
-    private static final int GLOBAL_PER_MINUTE = 600;
+    // 全站限流：单 IP 每分钟 600 次（多页面+多标签同时访问）。
+    // 可通过环境变量 RATE_LIMIT_GLOBAL_PER_MINUTE 临时调整（压测时调高，压测完恢复默认）。
+    // 字段初始化 =600 兜底：手动 new（非容器注入）或配置缺失时仍保持安全默认值。
+    @Value("${rate-limit.global-per-minute:600}")
+    private int globalPerMinute = 600;
     // 敏感接口限流：单 IP 每分钟 10 次（登录/注册）
     private static final int SENSITIVE_PER_MINUTE = 10;
-    // 自动拉黑阈值：60 秒内超过 1000 次
-    private static final int BLACKLIST_THRESHOLD = 1000;
+    // 自动拉黑阈值：60 秒内超过 1000 次。
+    // 可通过环境变量 RATE_LIMIT_BLACKLIST_THRESHOLD 临时调整（压测时调高，避免误拉黑）。
+    @Value("${rate-limit.blacklist-threshold:1000}")
+    private int blacklistThreshold = 1000;
     // 拉黑时长：10 分钟
     private static final Duration BLACKLIST_TTL = Duration.ofMinutes(10);
 
@@ -95,7 +101,7 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         }
 
         // 5. 全局限流
-        if (!rateLimitChecker.checkAndIncrement(KEY_GLOBAL + ip, GLOBAL_PER_MINUTE, Duration.ofMinutes(1))) {
+        if (!rateLimitChecker.checkAndIncrement(KEY_GLOBAL + ip, globalPerMinute, Duration.ofMinutes(1))) {
             return reject(response, 429, "请求过于频繁，请稍后再试");
         }
 
@@ -128,7 +134,7 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
         if (count != null && count == 1) {
             redis.expire(countKey, Duration.ofSeconds(60));
         }
-        if (count != null && count > BLACKLIST_THRESHOLD) {
+        if (count != null && count > blacklistThreshold) {
             blacklist(ip, "请求频率异常: 60秒内" + count + "次");
             reject(response, 429, "请求频率异常，IP已被临时封禁10分钟");
             return true;

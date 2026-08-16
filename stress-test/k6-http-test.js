@@ -31,13 +31,17 @@ const PASSWORD = __ENV.PASSWORD || 'test123';
 // 发送消息（完整 AI 链路）的迭代比例，默认 20%，其余迭代只打读接口
 const SEND_RATIO = Number(__ENV.SEND_RATIO || 0.2);
 
+// 合法浏览器 UA：生产环境 IpRateLimitInterceptor 会拦截无 UA / curl / python-requests 等爬虫 UA（403"访问被拒绝"），
+// 压测必须模拟浏览器，否则全线 403 测不出真实数据。
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+
 // setup 只执行一次：登录获取 JWT 供所有 VU 共享。
 // 重要：不要每迭代登录——auth/login 有敏感接口 IP 限流（10 次/分钟/IP，超限 429"操作过于频繁"），
 // 压测机单 IP 高并发登录会直接触发限流，测不出真实链路。
 export function setup() {
   const loginRes = http.post(`${BASE_URL}/api/v1/auth/login`,
     JSON.stringify({ username: USERNAME, password: PASSWORD }),
-    { headers: { 'Content-Type': 'application/json' } });
+    { headers: { 'Content-Type': 'application/json', 'User-Agent': BROWSER_UA } });
   check(loginRes, { '登录 200': (r) => r.status === 200 });
   const token = loginRes.json('data.token') || loginRes.json('token');
   if (!token) {
@@ -49,6 +53,7 @@ export function setup() {
 export default function (data) {
   const headers = {
     'Content-Type': 'application/json',
+    'User-Agent': BROWSER_UA,
     Authorization: `Bearer ${data.token}`,
   };
   const params = { headers };

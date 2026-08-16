@@ -65,6 +65,40 @@ LlmBundleClient (统一多模型调用)
 - 条件路由（`router` + 条件边）— 支持 `contains`/`equals` 字符串匹配 + `gt/gte/lt/lte/ne/eq` 数值比较，条件可引用 `{{state.xxx}}` / `{{state.__output}}` 模板变量
 - 环告警 + 节点索引 — `buildNodeIndex` 建 `nodeId→GraphNode` 索引 O(1) 查找，重复访问节点告警（不终止，由 maxSteps 兜底防死循环）
 
+#### 条件路由 DSL 参考
+
+条件边（`GraphEdge.condition`）支持两类表达式，条件中的变量先用模板渲染（`{{state.xxx}}` 引用 state 值，`{{state.__output}}` 引用当前节点 LLM 输出），再匹配：
+
+**字符串匹配**（左操作数默认取节点 LLM 输出）：
+
+| 表达式 | 语义 | 示例 |
+|--------|------|------|
+| `contains(s)` | LLM 输出包含子串 s | `contains(正方)` |
+| `equals(s)` | LLM 输出 trim 后等于 s | `equals(A)` |
+
+**数值比较**（两操作数均取自条件内参数，可引用模板变量）：
+
+| 表达式 | 语义 | 示例 |
+|--------|------|------|
+| `gt(a, b)` | a > b | `gt({{state.round}}, 2)` |
+| `gte(a, b)` | a >= b | `gte({{state.__output}}, 3)` |
+| `lt(a, b)` | a < b | `lt({{state.score}}, 10)` |
+| `lte(a, b)` | a <= b | `lte({{state.remaining}}, 0)` |
+| `eq(a, b)` | a == b | `eq({{state.phase}}, 2)` |
+| `ne(a, b)` | a != b | `ne({{state.status}}, 0)` |
+
+**条件边匹配优先级**（`router` 节点）：
+1. 依次评估所有带 `condition` 的边，命中即跳转
+2. 无命中时走 `defaultRoute=true` 或 `condition=null` 的默认边
+3. 都无则终止
+
+**有限循环图写法**：用逻辑节点（`increment:round:1`）计数 + 数值条件边退出，例如：
+```text
+counter(increment:round:1) --gt({{state.round}}, 2)--> end
+                           └──(default)──> counter   # round 递增，直到 >2 跳 end
+```
+注：重复访问节点仅触发环**告警**不终止（合法有限循环依赖重复访问），真正防死循环由 `maxSteps` 兜底。
+
 ### 2.3 `DirectLLMClient` (chat-core)
 
 **用途**：直接 HTTP 调用的通用客户端（备用/降级方案）

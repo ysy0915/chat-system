@@ -2,6 +2,7 @@ package com.example.chat.config;
 
 import com.example.chat.common.ApiResponse;
 import com.example.chat.common.ErrorCode;
+import com.example.chat.exception.LLMCallException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -68,6 +69,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
         log.warn("[AccessDenied] 权限不足: {}", ex.getMessage());
         return buildResponse(ErrorCode.FORBIDDEN, "权限不足");
+    }
+
+    /** LLM 调用失败：区分「上游模型 4xx/5xx」与「网络/解析异常」，返回更清晰的语义 */
+    @ExceptionHandler(LLMCallException.class)
+    public ResponseEntity<Map<String, Object>> handleLlmCall(LLMCallException ex) {
+        int status = ex.getHttpStatus();
+        if (status >= 400 && status < 500) {
+            // 上游模型返回 4xx（如 401 鉴权失败、429 限流、400 参数错误）——问题在请求侧，属可重试/可修复
+            log.warn("[LLMCall] 上游模型 {} 返回 {}: {}", ex.getModel(), status, ex.getMessage());
+            return buildResponse(ErrorCode.BAD_REQUEST, "AI 服务暂时不可用（上游返回 " + status + "），请稍后重试");
+        }
+        // 5xx / 网络异常 / 超时 / 解析失败——问题在模型服务侧，属暂时性故障
+        log.error("[LLMCall] 模型 {} 调用失败: {}", ex.getModel(), ex.getMessage());
+        return buildResponse(ErrorCode.INTERNAL_ERROR, "AI 服务繁忙或暂时不可用，请稍后重试");
     }
 
     // ---- 兜底 ----

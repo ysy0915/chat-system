@@ -116,7 +116,10 @@ public class DebateTreeProcessor {
         send("/topic/debate." + userId, treeMsg("tree_decompose_start", reqId));
         List<Perspective> perspectives;
         try { perspectives = decompose(question, summaryModel); }
-        catch (Exception e) { perspectives = Collections.emptyList(); }
+        catch (Exception e) {
+            log.warn("[TreeDebate] 语义拆解失败，降级为单视角: {}", e.getMessage());
+            perspectives = Collections.emptyList();
+        }
         send("/topic/debate." + userId,
                 treeMsg("tree_decompose_result", reqId)
                         .with("perspectives", toPerspectiveMaps(perspectives)));

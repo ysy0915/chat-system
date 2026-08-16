@@ -69,6 +69,11 @@ public class SqlExecutorController {
             "SELECT", "SHOW", "DESC", "EXPLAIN"
     );
 
+    /** 允许的写语句（白名单）：仅 UPDATE / INSERT，其余写操作一律拒绝 */
+    private static final Set<String> WRITE_KEYWORDS = Set.of(
+            "UPDATE", "INSERT"
+    );
+
     private final DataSource dataSource;
     private final RateLimitChecker rateLimitChecker;
 
@@ -138,7 +143,14 @@ public class SqlExecutorController {
         ResponseEntity<?> validationError = validateSql(sql, clientIp);
         if (validationError != null) return validationError;
 
-        boolean isReadOnly = READ_ONLY_KEYWORDS.stream().anyMatch(sql.trim().toUpperCase(Locale.ROOT)::startsWith);
+        String trimmedUpper = sql.trim().toUpperCase(Locale.ROOT);
+        boolean isReadOnly = READ_ONLY_KEYWORDS.stream().anyMatch(trimmedUpper::startsWith);
+        boolean isWrite = !isReadOnly && WRITE_KEYWORDS.stream().anyMatch(trimmedUpper::startsWith);
+        if (!isReadOnly && !isWrite) {
+            // 既非只读语句也非白名单写语句（如 CALL/SET/REPLACE 等），一律拒绝
+            auditLog.warn("[SQL_AUDIT] UNSUPPORTED_STATEMENT_BLOCKED ip={} sql={}", clientIp, sql.substring(0, Math.min(200, sql.length())));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "仅允许 SELECT/SHOW/DESC/EXPLAIN/UPDATE/INSERT 语句"));
+        }
         auditLog.info("[SQL_AUDIT] EXECUTE ip={} readOnly={} sql={}", clientIp, isReadOnly, sql.substring(0, Math.min(200, sql.length())));
 
         Map<String, Object> result = executeSql(sql, isReadOnly, clientIp);
@@ -161,6 +173,11 @@ public class SqlExecutorController {
                 auditLog.warn("[SQL_AUDIT] DANGEROUS_SQL_BLOCKED ip={} sql={}", clientIp, sql.substring(0, Math.min(200, sql.length())));
                 return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "禁止执行危险SQL: " + DANGEROUS_KEYWORDS.get(i)));
             }
+        }
+        // UPDATE 必须带 WHERE，防止误更新全表（INSERT 无需 WHERE）
+        if (upperSql.startsWith("UPDATE") && !upperSql.contains("WHERE")) {
+            auditLog.warn("[SQL_AUDIT] UPDATE_WITHOUT_WHERE_BLOCKED ip={} sql={}", clientIp, sql.substring(0, Math.min(200, sql.length())));
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.BAD_REQUEST, "UPDATE 语句必须包含 WHERE 条件"));
         }
         return null;
     }

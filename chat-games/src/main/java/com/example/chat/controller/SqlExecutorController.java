@@ -56,14 +56,12 @@ public class SqlExecutorController {
 
     /**
      * 危险词正则（词边界匹配，避免误伤字段名/字符串值，如 created_at、user_profile 等）。
-     * "INTO OUTFILE" 需多词匹配，单独处理。
+     * 注意：OUTFILE 已被词边界 \bOUTFILE\b 匹配拦截（含 "INTO OUTFILE" 场景），无需额外正则。
      */
     private static final java.util.regex.Pattern[] DANGEROUS_PATTERNS =
             DANGEROUS_KEYWORDS.stream()
                     .map(kw -> java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(kw) + "\\b"))
                     .toArray(java.util.regex.Pattern[]::new);
-    private static final java.util.regex.Pattern INTO_OUTFILE_REGEX =
-            java.util.regex.Pattern.compile("\\bINTO\\s+OUTFILE\\b");
 
     private static final Set<String> READ_ONLY_KEYWORDS = Set.of(
             "SELECT", "SHOW", "DESC", "EXPLAIN"

@@ -1,4 +1,4 @@
-package com.example.chat.llm.llm.routing;
+package com.example.chat.llm.routing;
 
 import com.example.chat.llm.config.LLMConfig;
 import com.example.chat.llm.strategy.LLMProviderStrategy;

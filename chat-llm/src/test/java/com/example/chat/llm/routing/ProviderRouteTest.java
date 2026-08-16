@@ -1,4 +1,4 @@
-package com.example.chat.llm.llm.routing;
+package com.example.chat.llm.routing;
 
 import org.junit.jupiter.api.Test;
 

@@ -1,7 +1,7 @@
-package com.example.chat.llm.llm.routing.db;
+package com.example.chat.llm.routing.db;
 
 import com.example.chat.llm.config.LLMConfig;
-import com.example.chat.llm.llm.routing.LLMProviderRegistry;
+import com.example.chat.llm.routing.LLMProviderRegistry;
 import com.example.chat.llm.strategy.LLMProviderStrategyFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,4 +1,4 @@
-package com.example.chat.llm.llm.routing.db;
+package com.example.chat.llm.routing.db;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

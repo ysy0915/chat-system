@@ -1,4 +1,4 @@
-package com.example.chat.llm.llm.routing.db;
+package com.example.chat.llm.routing.db;
 
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;

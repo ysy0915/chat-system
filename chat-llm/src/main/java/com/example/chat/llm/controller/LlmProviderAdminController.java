@@ -1,5 +1,6 @@
-package com.example.chat.llm.llm.routing.db;
+package com.example.chat.llm.controller;
 
+import com.example.chat.llm.routing.db.LlmProviderAdminService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;

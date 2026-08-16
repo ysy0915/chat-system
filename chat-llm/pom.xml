@@ -43,7 +43,13 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- grpc -->
+        <!-- grpc
+             注意：grpc-server-spring-boot-starter 必须锁定 2.15.0.RELEASE，不能用根 pom 的 3.1.0！
+             原因：3.1.0 的 MetricsServerInstruments 调用 Counter.Builder.withRegistry()，
+             该方法需要 micrometer 1.12+，而本项目因 Spring Boot 3.1.6 + Prometheus 注册表兼容性
+             被锁定在 micrometer 1.11.6（见根 pom 说明），3.1.0 启动会报
+             NoSuchMethodError: Counter$Builder.withRegistry 导致 APPLICATION FAILED TO START。
+            2.15.0 虽为 Spring Boot 2 配套，但与 micrometer 1.11.6 兼容，实际运行稳定。 -->
         <dependency>
             <groupId>net.devh</groupId>
             <artifactId>grpc-server-spring-boot-starter</artifactId>
@@ -65,11 +71,11 @@
             <version>1.3.2</version>
         </dependency>
 
-        <!-- Swagger / OpenAPI（排除 swagger-ui webjars 静态资源，仅保留 /v3/api-docs JSON） -->
+        <!-- Swagger / OpenAPI（排除 swagger-ui webjars 静态资源，仅保留 /v3/api-docs JSON）
+             版本由根 pom dependencyManagement 统一管理（2.3.0），不再硬编码。 -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.5.0</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.webjars</groupId>

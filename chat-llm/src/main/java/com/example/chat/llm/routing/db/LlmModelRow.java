@@ -1,4 +1,4 @@
-package com.example.chat.llm.llm.routing.db;
+package com.example.chat.llm.routing.db;
 
 /**
  * <h2>大模型配置行</h2>

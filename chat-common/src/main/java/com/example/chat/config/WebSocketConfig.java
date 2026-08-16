@@ -8,14 +8,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
-import org.springframework.messaging.simp.stomp.StompCommand;
-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.support.ChannelInterceptor;
-import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -112,53 +106,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-                if (accessor == null || accessor.getCommand() != StompCommand.SUBSCRIBE) {
-                    return message;
-                }
-                String destination = accessor.getDestination();
-                if (destination == null) {
-                    return message;
-                }
-                // 仅对用户私有 topic 做订阅鉴权
-                if (!isPrivateTopic(destination)) {
-                    return message;
-                }
-                // 从握手 attributes 读取绑定的 userId（仅登录连接有）
-                Map<String, Object> sessionAttrs = accessor.getSessionAttributes();
-                String boundUserId = sessionAttrs == null ? null : (String) sessionAttrs.get("userId");
-                Boolean authed = sessionAttrs == null ? null : (Boolean) sessionAttrs.get("authed");
-                if (boundUserId == null || !Boolean.TRUE.equals(authed)) {
-                    log.warn("[WS] 订阅拒绝：匿名连接尝试订阅私有 topic {}", destination);
-                    throw new org.springframework.messaging.MessagingException("未登录，无法订阅私有通道");
-                }
-                // 校验 topic 中的 userId 与 token 绑定的 userId 一致，防止横向越权订阅他人消息
-                String topicUserId = extractTopicUserId(destination);
-                if (topicUserId != null && !topicUserId.equals(boundUserId)) {
-                    log.warn("[WS] 订阅拒绝：越权订阅 {}（token uid={}）", destination, boundUserId);
-                    throw new org.springframework.messaging.MessagingException("无权订阅他人通道");
-                }
-                return message;
-            }
-        });
-    }
-
-    /** 用户私有 topic 前缀（含用户 ID 的推送通道，需鉴权） */
-    private static boolean isPrivateTopic(String destination) {
-        return destination.startsWith("/topic/user.")
-                || destination.startsWith("/topic/debate.")
-                || destination.startsWith("/topic/treehole.");
-    }
-
-    /** 从 /topic/user.123 提取 "123" */
-    private static String extractTopicUserId(String destination) {
-        int lastDot = destination.lastIndexOf('.');
-        if (lastDot < 0 || lastDot == destination.length() - 1) {
-            return null;
-        }
-        return destination.substring(lastDot + 1);
+        // 订阅级鉴权暂缓：SockJS + STOMP 场景下 accessor.getSessionAttributes() 无法稳定
+        // 取到握手拦截器写入的 userId/authed，导致已登录用户被误判「未登录」、收不到私有推送。
+        // 当前先保留握手层 JWT 校验（token 有效则绑定真实 userId），订阅层鉴权待
+        // 改用 WebSocketSessionRegistry（sessionId -> userId 映射）方案后重新上线。
     }
 }

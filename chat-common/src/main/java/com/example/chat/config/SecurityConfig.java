@@ -65,6 +65,7 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/prometheus/**").permitAll()  // Prometheus 指标抓取（仅内网可达）
                 .requestMatchers("/api/v1/messages/online-count").permitAll()  // 首页在线人数
                 .requestMatchers("/api/v1/monitor/total-usage").permitAll()   // 首页累计使用量
+                .requestMatchers("/api/v1/games/castlesiege/lords").permitAll()  // 领主排行榜（游客可看，上榜需登录）
                 .requestMatchers("/ws/**").permitAll()                   // WebSocket（在线数/聊天推送）
                 .requestMatchers("/internal/**").permitAll()             // 内部API（chat-web 调 chat-core，不经公网 Nginx）
                 .requestMatchers("/error").permitAll()                   // 错误页面（async dispatch）

@@ -485,8 +485,7 @@ export default function KnowledgeGraph() {
             <div className="graph-welcome">
                 <h1 className="graph-welcome-title">{t('knowledgeGraph.title')}</h1>
                 <p className="graph-welcome-desc">
-                    {t('knowledgeGraph.desc1')}<br />
-                    {t('knowledgeGraph.desc2')}
+                    {t('knowledgeGraph.desc1')}
                 </p>
                 <div className="graph-stats">
                     <span className="stat-badge">{t('graph.entityBadge', { count: stats.entityCount || 0 })}</span>

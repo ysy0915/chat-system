@@ -94,20 +94,10 @@ export default function Landing() {
               <h3>{t('landing.f.treehole.title')}</h3>
               <p>{t('landing.f.treehole.desc')}</p>
             </Link>
-            <Link to="/" className="feature-card">
-              <div className="feature-icon">💬</div>
-              <h3>{t('landing.f.chat.title')}</h3>
-              <p>{t('landing.f.chat.desc')}</p>
-            </Link>
             <Link to="/media" className="feature-card">
               <div className="feature-icon">🎨</div>
               <h3>{t('landing.f.media.title')}</h3>
               <p>{t('landing.f.media.desc')}</p>
-            </Link>
-            <Link to="/3d" className="feature-card">
-              <div className="feature-icon">📦</div>
-              <h3>{t('landing.f.model3d.title')}</h3>
-              <p>{t('landing.f.model3d.desc')}</p>
             </Link>
             <Link to="/games" className="feature-card">
               <div className="feature-icon">🎮</div>

@@ -27,6 +27,16 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
+        <!-- MySQL 驱动（显式声明：chat-common 中为 runtime scope 不传递，
+             否则 fat jar 缺 mysql-connector，HikariCP 报 NoClassDefFoundError: ExportControlled，
+             导致所有接口 HTTP 超时） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>8.2.0</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Nacos 服务发现 + 配置中心 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

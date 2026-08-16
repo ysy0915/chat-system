@@ -175,7 +175,7 @@ export const zh = {
 
     // ===== 知识脉络图 =====
     'knowledgeGraph.title': '🧬 知识脉络图',
-    'knowledgeGraph.desc1': '基于 AI 对话内容自动抽取实体与关系，构建可视化知识图谱。',
+    'knowledgeGraph.desc1': '查询你想了解的知识，以及它们之间的关联信息',
     'knowledgeGraph.desc2': '放大缩小浏览、拖拽节点探索、点击查看关联关系。支持按权重筛选核心节点。',
 
     // ===== 个人对话空间 =====
@@ -878,7 +878,7 @@ export const en = {
 
     // ===== Knowledge Map =====
     'knowledgeGraph.title': '🧬 Knowledge Map',
-    'knowledgeGraph.desc1': 'Automatically extracts entities and relations from AI conversations to build a visual knowledge graph.',
+    'knowledgeGraph.desc1': 'Look up the knowledge you want and its related information',
     'knowledgeGraph.desc2': 'Zoom in/out to browse, drag nodes to explore, click to view relationships. Filter core nodes by weight.',
 
     // ===== Personal Chat =====

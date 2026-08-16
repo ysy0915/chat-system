@@ -134,3 +134,16 @@ groups:
         annotations:
           summary: "模型 {{ $labels.model }} 输出 token 激增"
           description: "{{ $labels.model }} completion token 速率超过 5000/s，持续 10 分钟，请检查是否存在异常重试/超长输出循环（LLM 成本异常信号）"
+
+  # ── Milvus 向量库存活告警（2026-08-16 补充，修复 RAG 故障 3 天未被发现的监控盲区）──
+  # 数据源：blackbox-tcp job（tcp_connect 探测 19530）
+  - name: chat-system-milvus
+    rules:
+      - alert: MilvusDown
+        expr: up{job="blackbox-tcp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Milvus 向量库不可用"
+          description: "Milvus ({{ $labels.instance }}) 持续 2 分钟不可达，RAG/知识库检索将失败，请检查 milvus-standalone/milvus-etcd/milvus-minio 容器状态"

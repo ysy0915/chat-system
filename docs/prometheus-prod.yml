@@ -1,74 +1,84 @@
-# 生产环境 Prometheus 配置（部署在 Milvus 服务器 your-milvus-ip）
+# 生产环境 Prometheus 配置（已部署于 Milvus 服务器 121.40.188.98 /opt/app/prometheus/prometheus.yml）
 # 监控栈以 --network host 容器运行：Prometheus UI :9094（9090 被主 core 占用）
-# 所有 Java 服务直接跑在宿主机，使用内网 IP your-intra-ip 抓取
+# host 网络模式下直接用 127.0.0.1 访问宿主机上的各 Java 服务与中间件
+# 权威源：服务器实测配置，修改时先改服务器再同步回仓库（2026-08-16 同步：新增 blackbox-tcp 探测 Milvus + 清理废弃 8082）
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    monitor: 'chat-system'
 
-# 告警规则（服务宕机 / 高延迟 / 高内存 / 高错误率）
 rule_files:
-  - "/etc/prometheus/alerts.yml"
+  - /etc/prometheus/alerts.yml
 
-# 告警通知（Alertmanager :9093，须加 --cluster.listen-address= 启动）
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ["127.0.0.1:9093"]
+        - targets: ['127.0.0.1:9093']
 
 scrape_configs:
-  # 双 core：9090 主实例 + 9092 从实例
-  - job_name: "chat-core"
-    metrics_path: "/actuator/prometheus"
+  # 服务器主机指标（内存/CPU/磁盘/网络）
+  - job_name: node
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+
+  # Java 服务 JVM 指标（heap/GC/线程/HTTP）
+  - job_name: core
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9090', '127.0.0.1:9092']
+        labels:
+          service: chat-core
+
+  - job_name: web
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['127.0.0.1:8081']
+        labels:
+          service: chat-web
+
+  # 健康探测（blackbox_exporter http_2xx）
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
     static_configs:
       - targets:
-          - "your-intra-ip:9090"
-          - "your-intra-ip:9092"
+          - 'http://127.0.0.1:9090/actuator/health'
+          - 'http://127.0.0.1:9092/actuator/health'
+          - 'http://127.0.0.1:8081/actuator/health'
+          - 'http://127.0.0.1:8083/actuator/health'
+          - 'http://127.0.0.1:8084/actuator/health'
+          - 'http://127.0.0.1:8848/nacos/'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: target
+      - replacement: '127.0.0.1:9115'
+        target_label: __address__
 
-  # 双 web：8081 + 8082
-  - job_name: "chat-web"
-    metrics_path: "/actuator/prometheus"
+  # chat-llm 业务指标（LLMTokenSurge 数据源，2026-08-13 补充）
+  - job_name: chat-llm
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9095']
+
+  # Milvus 向量库存活探测（tcp_connect 探测 gRPC 端口 19530，2026-08-16 补充）
+  # 背景：修复 milvus-etcd/minio 退出导致 RAG 故障 3 天未被发现的监控盲区
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
     static_configs:
       - targets:
-          - "your-intra-ip:8081"
-          - "your-intra-ip:8082"
-
-  - job_name: "chat-games"
-    metrics_path: "/actuator/prometheus"
-    static_configs:
-      - targets: ["your-intra-ip:8083"]
-
-  - job_name: "chat-media"
-    metrics_path: "/actuator/prometheus"
-    static_configs:
-      - targets: ["your-intra-ip:8084"]
-
-  - job_name: "chat-llm"
-    metrics_path: "/actuator/prometheus"
-    static_configs:
-      - targets: ["your-intra-ip:9095"]
-
-  # 宿主机节点指标（CPU/内存/磁盘/负载 → 内存/磁盘告警数据源）
-  - job_name: "node-exporter"
-    static_configs:
-      - targets: ["127.0.0.1:9100"]
-
-  # 黑盒探测（可选，服务端口可达性）
-  # - job_name: "blackbox"
-  #   metrics_path: "/probe"
-  #   params:
-  #     module: [tcp_connect]
-  #   static_configs:
-  #     - targets: ["127.0.0.1:8081", "127.0.0.1:8082", "127.0.0.1:9090", "127.0.0.1:9092"]
-  #   relabel_configs:
-  #     - source_labels: [__address__]
-  #       target_label: __param_target
-  #     - source_labels: [__param_target]
-  #       target_label: instance
-  #     - target_label: __address__
-  #       replacement: 127.0.0.1:9115
-
-  # Nginx 指标（主服务器 your-nginx-ip 上的 nginx-prometheus-exporter:9113）
-  # 暴露公网端口 9113 或用专线，此处示例为主服务器公网 IP
-  # - job_name: "nginx"
-  #   static_configs:
-  #     - targets: ["your-nginx-ip:9113"]
+          - '127.0.0.1:19530'
+        labels:
+          service: milvus
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: target
+      - replacement: '127.0.0.1:9115'
+        target_label: __address__

@@ -1,6 +1,45 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11（初版）· 持续更新至 2026-08-16
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-08-17
+
+---
+
+## 个人对话性能优化 + 安全加固 + 包结构重构 + 内存治理（2026-08-17）
+
+### 1. 个人对话「慢 + 非流式」修复（工具探测按意图触发）
+
+**问题**：个人对话每次（含纯闲聊）都先同步做一次「工具探测」LLM 调用（实测 4~5 秒）判断是否用工具，再走流式输出。这导致：① 首 token 被推迟 4~5 秒（慢）；② 用户感知「卡一下才全出来」（非流式）。
+
+**修复**：利用已有的意图识别结果，仅 `TASK_EXECUTION`（任务执行，计算/天气/搜索等）意图才走工具探测；闲聊/知识问答/写作等意图直接流式，首 token 立即开始。语义正确——工具本就服务于「任务执行」。
+
+### 2. 响应慢根因修复（11 秒 → 1-3 秒）
+
+- **tool_call_id 缺失 Bug**：`ToolDispatcher` 构造 tool 消息漏传 `tool_call_id`，DeepSeek 严格校验报 400 → 重试/熔断连锁（单次工具调度耗 11.5 秒）。修复：`LlmToolInvoker.toolCallIdOf()` + 补传字段。
+- **豆包深度思考**：`doubao-seed-2-0` 系列默认开启 reasoning，每次生成大量思考 token（实测 149 个）导致首 token 4~18 秒。修复：`LLMInvoker` 对 doubao 透传 `thinking:{type:disabled}`，首 token 稳定 ~2.2 秒。
+
+### 3. 安全加固
+
+- `FeatureFlagController` 写操作（toggle/setPercentage/addWhitelist/clearCache）加管理员密码鉴权（`X-Admin-Password`），原任意登录用户可篡改特性开关。
+- `SqlExecutorController` 写语句白名单（仅 UPDATE/INSERT）+ UPDATE 强制 WHERE，防止全表误更新。
+- 内容安全抽象为「两道防线」：通用闸门（本地词库 + 阿里云 fail-close，chat-common）+ 大模型自检（`GuardrailProvider` SPI，chat-llm）。
+
+### 4. 包结构重构（chat-llm）
+
+- 消除 `llm.llm` 冗余命名：`llm.llm.routing` → `llm.routing`，`llm.llm.routing.db` → `llm.routing.db`。
+- `LlmProviderAdminController` 从 `routing.db` 移到 `controller` 包。
+
+### 5. 内存治理（可用内存 9.6% → 15%）
+
+- 根因：Java 进程缺 `-XX:MaxDirectMemorySize`，堆外 Direct Buffer 失控。
+- 修复：5 个 restart 脚本统一加 `-XX:MaxDirectMemorySize` + `-XX:MaxMetaspaceSize`，可用内存 715MB → 1165MB。
+- 内存告警阈值 8% → 20% 提前预警。
+
+### 6. 其他
+
+- `LLMCallException` 全局处理器（区分上游 4xx/5xx，清晰错误语义）。
+- `MILVUS_HOST` 从模糊的 `172.23.172.14` 改为明确的 `127.0.0.1`。
+- springdoc 2.5.0 → 2.3.0 版本对齐。
+- **grpc-server 保持 2.15.0 不升级**：3.1.0 需 micrometer 1.12+，与项目锁定的 1.11.6 冲突（启动报 `NoSuchMethodError`），已在 pom 注释记录原因。
 
 ---
 

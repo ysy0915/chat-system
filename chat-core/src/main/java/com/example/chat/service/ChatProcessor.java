@@ -310,7 +310,14 @@ public class ChatProcessor {
                 }
 
                 // 工具调度：命中则推送增强后的回答（非流式）
-                if (toolDispatcher != null) {
+                // 优化（2026-08-17）：仅 TASK_EXECUTION 意图才做工具探测。
+                // 此前每次对话（含闲聊）都先同步调一次 LLM 判断是否用工具（实测 4-5 秒），
+                // 导致首 token 被严重推迟、用户感知"非流式"。工具本质服务于"任务执行"，
+                // 闲聊/知识问答/写作等意图无需工具，直接走流式。
+                boolean toolEligible = intent != null
+                        && intent.category() == com.example.chat.intent.IntentCategory.TASK_EXECUTION;
+                if (toolDispatcher != null && toolEligible) {
+                    log.info("[doPersonalStream] req_id={} TASK_EXECUTION 意图，先探测工具", reqId);
                     String toolAnswer = null;
                     try {
                         toolAnswer = toolDispatcher.dispatch(question, config, history,

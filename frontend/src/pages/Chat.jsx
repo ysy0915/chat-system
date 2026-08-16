@@ -19,6 +19,7 @@ export default function ChatPage(){
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
   const [typing, setTyping] = useState(false)
+  const [deepThinking, setDeepThinking] = useState(false)
   const [, setWsStatus] = useState('connecting')
   const [userId, setUserId] = useState(() => {
     try {
@@ -140,7 +141,7 @@ export default function ChatPage(){
     setMessages(prev => [...prev, { role: 'user', content: text, reqId }])
     setQuestion('')
     if (aiAnswer) setTyping(true)
-    const payload = { req_id: reqId, question: text, user_id: userId, ai_answer: aiAnswer }
+    const payload = { req_id: reqId, question: text, user_id: userId, ai_answer: aiAnswer, deep_thinking: deepThinking }
     try {
       const res = await apiClient.post('/api/v1/messages', payload)
       const resolvedId = res.data?.user_id
@@ -326,6 +327,9 @@ export default function ChatPage(){
                     </span>
                     <button type="button" className={`ai-toggle-btn ${aiAnswer ? 'active' : ''}`} onClick={() => setAiAnswer(!aiAnswer)}>
                         {t('chat.aiToggle')}
+                    </button>
+                    <button type="button" className={`ai-toggle-btn deep-think ${deepThinking ? 'active' : ''}`} onClick={() => setDeepThinking(v => !v)}>
+                        {t('chat.deepThinkingToggle')}
                     </button>
                 </div>
                 {showOnlineList && onlineUsers.length > 0 && (

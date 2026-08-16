@@ -52,6 +52,8 @@ export default function Debate() {
   const [treeMode, setTreeMode] = useState(false)
   const [treeCompleted, setTreeCompleted] = useState(false)
   const [treeFinalAnswer, setTreeFinalAnswer] = useState(null)
+  // ---- 深度思考（默认普通模式，豆包等原生思考模型）----
+  const [deepThinking, setDeepThinking] = useState(false)
   const treeEventBus = useRef({ handlers: [], onMessage(h) { this.handlers.push(h) }, offMessage(h) { this.handlers = this.handlers.filter(x => x !== h) }, emit(msg) { this.handlers.forEach(h => h(msg)) } })
 
   const currentRoundRef = useRef(0)
@@ -252,6 +254,7 @@ export default function Debate() {
         req_id: reqId, question: text, user_id: userId,
         rounds: roundCount,
         model_count: treeMode ? 3 : modelCount,
+        deep_thinking: deepThinking,
         ...(treeMode ? { mode: 'tree' } : {}),
       })
     } catch (err) {
@@ -489,6 +492,16 @@ export default function Debate() {
             placeholder={treeMode ? t('debate.placeholderTree') : t('debate.placeholderLinear', { count: modelCount })}
             disabled={debating}
           />
+          {/* 深度思考开关 — 输入框内部右边，默认普通模式 */}
+          <button
+            type="button"
+            onClick={() => setDeepThinking(v => !v)}
+            disabled={debating}
+            className={`deep-think-btn ${deepThinking ? 'active' : ''}`}
+            title={t('chat.deepThinkingToggle')}
+          >
+            {t('chat.deepThinkingToggle')}
+          </button>
           <button type="submit" className="send-btn" disabled={debating}>
             {debating ? '⏳' : '↑'}
           </button>

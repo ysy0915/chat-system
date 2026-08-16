@@ -141,6 +141,9 @@ public class MessageController {
             if (preferred != null) {
                 messagePayload.put("preferred_model_config_id", preferred);
             }
+            // 深度思考开关透传（前端「深度思考」按钮，仅对豆包等原生思考模型生效）
+            boolean deepThinking = "true".equals(String.valueOf(body.get("deep_thinking")));
+            messagePayload.put("deep_thinking", String.valueOf(deepThinking));
             coreClient.chatProcess(messagePayload);
         }
 

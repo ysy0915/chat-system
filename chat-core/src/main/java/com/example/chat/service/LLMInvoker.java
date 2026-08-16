@@ -256,6 +256,23 @@ public class LLMInvoker {
     // ============ LLM Bundle (chat-llm 统一网关) 支持 ============
 
     /**
+     * 深度思考上下文：请求级透传「是否启用豆包原生深度思考（reasoning）」。
+     * 由 ChatProcessor 在调用前 set、调用后 clear（try-finally），避免线程池复用串值。
+     * 默认 null 视为「关闭思考」（与历史行为一致：doubao 默认 disabled）。
+     */
+    private static final ThreadLocal<Boolean> DEEP_THINKING = new ThreadLocal<>();
+
+    /** 设置当前线程的深度思考开关（null/true 表示开启，false 表示关闭） */
+    public static void setDeepThinking(boolean enabled) {
+        DEEP_THINKING.set(enabled);
+    }
+
+    /** 清除深度思考上下文（务必在 finally 中调用） */
+    public static void clearDeepThinking() {
+        DEEP_THINKING.remove();
+    }
+
+    /**
      * bundle 模式是否启用：客户端与配置注入齐备且显式开启。
      */
     private boolean bundleEnabled() {
@@ -285,11 +302,13 @@ public class LLMInvoker {
         String apiKey = resolveApiKey(config, defaultApiKey);
         if (baseUrl != null && !baseUrl.isBlank()) extra.put("baseUrl", baseUrl);
         if (apiKey != null && !apiKey.isBlank()) extra.put("apiKey", apiKey);
-        // 关闭豆包 seed-2.0 系列默认开启的深度思考（reasoning）：
-        // 该系列模型每次回答前会先生成大量思考 token（实测 149 个），导致首 token 延迟 4~18 秒。
-        // 关闭 thinking 后首 token 稳定在 ~2.2 秒（2026-08-17 实测）。
+        // 豆包 seed-2.0 系列默认开启深度思考（reasoning），每次回答前会先生成大量思考 token
+        // （实测 149 个），导致首 token 延迟 4~18 秒；关闭后首 token 稳定 ~2.2 秒（2026-08-17 实测）。
+        // 现改为可配置：用户可在对话窗口选择是否深度思考（DEEP_THINKING ThreadLocal 透传）。
+        // 默认关闭（快速响应），仅当用户显式开启时透传 thinking:enabled。
         if ("doubao".equalsIgnoreCase(config.provider)) {
-            extra.put("thinking", Map.of("type", "disabled"));
+            boolean enableThinking = Boolean.TRUE.equals(DEEP_THINKING.get());
+            extra.put("thinking", Map.of("type", enableThinking ? "enabled" : "disabled"));
         }
         if (!extra.isEmpty()) req.setExtra(extra);
         return req;

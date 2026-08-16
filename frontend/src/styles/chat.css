@@ -345,6 +345,36 @@
 
 .send-btn:active { transform: scale(0.95); }
 
+/* ─── Deep Think Button（输入框内部，带文字，与 send-btn 同高） ─── */
+.deep-think-btn {
+    height: 40px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(56,189,248,0.25);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 5px;
+    transition: all 0.25s;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.deep-think-btn:hover {
+    border-color: #38bdf8;
+    color: #38bdf8;
+    background: rgba(56,189,248,0.08);
+}
+
+.deep-think-btn.active {
+    border-color: #38bdf8;
+    color: #fff;
+    background: linear-gradient(135deg, rgba(56,189,248,0.7), rgba(99,102,241,0.5));
+    box-shadow: 0 0 12px rgba(56,189,248,0.35);
+}
+
 /* ─── AI Toggle Button ─── */
 .ai-toggle-btn {
     height: 36px;
@@ -397,6 +427,24 @@
     color: var(--danger);
     background: rgba(244,63,94,0.12);
     animation: voicePulse 1.5s infinite;
+}
+
+/* ─── Deep Thinking Toggle（复用 ai-toggle-btn，青色系区分） ─── */
+.ai-toggle-btn.deep-think {
+    border-color: rgba(56,189,248,0.3);
+}
+
+.ai-toggle-btn.deep-think:hover {
+    border-color: rgba(56,189,248,0.6);
+    color: #38bdf8;
+    background: rgba(56,189,248,0.08);
+}
+
+.ai-toggle-btn.deep-think.active {
+    border-color: #38bdf8;
+    color: #fff;
+    background: linear-gradient(135deg, rgba(56,189,248,0.7), rgba(99,102,241,0.5));
+    box-shadow: 0 0 12px rgba(56,189,248,0.35);
 }
 
 @keyframes voicePulse {

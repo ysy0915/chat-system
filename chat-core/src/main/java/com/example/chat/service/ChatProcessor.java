@@ -140,6 +140,8 @@ public class ChatProcessor {
         Long userId = payload.get("user_id") == null ? 0L : Long.parseLong(payload.get("user_id").toString());
         String question = payload.get("question") == null ? "" : payload.get("question").toString();
         boolean isPrivate = "true".equals(String.valueOf(payload.get("private")));
+        // 深度思考开关：前端「深度思考」按钮透传，仅对豆包等原生思考模型生效
+        boolean deepThinking = "true".equals(String.valueOf(payload.get("deep_thinking")));
 
         try {
             List<ModelConfig> allConfigs = modelRouter.loadChatModels(
@@ -151,11 +153,11 @@ public class ChatProcessor {
                     applySwitchResult(reqId, userId, switchResult);
                     return;
                 }
-                handlePersonalChat(reqId, userId, question, allConfigs);
+                handlePersonalChat(reqId, userId, question, allConfigs, deepThinking);
                 return;
             }
 
-            handleGroupChat(reqId, userId, question, allConfigs, startTime);
+            handleGroupChat(reqId, userId, question, allConfigs, startTime, deepThinking);
 
         } catch (Exception ex) {
             log.error("ChatProcessor 失败", ex);
@@ -191,7 +193,7 @@ public class ChatProcessor {
      * 个人对话空间主线流程：缓存 → LangChain4j → 流式（含工具调度）。
      */
     private void handlePersonalChat(String reqId, Long userId, String question,
-                                     List<ModelConfig> allConfigs) {
+                                     List<ModelConfig> allConfigs, boolean deepThinking) {
         if (chatCacheManager.hitAndServe(reqId, userId, question)) {
             log.info("[handlePersonalChat] req_id={} userId={} cache hit, skip LLM", reqId, userId);
             return;
@@ -223,9 +225,9 @@ public class ChatProcessor {
         }
 
         List<LLMMessage> historyMessages = chatHistoryBuilder.buildPersonal(userId, question);
-        log.info("[handlePersonalChat] req_id={} userId={} historySize={} model={} => doPersonalStream",
-                reqId, userId, historyMessages.size(), configs.get(0).model);
-        doPersonalStream(reqId, userId, question, configs.get(0), historyMessages, intent);
+        log.info("[handlePersonalChat] req_id={} userId={} historySize={} model={} deepThinking={} => doPersonalStream",
+                reqId, userId, historyMessages.size(), configs.get(0).model, deepThinking);
+        doPersonalStream(reqId, userId, question, configs.get(0), historyMessages, intent, deepThinking);
     }
 
     // ───────────── 群聊 / 非个人场景 ─────────────
@@ -234,7 +236,7 @@ public class ChatProcessor {
      * 群聊（或非个人空间）主线：模型选择 → 并发调用 → 首发竞速。
      */
     private void handleGroupChat(String reqId, Long userId, String question,
-                                  List<ModelConfig> allConfigs, long startTime) {
+                                  List<ModelConfig> allConfigs, long startTime, boolean deepThinking) {
         // 意图识别（异步非阻塞）
         IntentResult intent = recognizeIntent(question, "group");
 
@@ -247,7 +249,7 @@ public class ChatProcessor {
         }
 
         List<LLMMessage> historyMessages = chatHistoryBuilder.buildGroup(userId, question);
-        doGroupConcurrent(reqId, userId, question, configs, historyMessages, startTime, intent);
+        doGroupConcurrent(reqId, userId, question, configs, historyMessages, startTime, intent, deepThinking);
     }
 
     // ───────────── 子流程 ─────────────
@@ -282,12 +284,14 @@ public class ChatProcessor {
     // == 为引用比较：判断 effectiveHistory 是否需防御拷贝；流式链路多分支（意图路由/记忆/技能/思考链）拆分无收益
     private void doPersonalStream(String reqId, Long userId, String question,
                                    ModelConfig config, List<LLMMessage> history,
-                                   IntentResult intent) {
+                                   IntentResult intent, boolean deepThinking) {
         long startTime = System.currentTimeMillis();
         double temperature = intent != null ? intentRouting.temperatureFor(intent.category()) : 0.7;
         CompletableFuture.runAsync(() -> {
-            log.info("[doPersonalStream] 线程开始 req_id={} userId={} model={} intent={} temp={}",
-                    reqId, userId, config.model, intentLabel(intent), temperature);
+            log.info("[doPersonalStream] 线程开始 req_id={} userId={} model={} intent={} temp={} deepThinking={}",
+                    reqId, userId, config.model, intentLabel(intent), temperature, deepThinking);
+            // 深度思考开关透传给 LLMInvoker（仅对豆包等原生思考模型生效），try-finally 防线程池复用串值
+            LLMInvoker.setDeepThinking(deepThinking);
             try {
                 broadcastService.broadcast("/topic/user." + userId,
                         WsMessage.of(WsMessage.TYPE_STREAM_START).withReqId(reqId)
@@ -484,6 +488,7 @@ public class ChatProcessor {
                         WsMessage.error("生成失败: " + ex.getMessage()).withReqId(reqId).toMap());
             } finally {
                 streamStopManager.remove(reqId);
+                LLMInvoker.clearDeepThinking();
             }
         }, modelExecutor);
     }
@@ -511,15 +516,15 @@ public class ChatProcessor {
     // 群聊并发多模型汇总：竞态结果合并/流式转发/异常兜底，拆分破坏并发状态管理
     private void doGroupConcurrent(String reqId, Long userId, String question,
                                    List<ModelConfig> configs, List<LLMMessage> history,
-                                   long startTime, IntentResult intent) {
+                                   long startTime, IntentResult intent, boolean deepThinking) {
         AtomicBoolean completed = new AtomicBoolean(false);
         AtomicInteger finishedCount = new AtomicInteger(0);
         int totalModels = configs.size();
         @SuppressWarnings("PMD.UnusedLocalVariable")
         boolean isPrivate = false;
         double temperature = intent != null ? intentRouting.temperatureFor(intent.category()) : 0.7;
-        log.info("[doGroupConcurrent] req_id={} userId={} models={} intent={} temp={}",
-                reqId, userId, totalModels, intentLabel(intent), temperature);
+        log.info("[doGroupConcurrent] req_id={} userId={} models={} intent={} temp={} deepThinking={}",
+                reqId, userId, totalModels, intentLabel(intent), temperature, deepThinking);
 
         // 知识问答/任务类问题：自动检索知识库，RAG 索引增强（检索一次，注入所有并发模型）
         final List<LLMMessage> historyForCall;
@@ -549,6 +554,7 @@ public class ChatProcessor {
 
         for (ModelConfig config : configs) {
             CompletableFuture<LLMResult> future = CompletableFuture.supplyAsync(() -> {
+                LLMInvoker.setDeepThinking(deepThinking);
                 try {
                     String answer;
                     if (historyForCall != null) {
@@ -561,6 +567,8 @@ public class ChatProcessor {
                     return new LLMResult(config, answer);
                 } catch (Exception ex) {
                     throw new LLMCallException(config.model, "群聊调用失败", ex);
+                } finally {
+                    LLMInvoker.clearDeepThinking();
                 }
             }, modelExecutor);
 

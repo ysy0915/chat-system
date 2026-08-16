@@ -91,6 +91,9 @@ public class DebateController {
             }
         }
         debatePayload.put("model_count", Math.max(3, Math.min(6, modelCount)));
+        // 深度思考开关（前端「深度思考」按钮，仅对豆包等原生思考模型生效）
+        boolean deepThinking = "true".equals(String.valueOf(body.get("deep_thinking")));
+        debatePayload.put("deep_thinking", String.valueOf(deepThinking));
         coreClient.debateStart(debatePayload);
 
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "debating"));

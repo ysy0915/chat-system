@@ -4,6 +4,27 @@
 
 ---
 
+## 稳定版发布：深度思考可配置化 + 豆包换 mini + 视角并行（2026-08-17 晚）
+
+### 1. 深度思考可配置化
+
+- 个人对话、AI 群聊、观点辩论均新增「🧠 深度思考」开关，默认普通模式（快速响应）。
+- 全链路透传 `deep_thinking`：前端 → web（MessageController/DebateController）→ core（ChatProcessor/DebateProcessor/DebateTreeProcessor）→ `LLMInvoker`（ThreadLocal 上下文）。
+- 仅对豆包 seed-2.0 系列（原生 reasoning）生效：关闭 → `thinking:disabled`（快），开启 → `thinking:enabled`（深入但慢）。
+
+### 2. 豆包换 mini 模型（辩论提速）
+
+- 根因：DB `llm_model_config` 表的 doubao 模型仍是 lite，chat-llm 定时刷新（60s）会覆盖 Nacos 的 mini 配置，导致「改了 mini 但实际还是 lite」。
+- 修复：DB 模型表 lite → mini（`doubao-seed-2-0-mini-260215`），与 Nacos 一致。
+- 实测：mini 关闭思考后首 token 0.6~1.0 秒（vs lite 2.2 秒，pro 更慢）。
+
+### 3. 树状辩论视角真正并行
+
+- 根因：`DebateTreeProcessor` 的 `batchPool` 核心线程数 = 2，而树状辩论拆解 3 个视角。`ThreadPoolExecutor` 在队列未满时不会扩容，导致第 3 个视角排队串行。
+- 修复：核心线程数 2 → 4，3 个视角真正同时并行。
+
+---
+
 ## 个人对话性能优化 + 安全加固 + 包结构重构 + 内存治理（2026-08-17）
 
 ### 1. 个人对话「慢 + 非流式」修复（工具探测按意图触发）

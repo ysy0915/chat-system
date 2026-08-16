@@ -270,7 +270,7 @@ class DebateTreeProcessorTest {
                 return null;
             }).when(broadcastService).broadcast(anyString(), anyMap());
 
-            processor.process("req-ex", 999L, "测试问题", modelMap, defaultModel);
+            processor.process("req-ex", 999L, "测试问题", modelMap, defaultModel, false);
 
             boolean doneReceived = latch.await(15, TimeUnit.SECONDS);
             assertThat(doneReceived)

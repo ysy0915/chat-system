@@ -24,6 +24,7 @@ export default function PersonalChat() {
   const [typing, setTyping] = useState(false)
   const [onlineCount, setOnlineCount] = useState(0)
   const [selectedFile, setSelectedFile] = useState(null)
+  const [deepThinking, setDeepThinking] = useState(false)
   const [circuitOpen, setCircuitOpen] = useState(false)
   const [redirectCountdown, setRedirectCountdown] = useState(0)
   const fileInputRef = useRef(null)
@@ -274,7 +275,8 @@ export default function PersonalChat() {
           user_id: userId,
           private: 'true',
           ai_answer: true,
-          preferred_model_config_id: currentModelId
+          preferred_model_config_id: currentModelId,
+          deep_thinking: deepThinking
         }, { timeout: timeoutMs })
         const resolvedId = res.data?.user_id
         if (resolvedId && resolvedId !== userId && !userIdResolved.current) {
@@ -736,6 +738,25 @@ export default function PersonalChat() {
               <span style={{ fontSize: 11 }}>⚡</span>
               {currentModel}
               <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
+            </button>
+            <button
+              onClick={() => setDeepThinking(v => !v)}
+              className={`ai-toggle-btn deep-think ${deepThinking ? 'active' : ''}`}
+              style={{
+                background: deepThinking ? 'linear-gradient(135deg, rgba(56,189,248,0.7), rgba(99,102,241,0.5))' : 'rgba(255,255,255,0.08)',
+                color: deepThinking ? '#fff' : 'var(--text-secondary, #94a3b8)',
+                border: '1px solid ' + (deepThinking ? '#38bdf8' : 'rgba(255,255,255,0.12)'),
+                borderRadius: 16,
+                padding: '5px 12px',
+                cursor: 'pointer',
+                fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('chat.deepThinkingToggle')}
             </button>
             {showModelMenu && (
               <div style={{

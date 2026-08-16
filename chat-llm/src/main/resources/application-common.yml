@@ -36,7 +36,7 @@ llm:
       api-key: ${DOUBAO_API_KEY:}
       models:
         - doubao-seed-2-0-pro-260215
-        - doubao-seed-2-0-lite-260215
+        - doubao-seed-2-0-mini-260215
     # 示例：OpenAI 官方
     # - name: openai
     #   type: rest

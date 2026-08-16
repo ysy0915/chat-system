@@ -44,8 +44,12 @@ public class DebateTreeProcessor {
      * 原 Executors.newFixedThreadPool(8) 内部为无界 LinkedBlockingQueue。
      */
     private final ExecutorService treeExecutor = ThreadPoolFactory.create(4, 8, 200, "debate-tree");
-    /** 视角级并行线程池（有界，类级复用，避免每请求新建+泄漏） */
-    private final ExecutorService batchPool = ThreadPoolFactory.create(2, 4, 100, "debate-batch");
+    /**
+     * 视角级并行线程池（有界，类级复用，避免每请求新建+泄漏）。
+     * 核心线程数 = 4：树状辩论最多拆解 4 个视角（decompose 中 >4 降级为 3 个默认视角），
+     * 保证 3~4 个视角能同时并行，不会因 core=2 + 队列 100 导致第 3 个视角排队串行。
+     */
+    private final ExecutorService batchPool = ThreadPoolFactory.create(4, 4, 100, "debate-batch");
     private final LLMInvoker llmInvoker;
     private final BroadcastService broadcastService;
     private final TreePerspectiveGraphService perspectiveGraphService;
@@ -89,10 +93,13 @@ public class DebateTreeProcessor {
      * @param summaryModel 整合模型
      */
     public void process(String reqId, Long userId, String question,
-                         Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
+                         Map<Long, ModelConfig> modelMap, ModelConfig summaryModel,
+                         boolean deepThinking) {
         treeExecutor.submit(() -> {
+            // 深度思考开关透传给 LLMInvoker（覆盖语义拆解 + 汇总，视角辩论在各自线程单独设置）
+            LLMInvoker.setDeepThinking(deepThinking);
             try {
-                runTreeDebate(reqId, userId, question, modelMap, summaryModel);
+                runTreeDebate(reqId, userId, question, modelMap, summaryModel, deepThinking);
             } catch (Exception e) {
                 log.error("[TreeDebate] {}", e.getMessage(), e);
                 broadcast("/topic/debate." + userId,
@@ -102,12 +109,15 @@ public class DebateTreeProcessor {
                         WsMessage.of("done").withReqId(reqId)
                                 .with("answer", "辩论异常: " + e.getMessage())
                                 .with("perspectiveCount", 0).toMap());
+            } finally {
+                LLMInvoker.clearDeepThinking();
             }
         });
     }
 
     private void runTreeDebate(String reqId, Long userId, String question,
-                                Map<Long, ModelConfig> modelMap, ModelConfig summaryModel) {
+                                Map<Long, ModelConfig> modelMap, ModelConfig summaryModel,
+                                boolean deepThinking) {
 
         // 1. 发送模型信息
         broadcastModelInfo(userId, reqId, modelMap, summaryModel);
@@ -146,6 +156,8 @@ public class DebateTreeProcessor {
             final Perspective p = perspectives.get(i);
             final int pIdx = i;
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                // 视角辩论在 batchPool 线程执行，需单独透传深度思考开关
+                LLMInvoker.setDeepThinking(deepThinking);
                 try {
                     // LangGraph 混合模式: 单视角的 3 轮辩论 + 总结
                     send("/topic/debate." + userId,
@@ -169,6 +181,8 @@ public class DebateTreeProcessor {
                     send("/topic/debate." + userId,
                             treeMsg("tree_perspective_error", reqId)
                                     .with("perspectiveId", p.id).with("error", e.getMessage()));
+                } finally {
+                    LLMInvoker.clearDeepThinking();
                 }
             }, batchPool);
             perspectiveFutures.add(future);

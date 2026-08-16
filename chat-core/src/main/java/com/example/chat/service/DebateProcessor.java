@@ -86,6 +86,8 @@ public class DebateProcessor {
         int totalRounds = parseRounds(payload.get("rounds"));
         int modelCount = parseModelCount(payload.get("model_count"));
         boolean treeMode = "tree".equals(mode);
+        // 深度思考开关（前端「深度思考」按钮，仅对豆包等原生思考模型生效）
+        boolean deepThinking = "true".equals(String.valueOf(payload.get("deep_thinking")));
 
         // 树状模式排除本地自研(ollama)模型：多轮串行且每轮等最慢分支，本地推理(12s+/次)会拖垮整场
         Map<Long, ModelConfig> modelMap = resolveDebateModels(
@@ -99,7 +101,7 @@ public class DebateProcessor {
 
         // 树状模式：语义拆解 → 多视角并行辩论 → 汇总（DebateTreeProcessor 内部自行广播 start）
         if (treeMode) {
-            debateTreeProcessor.process(reqId, userId, question, modelMap, summaryModel);
+            debateTreeProcessor.process(reqId, userId, question, modelMap, summaryModel, deepThinking);
             return;
         }
 
@@ -113,12 +115,16 @@ public class DebateProcessor {
         broadcastModelInfo(userId, reqId, modelMap, summaryModel);
 
         debateExecutor.submit(() -> {
+            // 深度思考开关透传（主线程覆盖汇总调用，并发模型在各自线程单独设置）
+            LLMInvoker.setDeepThinking(deepThinking);
             try {
-                runDebate(reqId, userId, question, modelMap, summaryModel, debateRecordId, userName, totalRounds);
+                runDebate(reqId, userId, question, modelMap, summaryModel, debateRecordId, userName, totalRounds, deepThinking);
             } catch (Exception e) {
                 log.error("[ERROR] DebateProcessor: {}", e.getMessage(), e);
                 broadcastService.broadcast("/topic/debate." + userId,
                         WsMessage.error(e.getMessage()).withReqId(reqId).toMap());
+            } finally {
+                LLMInvoker.clearDeepThinking();
             }
         });
     }
@@ -174,7 +180,8 @@ public class DebateProcessor {
     }
 
     private void runDebate(String reqId, Long userId, String question, Map<Long, ModelConfig> modelMap,
-                           ModelConfig summaryModel, Long debateRecordId, String userName, int totalRounds) {
+                           ModelConfig summaryModel, Long debateRecordId, String userName, int totalRounds,
+                           boolean deepThinking) {
         List<List<Map<String, String>>> allRounds = new ArrayList<>();
         List<Long> debateOrder = new ArrayList<>(modelMap.keySet()); // 0..N-1 动态
 
@@ -194,6 +201,8 @@ public class DebateProcessor {
                 String prompt = buildDebatePrompt(question, allRounds, currentRound, displayName);
 
                 CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
+                    // 并发模型在各自线程执行，需单独透传深度思考开关
+                    LLMInvoker.setDeepThinking(deepThinking);
                     try {
                         String answer = llmInvoker.invokeStream(config,
                                 List.of(LLMMessage.user(prompt)),
@@ -208,6 +217,8 @@ public class DebateProcessor {
                         return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", answer);
                     } catch (Exception e) {
                         return Map.of("model_id", String.valueOf(modelId), "provider", displayName, "answer", "[" + displayName + " 调用失败]");
+                    } finally {
+                        LLMInvoker.clearDeepThinking();
                     }
                 }, debateExecutor).thenAccept(result -> {
                     roundResponses.add(result);

@@ -44,6 +44,7 @@ nohup java \
     -Xms160m -Xmx160m \
     -Xss256k \
     -XX:MaxMetaspaceSize=128m \
+        -XX:MaxDirectMemorySize=64m \
     -XX:ReservedCodeCacheSize=48m \
     -XX:+UseG1GC \
     -XX:MaxGCPauseMillis=200 \

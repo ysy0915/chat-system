@@ -16,15 +16,15 @@ groups:
 
   - name: chat-system-resource
     rules:
-      # 宿主机可用内存 < 8% → 真实触发过（内存治理 P0 的依据）
+      # 宿主机可用内存 < 20% → 提前预警（2026-08-17 从 8% 上调，避免等 OOM 才告警）
       - alert: HostMemoryPressure
-        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.08
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.20
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "宿主机可用内存不足 8%"
-          description: "{{ $labels.instance }} 可用内存低于 8%，持续 5 分钟，请清理进程或升内存"
+          summary: "宿主机可用内存不足 20%"
+          description: "{{ $labels.instance }} 可用内存低于 20%，持续 5 分钟，请清理进程或升内存"
 
       - alert: DiskWillFill
         expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15

@@ -48,6 +48,8 @@ restart_one() {
     nohup java \
         -Xms256m -Xmx512m \
         -Xss512k \
+        -XX:MaxDirectMemorySize=128m \
+        -XX:MaxMetaspaceSize=256m \
         -XX:+UseG1GC \
         -XX:MaxGCPauseMillis=200 \
         -XX:+HeapDumpOnOutOfMemoryError \

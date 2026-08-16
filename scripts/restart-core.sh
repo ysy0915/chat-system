@@ -54,6 +54,8 @@ restart_one() {
     nohup java \
         -Xms${XMX} -Xmx${XMX} \
         -Xss512k \
+        -XX:MaxDirectMemorySize=256m \
+        -XX:MaxMetaspaceSize=256m \
         -XX:+UseG1GC \
         -XX:MaxGCPauseMillis=200 \
         -XX:G1HeapRegionSize=4m \

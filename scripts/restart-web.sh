@@ -1,7 +1,7 @@
 #!/bin/bash
-# chat-web 重启脚本（单实例 端口 8081；8082 已废弃）
-# 用法：bash /opt/app/restart-web.sh [8081|all]
-# 不传参数默认重启 8081 单实例
+# chat-web 重启脚本（双实例 端口 8081/8082）
+# 用法：bash /opt/app/restart-web.sh [8081|8082|all]
+# 不传参数默认重启全部两个实例
 # 加载环境变量
 [ -f /opt/app/.env ] && set -a && . /opt/app/.env && set +a
 
@@ -47,6 +47,8 @@ restart_one() {
     nohup java \
         -Xms256m -Xmx256m \
         -Xss512k \
+        -XX:MaxDirectMemorySize=128m \
+        -XX:MaxMetaspaceSize=256m \
         -XX:+UseG1GC \
         -XX:MaxGCPauseMillis=200 \
         -XX:G1HeapRegionSize=2m \

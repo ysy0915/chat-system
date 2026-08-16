@@ -121,14 +121,18 @@ public class ToolDispatcher {
             // 执行每一个工具调用，把结果作为 tool 角色消息回填
             for (Map<String, Object> tc : toolCalls) {
                 String toolResult = llmToolInvoker.executeOneToolCall(tc, this::executeTool);
-                String toolCallId = llmToolInvoker.toolNameOf(tc);
-                if (!executedTools.contains(toolCallId)) {
-                    executedTools.add(toolCallId);
+                String toolName = llmToolInvoker.toolNameOf(tc);
+                String toolCallId = llmToolInvoker.toolCallIdOf(tc);
+                if (!executedTools.contains(toolName)) {
+                    executedTools.add(toolName);
                 }
 
                 Map<String, Object> toolMsg = new LinkedHashMap<>();
                 toolMsg.put("role", "tool");
-                toolMsg.put("name", toolCallId);
+                toolMsg.put("name", toolName);
+                // DeepSeek 严格要求 tool 消息携带 tool_call_id（对应 assistant 消息中 tool_calls 的 id），
+                // 缺失会返回 400: missing field tool_call_id
+                toolMsg.put("tool_call_id", toolCallId);
                 toolMsg.put("content", toolResult);
                 workingMessages.add(toolMsg);
             }

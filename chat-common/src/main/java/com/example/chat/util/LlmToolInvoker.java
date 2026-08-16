@@ -119,6 +119,20 @@ public class LlmToolInvoker {
     }
 
     /**
+     * 取 tool_call 中的 id（即 tool_call_id，OpenAI/DeepSeek 兼容格式）。
+     * DeepSeek 严格要求 tool 角色消息携带 tool_call_id，缺失会返回 400。
+     * 缺失时回退到 "tool" 占位，避免空指针。
+     */
+    public String toolCallIdOf(Map<String, Object> toolCall) {
+        if (toolCall == null) return "tool";
+        Object id = toolCall.get("id");
+        if (id != null && !id.toString().isBlank()) {
+            return id.toString();
+        }
+        return "tool";
+    }
+
+    /**
      * 解析 tool_call.function.arguments 为参数 map。
      * arguments 可能是 JSON 字符串或已经是 map；格式错误时返回空 map。
      */

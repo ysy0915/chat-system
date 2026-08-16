@@ -285,6 +285,12 @@ public class LLMInvoker {
         String apiKey = resolveApiKey(config, defaultApiKey);
         if (baseUrl != null && !baseUrl.isBlank()) extra.put("baseUrl", baseUrl);
         if (apiKey != null && !apiKey.isBlank()) extra.put("apiKey", apiKey);
+        // 关闭豆包 seed-2.0 系列默认开启的深度思考（reasoning）：
+        // 该系列模型每次回答前会先生成大量思考 token（实测 149 个），导致首 token 延迟 4~18 秒。
+        // 关闭 thinking 后首 token 稳定在 ~2.2 秒（2026-08-17 实测）。
+        if ("doubao".equalsIgnoreCase(config.provider)) {
+            extra.put("thinking", Map.of("type", "disabled"));
+        }
         if (!extra.isEmpty()) req.setExtra(extra);
         return req;
     }

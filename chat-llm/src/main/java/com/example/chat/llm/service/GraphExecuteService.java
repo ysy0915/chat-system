@@ -72,13 +72,23 @@ public class GraphExecuteService {
 
         Map<String, Object> state = new HashMap<>(request.getState() != null ? request.getState() : new HashMap<>());
         List<StepTrace> traces = new ArrayList<>();
+        Map<String, LangGraphRequest.GraphNode> nodeIndex = buildNodeIndex(request);
+        java.util.Set<String> visited = new java.util.HashSet<>();
 
         String currentNodeId = request.getEntryPoint();
 
         for (int step = 0; step < request.getMaxSteps(); step++) {
             if (currentNodeId == null) break;
 
-            LangGraphRequest.GraphNode node = findNode(request, currentNodeId);
+            // 环告警：重复访问同一节点提示图可能存在环（A→B→A）。
+            // 注意：不直接终止——合法的「有限循环图」（配合 increment 计数 + 条件边退出）
+            // 依赖重复访问，真正防死循环仍由 maxSteps 兜底。
+            if (!visited.add(currentNodeId)) {
+                log.warn("[Graph] 疑似环：节点 {} 在第 {} 步被重复访问（maxSteps={} 兜底终止）",
+                        currentNodeId, step, request.getMaxSteps());
+            }
+
+            LangGraphRequest.GraphNode node = nodeIndex.get(currentNodeId);
             if (node == null) {
                 log.warn("[Graph] 节点不存在: {}", currentNodeId);
                 break;
@@ -145,6 +155,8 @@ public class GraphExecuteService {
         }
 
         Map<String, Object> state = new HashMap<>(request.getState() != null ? request.getState() : new HashMap<>());
+        Map<String, LangGraphRequest.GraphNode> nodeIndex = buildNodeIndex(request);
+        java.util.Set<String> visited = new java.util.HashSet<>();
 
         String currentNodeId = request.getEntryPoint();
 
@@ -152,7 +164,12 @@ public class GraphExecuteService {
             for (int step = 0; step < request.getMaxSteps(); step++) {
                 if (currentNodeId == null) break;
 
-                LangGraphRequest.GraphNode node = findNode(request, currentNodeId);
+                if (!visited.add(currentNodeId)) {
+                    log.warn("[Graph] 疑似环：节点 {} 在第 {} 步被重复访问（maxSteps={} 兜底终止）",
+                            currentNodeId, step, request.getMaxSteps());
+                }
+
+                LangGraphRequest.GraphNode node = nodeIndex.get(currentNodeId);
                 if (node == null) {
                     log.warn("[Graph] 节点不存在: {}", currentNodeId);
                     break;
@@ -243,14 +260,17 @@ public class GraphExecuteService {
         List<LangGraphRequest.GraphBranch> branches = node.getBranches();
         StringBuilder aggregate = new StringBuilder();
 
-        // 分支并行执行使用 state 快照，避免并发修改 HashMap；结果主线程统一写回
+        // 分支并行执行：每个分支持独立 state 副本，彻底避免并发写共享 HashMap。
+        // 分支内的逻辑节点（如 increment）写入只影响本分支副本，最终由主线程统一按 sink 合并写回。
         Map<String, Object> branchState = new HashMap<>(state);
 
         List<CompletableFuture<BranchResult>> futures = new ArrayList<>();
         for (LangGraphRequest.GraphBranch branch : branches) {
             futures.add(CompletableFuture.supplyAsync(() -> {
                 try {
-                    String output = executeBranch(branch, node, request, branchState, onEvent);
+                    // 独立副本：隔离分支间状态，杜绝 HashMap 并发写导致的数据丢失/死循环
+                    Map<String, Object> localState = new HashMap<>(branchState);
+                    String output = executeBranch(branch, node, request, localState, onEvent);
                     return new BranchResult(branch.getId(), output, false);
                 } catch (Exception e) {
                     log.error("[Graph] 分支 {} 执行失败: {}", branch.getId(), e.getMessage(), e);
@@ -412,15 +432,24 @@ public class GraphExecuteService {
                                        String nodeId,
                                        String branchId,
                                        Consumer<GraphStreamEvent> onEvent) {
-        StringBuilder sb = new StringBuilder();
-        llmInvokeService.invokeStream(lc,
-                chunk -> {
-                    sb.append(chunk);
-                    onEvent.accept(GraphStreamEvent.delta(nodeId, branchId, chunk));
-                },
-                () -> { /* done noop */ },
-                err -> log.error("[Graph] 流式调用异常 node={} branch={}: {}", nodeId, branchId, err.getMessage(), err));
-        return sb.toString();
+        // 线程安全：invokeStream 的回调可能在不同线程执行（底层 strategy 可能是异步 SSE），
+        // 用 StringBuffer + CompletableFuture 显式等待完成，而非假设 invokeStream 同步返回即完成。
+        StringBuffer sb = new StringBuffer();
+        CompletableFuture<String> done = new CompletableFuture<>();
+        try {
+            llmInvokeService.invokeStream(lc,
+                    chunk -> {
+                        sb.append(chunk);
+                        onEvent.accept(GraphStreamEvent.delta(nodeId, branchId, chunk));
+                    },
+                    () -> done.complete(sb.toString()),
+                    done::completeExceptionally);
+            // 阻塞等待流式完成（带超时兜底，避免底层 onComplete 永远不回调导致线程悬挂）
+            return done.get(120, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("[Graph] 流式调用异常 node={} branch={}: {}", nodeId, branchId, e.getMessage(), e);
+            throw new IllegalStateException("流式调用失败: " + e.getMessage(), e);
+        }
     }
 
     // ── 逻辑节点 ─────────────────────────────────────────
@@ -526,7 +555,7 @@ public class GraphExecuteService {
         if (node.isRouter()) {
             String o = output != null ? output : String.valueOf(state.get("__lastOutput"));
             for (LangGraphRequest.GraphEdge edge : outgoing) {
-                if (edge.getCondition() != null && evaluateCondition(edge.getCondition(), o)) {
+                if (edge.getCondition() != null && evaluateCondition(edge.getCondition(), o, state)) {
                     return edge.getTo();
                 }
             }
@@ -541,7 +570,7 @@ public class GraphExecuteService {
         for (LangGraphRequest.GraphEdge edge : outgoing) {
             if (edge.getCondition() == null) return edge.getTo();
             String o = output != null ? output : String.valueOf(state.get("__lastOutput"));
-            if (evaluateCondition(edge.getCondition(), o)) return edge.getTo();
+            if (evaluateCondition(edge.getCondition(), o, state)) return edge.getTo();
         }
         for (LangGraphRequest.GraphEdge edge : outgoing) {
             if (edge.isDefaultRoute()) return edge.getTo();
@@ -549,9 +578,15 @@ public class GraphExecuteService {
         return null;
     }
 
-    private boolean evaluateCondition(String condition, String output) {
-        String cond = condition.trim();
+    private boolean evaluateCondition(String condition, String output, Map<String, Object> state) {
+        // 渲染上下文：state 快照 + __output（LLM 输出）。TEMPLATE_PATTERN 约定 {{state.xxx}} 形式，
+        // 故把 output 注入 state 副本，条件边可写 {{state.__output}} 引用 LLM 输出。
+        Map<String, Object> ctx = new HashMap<>(state);
+        ctx.put("__output", output != null ? output : "");
+        String cond = renderTemplate(condition, ctx).trim();
         String o = output != null ? output : "";
+
+        // 字符串条件：contains / equals（左操作数默认取 LLM 输出，也可显式 {{...}}）
         if (cond.startsWith("contains(") && cond.endsWith(")")) {
             String inner = cond.substring("contains(".length(), cond.length() - 1);
             String[] parts = splitArg(inner);
@@ -564,6 +599,30 @@ public class GraphExecuteService {
             String[] parts = splitArg(inner);
             if (parts.length >= 2) {
                 return o.trim().equals(parts[1]);
+            }
+        }
+
+        // 数值比较：gt/gte/lt/lte/ne/eq，两个操作数均取自条件内参数（可引用 {{output}} / {{state.xxx}}）
+        for (String op : new String[]{"gt", "gte", "lt", "lte", "ne", "eq"}) {
+            String prefix = op + "(";
+            if (cond.startsWith(prefix) && cond.endsWith(")")) {
+                String inner = cond.substring(prefix.length(), cond.length() - 1);
+                String[] parts = splitArg(inner);
+                if (parts.length >= 2) {
+                    Double leftNum = parseNum(parts[0]);
+                    Double rightNum = parseNum(parts[1]);
+                    if (leftNum != null && rightNum != null) {
+                        return switch (op) {
+                            case "gt" -> leftNum > rightNum;
+                            case "gte" -> leftNum >= rightNum;
+                            case "lt" -> leftNum < rightNum;
+                            case "lte" -> leftNum <= rightNum;
+                            case "ne" -> !leftNum.equals(rightNum);
+                            case "eq" -> leftNum.equals(rightNum);
+                            default -> false;
+                        };
+                    }
+                }
             }
         }
         return false;
@@ -631,6 +690,19 @@ public class GraphExecuteService {
             if (Objects.equals(node.getId(), nodeId)) return node;
         }
         return null;
+    }
+
+    /**
+     * 构建节点索引：nodeId → GraphNode，主循环 O(1) 查找，替代逐次线性扫描。
+     */
+    private Map<String, LangGraphRequest.GraphNode> buildNodeIndex(LangGraphRequest request) {
+        Map<String, LangGraphRequest.GraphNode> index = new HashMap<>();
+        for (LangGraphRequest.GraphNode node : request.getNodes()) {
+            if (node.getId() != null) {
+                index.put(node.getId(), node);
+            }
+        }
+        return index;
     }
 
     private void validate(LangGraphRequest request) {

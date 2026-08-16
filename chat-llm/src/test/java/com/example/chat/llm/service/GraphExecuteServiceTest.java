@@ -225,6 +225,80 @@ class GraphExecuteServiceTest {
     }
 
     @Test
+    void shouldWarnOnCycleButStillRunToMaxSteps() {
+        // 环只告警不终止，仍由 maxSteps 兜底（合法的有限循环图依赖重复访问）
+        LangGraphRequest.GraphNode n1 = llmNode("loop", "循环");
+        when(llmInvokeService.invoke(any()))
+                .thenReturn(LangChainResponse.ok("x", "deepseek", "deepseek-chat"));
+        LangGraphRequest req = request("loop", List.of(n1),
+                List.of(edge("loop", "loop", null, false)), Map.of(), 4);
+
+        LangGraphResponse resp = service.execute(req);
+
+        assertTrue(resp.isSuccess());
+        assertEquals(4, resp.getTrace().size());
+    }
+
+    // ============ 数值条件路由（gt/gte/lt/lte/ne） ============
+
+    @Test
+    void shouldRouteByNumericConditionOnRouterNode() {
+        // router 节点用 LLM 输出（数字）匹配数值条件边 gt({{__output}}, 2)
+        LangGraphRequest.GraphNode router = llmNode("router", "打分");
+        router.setRouter(true);
+        LangGraphRequest.GraphNode high = terminalNode("high", "高分");
+        LangGraphRequest.GraphNode low = terminalNode("low", "低分");
+        when(llmInvokeService.invoke(any()))
+                .thenReturn(LangChainResponse.ok("5", "deepseek", "deepseek-chat"));
+        LangGraphRequest req = request("router", List.of(router, high, low), List.of(
+                edge("router", "high", "gt({{state.__output}}, 2)", false),
+                edge("router", "low", null, true)), Map.of());
+
+        LangGraphResponse resp = service.execute(req);
+
+        assertTrue(resp.isSuccess());
+        assertTrue(resp.getTrace().stream().anyMatch(t -> "high".equals(t.getNodeId())));
+    }
+
+    @Test
+    void shouldRouteByNumericConditionWithStateVariable() {
+        // 条件边引用 {{round}}（state 顶层变量）做数值比较
+        LangGraphRequest.GraphNode router = llmNode("router", "判断");
+        router.setRouter(true);
+        LangGraphRequest.GraphNode enough = terminalNode("enough", "已足够");
+        LangGraphRequest.GraphNode notYet = terminalNode("notYet", "继续");
+        when(llmInvokeService.invoke(any()))
+                .thenReturn(LangChainResponse.ok("任意", "deepseek", "deepseek-chat"));
+        LangGraphRequest req = request("router", List.of(router, enough, notYet), List.of(
+                edge("router", "enough", "gte({{state.round}}, 3)", false),
+                edge("router", "notYet", null, true)), Map.of("round", 5));
+
+        LangGraphResponse resp = service.execute(req);
+
+        assertTrue(resp.isSuccess());
+        // round=5 >= 3，条件成立跳转 enough
+        assertTrue(resp.getTrace().stream().anyMatch(t -> "enough".equals(t.getNodeId())));
+    }
+
+    @Test
+    void shouldRouteByLtCondition() {
+        LangGraphRequest.GraphNode n1 = llmNode("n1", "输出数字");
+        n1.setRouter(true);
+        LangGraphRequest.GraphNode small = terminalNode("small", "小");
+        LangGraphRequest.GraphNode big = terminalNode("big", "大");
+        when(llmInvokeService.invoke(any()))
+                .thenReturn(LangChainResponse.ok("5", "deepseek", "deepseek-chat"));
+        LangGraphRequest req = request("n1", List.of(n1, small, big), List.of(
+                edge("n1", "small", "lt({{state.__output}}, 10)", false),
+                edge("n1", "big", null, true)), Map.of());
+
+        LangGraphResponse resp = service.execute(req);
+
+        assertTrue(resp.isSuccess());
+        assertTrue(resp.getTrace().stream().anyMatch(t -> "small".equals(t.getNodeId())));
+    }
+
+    @Test
     void shouldHandleUnknownEntryNode() {
         LangGraphRequest req = request("unknown",
                 List.of(logicNode("a", "increment:x")), List.of(), Map.of());
@@ -365,6 +439,24 @@ class GraphExecuteServiceTest {
         assertEquals("成功输出", resp.getFinalState().get("n1.b2"));
     }
 
+    @Test
+    void shouldIsolateBranchStateFromMainState() {
+        // 分支内的逻辑节点写入（increment）只影响分支局部副本，不污染主 state
+        LangGraphRequest.GraphNode n1 = new LangGraphRequest.GraphNode();
+        n1.setId("n1");
+        n1.setUserPrompt("主");
+        n1.setBranches(List.of(branch("b1", "视角A")));
+        LangGraphRequest req = request("n1", List.of(n1), List.of(), Map.of("round", 0));
+        when(llmInvokeService.invoke(any()))
+                .thenReturn(LangChainResponse.ok("结果", "deepseek", "deepseek-chat"));
+
+        LangGraphResponse resp = service.execute(req);
+
+        assertTrue(resp.isSuccess());
+        // 主 state 的 round 不被分支内部写操作污染（分支用独立副本）
+        assertEquals(0, resp.getFinalState().get("round"));
+    }
+
     // ============ 流式执行 ============
 
     @Test
@@ -416,6 +508,35 @@ class GraphExecuteServiceTest {
                         && "b1".equals(e.getBranchId())));
         assertTrue(events.stream().anyMatch(e ->
                 GraphStreamEvent.TYPE_DELTA.equals(e.getType()) && "b1".equals(e.getBranchId())));
+    }
+
+    @Test
+    void shouldWaitForAsyncStreamCompletion() {
+        // 模拟异步流式：invokeStream 返回后，chunk 回调在另一线程延迟触发。
+        // invokeStreamAndJoin 必须用 CompletableFuture 等待 onComplete，而非假设同步完成。
+        LangGraphRequest.GraphNode n1 = llmNode("n1", "异步流式");
+        doAnswer(inv -> {
+            java.util.function.Consumer<String> chunk = inv.getArgument(1);
+            Runnable done = inv.getArgument(2);
+            new Thread(() -> {
+                try { Thread.sleep(50); } catch (InterruptedException ignored) { }
+                chunk.accept("异步");
+                chunk.accept("内容");
+                done.run();
+            }).start();
+            return null; // 立即返回，模拟异步
+        }).when(llmInvokeService).invokeStream(any(), any(), any(), any());
+        List<GraphStreamEvent> events = new ArrayList<>();
+        AtomicBoolean doneFlag = new AtomicBoolean(false);
+
+        service.executeStream(request("n1", List.of(n1), List.of(), Map.of()),
+                events::add, doneFlag::set);
+
+        // 异步线程 50ms 后触发，主线程必须等待到完成，拿到完整两个 delta 事件
+        assertTrue(doneFlag.get());
+        long deltaCount = events.stream()
+                .filter(e -> GraphStreamEvent.TYPE_DELTA.equals(e.getType())).count();
+        assertEquals(2, deltaCount);
     }
 
     // ============ helpers ============

@@ -464,6 +464,7 @@ Response 202: {"id":123,"req_id":"a1b2...","status":"queued","ws_channel":"/ws/c
 ## 11 安全与密钥管理
 - api_key：存 `llm_provider_props`（`prop_key='api_key'`，`prop_type='SECRET'`），密钥与代码分离；列表/详情接口**完全不回传 apiKey（含脱敏片段）**，仅返回 `hasApiKey` 布尔状态，编辑留空表示不修改
 - **key 唯一真相源**：DB `llm_provider_props` 为 provider key 唯一真相源，chat-core / chat-llm 均从 DB 加载并每 60 秒定时刷新（`CachedModelConfigRepository` / `LlmProviderAdminService.scheduledRefresh()`），改 key 无需重启；`.env` 的 `*_API_KEY` 仅作 standalone/DB 故障兜底
+- **key 解析收敛**：`ApiKeyResolver`（`chat-common`）统一实现「DB 显式配置优先、环境变量兜底」规则，收敛 7 处业务类重复判断（`LLMInvoker`/`LLMClient`/`TreeHoleService`/`ModelAutoChatService`/`ToolDispatcher`/`SubAgentWorker`/`TripleExtractionService`），与 `BaseUrlResolver` 形成对称治理
 - admin 权限管理用于 CRUD model_configs（写操作需 `X-Admin-Pass`，chat-llm 纵深防御 `app.llm.admin-password`）
 - HTTPS、JWT（短期 access + refresh）、操作审计
 - 隐私声明：告知用户内容可能发送至第三方模型并允许用户选择

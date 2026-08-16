@@ -58,10 +58,12 @@ LlmBundleClient (统一多模型调用)
 
 不依赖第三方 LangGraph 框架，自研轻量图引擎：
 - 逻辑节点（`nodeType=logic`）— 执行 `compare / increment` 表达式
-- 并行分支（`branches`）— 一个节点内多个 LLM 并行调用，各自流式回调
+- 并行分支（`branches`）— 一个节点内多个 LLM 并行调用，各自流式回调（每分支独立 state 副本，隔离并发写）
 - 状态写入（`sink / sinkAppend`）— 节点输出写入指定 state 键
 - 重试自愈（`retryCount / fallbackNodeId`）
-- 流式事件（`GraphStreamEvent`）— 按 nodeId/branchId 标识
+- 流式事件（`GraphStreamEvent`）— 按 nodeId/branchId 标识，`StringBuffer` + `CompletableFuture` 显式等待完成（120s 超时兜底）
+- 条件路由（`router` + 条件边）— 支持 `contains`/`equals` 字符串匹配 + `gt/gte/lt/lte/ne/eq` 数值比较，条件可引用 `{{state.xxx}}` / `{{state.__output}}` 模板变量
+- 环告警 + 节点索引 — `buildNodeIndex` 建 `nodeId→GraphNode` 索引 O(1) 查找，重复访问节点告警（不终止，由 maxSteps 兜底防死循环）
 
 ### 2.3 `DirectLLMClient` (chat-core)
 

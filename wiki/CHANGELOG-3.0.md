@@ -4,6 +4,37 @@
 
 ---
 
+## 图引擎健壮性修复 + Key 收敛 + 缓存原子性 + 关键链路测试 + 压测一键化（2026-08-16）
+
+### 1. LangGraph 自研图引擎（`GraphExecuteService`）四硬伤修复
+
+| 项 | 问题 | 修复 |
+|----|------|------|
+| 流式线程安全 | `invokeStreamAndJoin` 用 `StringBuilder` 假设 `invokeStream` 同步阻塞返回即完成，底层换成真异步 SSE 会数据竞争 | `StringBuffer` + `CompletableFuture` 显式等待 `onComplete`/`onError`，120s 超时兜底 |
+| 分支并发写 state | 并行分支共享 `branchState` 快照（一写多读乐观假设），分支内逻辑节点写入会并发写 HashMap | 每分支独立 `new HashMap<>(branchState)` 局部副本，彻底隔离 |
+| 条件路由表达力弱 | `evaluateCondition` 仅支持 `contains`/`equals`，无法数值比较、无法引用 state 变量 | 新增 `gt/gte/lt/lte/ne/eq` 数值比较 + `{{state.xxx}}`/`{{state.__output}}` 模板变量，两操作数均可引用变量 |
+| 无环检测 + O(n) 查找 | `findNode` 逐次线性扫描，环只能靠 maxSteps 硬截断 | `buildNodeIndex` 建 `nodeId→GraphNode` 索引 O(1) 查找 + 环告警（不终止，保留 maxSteps 兜底，不误杀合法有限循环图） |
+
+### 2. Key 解析收敛（消除 DB + .env 双源规则漂移）
+
+新增 `ApiKeyResolver` 公共工具类（`chat-common`），收敛 7 处重复的「`apiKeyEncrypted` 优先、环境变量兜底」判断（`LLMInvoker`/`LLMClient`/`TreeHoleService`/`ModelAutoChatService`/`ToolDispatcher`/`SubAgentWorker`/`TripleExtractionService`），与 `BaseUrlResolver` 形成对称治理。
+
+### 3. 缓存原子性修复
+
+`CachedModelConfigRepository` 的 `byTypeCache` 由 `clear()+putAll()` 改为 `volatile` 引用替换，消除「新 enabledCache + 旧 byTypeCache」的瞬间不一致，兑现「原子替换」承诺。
+
+### 4. 关键链路测试补齐
+
+- `ApiKeyResolverTest`（6 例）+ `CachedModelConfigRepositoryTest`（8 例）：key 解析规则、缓存启动加载/读缓存/刷新失败保留旧缓存/写操作触发刷新
+- `LlmProviderAdminServiceTest`（6 例）：DB 覆盖 YAML、定时刷新、刷新失败保留旧路由、跳过禁用/缺 key、apiKey 不回传
+- `GraphExecuteServiceTest` 新增 6 例：环告警、数值条件路由、state 变量、分支隔离、异步流式等待
+
+### 5. 压测一键化
+
+新增 `stress-test/run-benchmark.sh` 封装 `baseline`/`stress`/`soak` 三场景，结果带时间戳落盘到 `results/`（已 gitignore）可对比基线；`k6-http-test.js` 支持 `K6_STAGES` 环境变量覆盖并发曲线。
+
+---
+
 ## 安全加固 + 弹性伸缩 + 在线人数真实统计（2026-08-16）
 
 ### 1. 安全加固（6 项）

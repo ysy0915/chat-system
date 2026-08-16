@@ -23,7 +23,27 @@ sudo apt-get install k6
 
 ## 运行压测
 
-### 1. HTTP API 压测
+### 0. 一键压测（推荐，结果可对比基线）
+
+```bash
+# 基准测试（20→50 并发，3 分钟）
+./stress-test/run-benchmark.sh baseline
+
+# 压力测试（100→500 并发，5 分钟）
+./stress-test/run-benchmark.sh stress
+
+# 稳定性测试（200 并发，30 分钟）
+./stress-test/run-benchmark.sh soak
+
+# 指定目标服务器 + 账号 + 关闭 AI 链路
+BASE_URL=http://112.124.106.108 USERNAME=your_user PASSWORD=your_pwd SEND_RATIO=0 \
+  ./stress-test/run-benchmark.sh baseline
+```
+
+每次压测结果带时间戳落盘到 `stress-test/results/{场景}-{时间戳}.json` + `.log`，
+**架构改动前后各跑一次同场景，diff 指标即可量化优化收益**（结果目录已 gitignore）。
+
+### 1. HTTP API 压测（手动）
 
 ```bash
 # 本地
@@ -36,6 +56,9 @@ k6 run -e BASE_URL=http://112.124.106.108 \
 
 # 只测读接口（不触发 LLM）
 k6 run -e SEND_RATIO=0 stress-test/k6-http-test.js
+
+# 自定义并发曲线（覆盖脚本默认值）
+k6 run -e K6_STAGES="30s:20,1m:50,30s:0" stress-test/k6-http-test.js
 ```
 
 ### 2. WebSocket 压测

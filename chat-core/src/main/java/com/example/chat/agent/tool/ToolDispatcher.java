@@ -3,6 +3,7 @@ package com.example.chat.agent.tool;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.service.LLMInvoker;
+import com.example.chat.util.ApiKeyResolver;
 import com.example.chat.util.BaseUrlResolver;
 import com.example.chat.util.LlmToolInvoker;
 import org.slf4j.Logger;
@@ -87,8 +88,7 @@ public class ToolDispatcher {
         List<Map<String, Object>> workingMessages = new ArrayList<>(LLMMessage.toMapList(messages));
 
         String baseUrl = baseUrlResolver.resolve(config, defaultBaseUrl);
-        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : defaultApiKey;
+        String apiKey = ApiKeyResolver.resolve(config, defaultApiKey);
 
         int callCount = 0;
         // Step3 技能自进化：记录本任务链实际执行的工具名

@@ -14,6 +14,7 @@ import com.example.chat.observability.ErrorType;
 import com.example.chat.observability.SelfHealingService;
 import com.example.chat.observability.TraceContext;
 import com.example.chat.observability.TraceRecorder;
+import com.example.chat.util.ApiKeyResolver;
 import com.example.chat.util.BaseUrlResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -162,11 +163,10 @@ public class LLMInvoker {
     }
 
     /**
-     * 解析 API Key：config 显式配置优先，否则使用默认值。
+     * 解析 API Key：config 显式配置（DB）优先，否则使用默认值（环境变量兜底）。
      */
     private String resolveApiKey(ModelConfig config, String defaultApiKey) {
-        return (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : defaultApiKey;
+        return ApiKeyResolver.resolve(config, defaultApiKey);
     }
 
     /**

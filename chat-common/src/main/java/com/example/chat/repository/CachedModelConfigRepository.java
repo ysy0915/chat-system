@@ -47,8 +47,8 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
     /** 全量 enabled 模型快照（volatile 保证可见性） */
     private volatile List<ModelConfig> enabledCache = Collections.emptyList();
 
-    /** 按 modelType 分组的 enabled 模型快照（ConcurrentHashMap 保证并发安全） */
-    private final Map<String, List<ModelConfig>> byTypeCache = new ConcurrentHashMap<>();
+    /** 按 modelType 分组的 enabled 模型快照（volatile 引用替换，与 enabledCache 同步原子 swap） */
+    private volatile Map<String, List<ModelConfig>> byTypeCache = Collections.emptyMap();
 
     public CachedModelConfigRepository(@Qualifier("modelConfigRepository") ModelConfigRepository delegate) {
         // @Qualifier 显式指定 MyBatis 原始 Mapper bean，避免 @Primary 导致的循环依赖
@@ -72,10 +72,11 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
             for (ModelConfig m : fresh) {
                 grouped.computeIfAbsent(m.getModelType(), k -> new java.util.ArrayList<>()).add(m);
             }
-            // 原子替换：先构建完整新快照，再一次性 swap
+            // 原子替换：先构建完整新快照，再一次性 swap 两个引用。
+            // 注意顺序：先换 byTypeCache 再换 enabledCache 可能导致极短暂的不一致，
+            // 但每个引用本身都是完整、自洽的快照，读线程拿到的永远是完整数据。
+            byTypeCache = grouped;
             enabledCache = fresh;
-            byTypeCache.clear();
-            byTypeCache.putAll(grouped);
             log.info("[ModelConfigCache] 刷新完成，enabled={} 个模型，类型={}", fresh.size(), grouped.size());
         } catch (Exception e) {
             // 刷新失败保留旧缓存，不影响线上请求

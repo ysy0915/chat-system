@@ -5,6 +5,7 @@ import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.service.DirectLLMClient;
+import com.example.chat.util.ApiKeyResolver;
 import com.example.chat.util.BaseUrlResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -105,9 +106,7 @@ public class TripleExtractionService {
                             .filter(c -> "qwen".equalsIgnoreCase(c.provider) || "dashscope".equalsIgnoreCase(c.provider))
                             .findFirst()
                             .orElse(configs.get(0));
-                    if (chosen.apiKeyEncrypted != null && !chosen.apiKeyEncrypted.isBlank()) {
-                        apiKey = chosen.apiKeyEncrypted;
-                    }
+                    apiKey = ApiKeyResolver.resolve(chosen, apiKey);
                     baseUrl = baseUrlResolver.resolve(chosen, baseUrl);
                     if (chosen.model != null && !chosen.model.isBlank()) model = chosen.model;
                 }

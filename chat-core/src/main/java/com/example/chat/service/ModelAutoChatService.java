@@ -5,6 +5,7 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.exception.LLMCallException;
 import com.example.chat.repository.ModelConfigRepository;
+import com.example.chat.util.ApiKeyResolver;
 import com.example.chat.util.BaseUrlResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -145,8 +146,7 @@ public class ModelAutoChatService {
     private String callLLM(ModelConfig config, String prompt) {
         if (llmInvoker != null) {
             String baseUrl = baseUrlResolver.resolve(config, null);
-            String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                    ? config.apiKeyEncrypted : "";
+            String apiKey = ApiKeyResolver.resolve(config, "");
             try {
                 return llmInvoker.invoke(config, prompt, 0.9, "auto", baseUrl, apiKey);
             } catch (Exception e) {
@@ -155,8 +155,7 @@ public class ModelAutoChatService {
         }
         // 降级：DirectLLMClient
         String baseUrl = baseUrlResolver.resolve(config, null);
-        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : "";
+        String apiKey = ApiKeyResolver.resolve(config, "");
         return directLLMClient.call(baseUrl, apiKey, config.model,
                 List.of(LLMMessage.user(prompt)), 0.9, 50);
     }

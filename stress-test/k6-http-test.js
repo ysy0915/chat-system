@@ -1,13 +1,24 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
+// 并发曲线可从 K6_STAGES 环境变量覆盖，格式 "30s:20,1m:50,1m:50,30s:0"
+// （由 run-benchmark.sh 传入，用于基准/压力/稳定性三种场景复用同一脚本）
+function parseStages(spec) {
+  return spec.split(',').map((s) => {
+    const [duration, target] = s.trim().split(':');
+    return { duration, target: Number(target) };
+  });
+}
+
+const DEFAULT_STAGES = [
+  { duration: '30s', target: 20 },  // 30秒爬升至20并发
+  { duration: '1m',  target: 50 },  // 1分钟爬升至50并发
+  { duration: '1m',  target: 50 },  // 保持50并发1分钟
+  { duration: '30s', target: 0 },   // 30秒降至0
+];
+
 export const options = {
-  stages: [
-    { duration: '30s', target: 20 },  // 30秒爬升至20并发
-    { duration: '1m',  target: 50 },  // 1分钟爬升至50并发
-    { duration: '1m',  target: 50 },  // 保持50并发1分钟
-    { duration: '30s', target: 0 },   // 30秒降至0
-  ],
+  stages: __ENV.K6_STAGES ? parseStages(__ENV.K6_STAGES) : DEFAULT_STAGES,
   thresholds: {
     http_req_duration: ['p(95)<2000'], // 95%请求 < 2秒
     http_req_failed: ['rate<0.05'],    // 失败率 < 5%

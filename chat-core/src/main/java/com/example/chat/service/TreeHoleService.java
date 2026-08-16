@@ -7,6 +7,7 @@ import com.example.chat.dto.WsMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.entity.TreeHoleMessage;
 import com.example.chat.repository.TreeHoleRepository;
+import com.example.chat.util.ApiKeyResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -256,8 +257,7 @@ public class TreeHoleService {
         treeHoleRepository.insert(m);
 
         ModelConfig config = modelConfigResolver.resolveMainModel();
-        String effectiveApiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : llmConfig.getApiKey();
+        String effectiveApiKey = ApiKeyResolver.resolve(config, llmConfig.getApiKey());
 
         final String reqId = m.reqId;
         final Long fUserId = userId;

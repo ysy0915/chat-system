@@ -8,6 +8,7 @@ import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.dto.LLMMessage;
 import com.example.chat.entity.ModelConfig;
 import com.example.chat.service.LLMInvoker;
+import com.example.chat.util.ApiKeyResolver;
 import com.example.chat.util.BaseUrlResolver;
 import com.example.chat.util.LlmToolInvoker;
 import com.rabbitmq.client.Channel;
@@ -192,8 +193,7 @@ public class SubAgentWorker {
     private String callWithToolsOnce(ModelConfig config, List<LLMMessage> messages,
                                      List<Map<String, Object>> tools) throws Exception {
         String baseUrl = baseUrlResolver.resolve(config, llmConfig.getBaseUrl());
-        String apiKey = (config.apiKeyEncrypted != null && !config.apiKeyEncrypted.isBlank())
-                ? config.apiKeyEncrypted : llmConfig.getApiKey();
+        String apiKey = ApiKeyResolver.resolve(config, llmConfig.getApiKey());
 
         Map<String, Object> llmResp = llmToolInvoker.callWithTools(config, baseUrl, apiKey, messages, 0.2, tools);
         List<Map<String, Object>> toolCalls = llmToolInvoker.extractToolCalls(llmResp);

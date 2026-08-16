@@ -72,3 +72,6 @@ logs/
 .env
 .env.local
 .env.production
+
+### 压测结果（本地产物，不入库）###
+stress-test/results/

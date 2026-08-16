@@ -133,9 +133,9 @@ Fluent API风格统一：
   管理页新增提供商 → 填baseUrl + apiKey + 模型列表 → 保存即时生效
 
 技术实现：
-  - YAML兜底 + DB覆盖，ApplicationReadyEvent自动加载
-  - apiKey存数据库SECRET字段，列表仅回脱敏值
-  - /reload接口全量重载，无需重启服务
+  - YAML兜底 + DB覆盖，ApplicationReadyEvent自动加载 + 每60秒定时刷新
+  - apiKey存数据库SECRET字段（DB 为 provider key 唯一真相源），列表仅回脱敏值
+  - /reload接口全量重载（手动触发）；改 key 后最长 60 秒自动生效，无需重启服务
 
 
 ================================================================================

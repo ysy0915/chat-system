@@ -371,6 +371,8 @@ java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
 - **验证**：`POST /api/v1/chain/invoke {provider:doubao, model:doubao-seed-2-0-pro-260215}` → 返回豆包真实内容、`fallback=false`；curl 直连方舟 `/api/v3/chat/completions` 200、错误 URL `/api/v3/v1/chat/completions` 404（确认根因）
 - **无代码改动**（纯 DB 数据修复 + 迁移脚本补丁），chat-core 的 `ModelConfigRepository` 每次请求实时查库，无需重启
 
+> **注（2026-08-16 更新）**：chat-core 此后引入 `CachedModelConfigRepository`（`@Primary`，内存 Map + 每 60 秒定时刷新），`ModelConfigRepository` 已改为「缓存读 + 定时刷新」而非每次实时查库；chat-llm 侧也新增 `LlmProviderAdminService.scheduledRefresh()` 每 60 秒从 DB 重载 provider 路由，改 key 无需重启。
+
 ---
 
 ## 一、树状辩论模式
@@ -704,6 +706,8 @@ public class AnthropicProviderFactory implements LLMProviderFactory {
 | `llm_model_config` | 模型（model_name/display_name/model_type/max_tokens/enabled/is_default/priority） |
 
 来源模型：**YAML 兜底 + DB 覆盖**。应用就绪（`ApplicationReadyEvent`）后从 DB 加载 enabled 且含 api_key 的提供商注册进 `LLMProviderRegistry`，覆盖同名 YAML 项。
+
+> **演进（2026-08-16）**：DB 已确立为 provider key 的**唯一真相源**，chat-llm 新增 `@Scheduled(fixedRate=60000) scheduledRefresh()` 每 60 秒从 DB 重载 provider 路由（复用 `loadDbProviders()` 仅覆盖同名项、不清空），改 key 无需重启；`.env` 中的 `*_API_KEY` 仅作 standalone/DB 故障兜底。
 
 ### 新增文件
 

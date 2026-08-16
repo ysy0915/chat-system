@@ -228,11 +228,11 @@ chat-llm 支持**零外部依赖独立部署**：无需 MySQL/Redis/Neo4j/Milvus
 # 1. 打包（只需 chat-llm 及其依赖 chat-common）
 mvn clean install -DskipTests -pl chat-llm -am
 
-# 2. 配置 API Key（需要哪个厂商配哪个，不配则该厂商不可用但应用正常启动）
+# 2. 配置 API Key（standalone 模式经环境变量注入；生产/本地模式以 DB `llm_provider_props` 表为唯一真相源，每 60 秒定时刷新，改 key 无需重启）
 export DEEPSEEK_API_KEY=sk-xxx      # DeepSeek
-export QWEN_API_KEY=sk-xxx          # 千问（RAG 向量化缺省也复用此 Key）
+export QWEN_API_KEY=sk-xxx          # 千问（standalone 模式 RAG 向量化缺省也复用此 Key；生产/本地模式向量化用 DASHSCOPE_API_KEY）
 export DOUBAO_API_KEY=sk-xxx        # 豆包
-# 可选：单独指定向量化 Key（缺省回退 QWEN_API_KEY）
+# 可选：单独指定向量化 Key（standalone 缺省回退 QWEN_API_KEY）
 export EMBEDDING_API_KEY=sk-xxx
 
 # 3. 启动 standalone（HTTP 9095 / gRPC 9195）
@@ -260,7 +260,7 @@ docker run -d --name chat-llm \
 # 健康检查
 curl http://localhost:9095/actuator/health
 
-# 模型管理面：动态添加 Provider（apiKey 直接写入，存内存）
+# 模型管理面：动态添加 Provider（apiKey 直接写入；standalone 存内存，生产存 DB llm_provider_props 并每 60 秒定时刷新）
 curl -X POST http://localhost:9095/api/v1/llm/admin/providers \
   -H "Content-Type: application/json" \
   -d '{"providerName":"ollama","providerType":"rest","baseUrl":"http://localhost:11434/v1","apiKey":"","models":[{"modelName":"llama3","displayName":"Llama 3"}]}'

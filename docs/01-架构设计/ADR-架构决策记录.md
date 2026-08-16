@@ -76,6 +76,8 @@
 - **决策**：`llm_provider_config` / `llm_provider_props` / `llm_model_config` 三表持久化 + `LlmProviderAdminService`（DB 加载 / 写库 / 注册中心同步 / apiKey 脱敏）+ `/api/v1/llm/admin/providers` 管理 API + chat-web 代理 + 前端管理页；来源策略 YAML 兜底 + DB 覆盖；写操作 `X-Admin-Pass` 鉴权（chat-llm 纵深防御 `app.llm.admin-password`）。
 - **后果**：✅ 运营自助增删改模型、即时生效、全量重载；✅ apiKey 仅存不读、列表只返回 `hasApiKey`；⚠️ 双实例写库后需 `/reload` 收敛（DB 为权威）。
 
+> **补充（2026-08-16）**：双实例收敛已由「手动 `/reload`」升级为「每 60 秒定时刷新」（`LlmProviderAdminService.scheduledRefresh()`）自动完成，改 key 无需重启或手动 reload；DB `llm_provider_props` 确立为 provider key 唯一真相源，`.env` 的 `*_API_KEY` 仅作 standalone/DB 故障兜底。
+
 ## ADR-011 工具平台化（ToolDefinition 元数据 + DB 覆盖）
 
 - **状态**：Accepted（2026-08-13 落地）

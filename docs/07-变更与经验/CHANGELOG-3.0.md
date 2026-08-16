@@ -371,6 +371,8 @@ java -jar chat-llm/target/chat-llm-0.0.1-SNAPSHOT.jar \
 - **验证**：`POST /api/v1/chain/invoke {provider:doubao, model:doubao-seed-2-0-pro-260215}` → 返回豆包真实内容、`fallback=false`；curl 直连方舟 `/api/v3/chat/completions` 200、错误 URL `/api/v3/v1/chat/completions` 404（确认根因）
 - **无代码改动**（纯 DB 数据修复 + 迁移脚本补丁），chat-core 的 `ModelConfigRepository` 每次请求实时查库，无需重启
 
+> **注（2026-08-16 更新）**：chat-core 此后引入 `CachedModelConfigRepository`（`@Primary`，内存 Map + 每 60 秒定时刷新），`ModelConfigRepository` 已改为「缓存读 + 定时刷新」而非每次实时查库；chat-llm 侧也新增 `LlmProviderAdminService.scheduledRefresh()` 每 60 秒从 DB 重载 provider 路由，改 key 无需重启。
+
 ---
 
 ## 一、树状辩论模式
@@ -704,6 +706,8 @@ public class AnthropicProviderFactory implements LLMProviderFactory {
 | `llm_model_config` | 模型（model_name/display_name/model_type/max_tokens/enabled/is_default/priority） |
 
 来源模型：**YAML 兜底 + DB 覆盖**。应用就绪（`ApplicationReadyEvent`）后从 DB 加载 enabled 且含 api_key 的提供商注册进 `LLMProviderRegistry`，覆盖同名 YAML 项。
+
+> **演进（2026-08-16）**：DB 已确立为 provider key 的**唯一真相源**，chat-llm 新增 `@Scheduled(fixedRate=60000) scheduledRefresh()` 每 60 秒从 DB 重载 provider 路由（复用 `loadDbProviders()` 仅覆盖同名项、不清空），改 key 无需重启；`.env` 中的 `*_API_KEY` 仅作 standalone/DB 故障兜底。详见「LLM key 定时刷新 + DB 唯一真相源收敛」变更记录。
 
 ### 新增文件
 
@@ -1135,3 +1139,32 @@ llm_invoke_tokens_total{type=...}                 LLM token 消耗（chat-llm �
 - `mvn -pl chat-core test`：**212 例全绿**（197 + 6 + 9）
 - 生产实测：切面版 jar 部署 core 双实例（9090/9092）后，首次业务流量触发 `core_intent_funnel_hits_total`（指标懒注册），layer 映射正确；双实例 health 200
 - 文档同步：`架构评估报告.md` / 根 `README.md` / `部署运维手册.md` / `ADR-架构决策记录.md`（ADR-022）/ 本 CHANGELOG
+
+---
+
+## LLM key 定时刷新 + DB 唯一真相源收敛（2026-08-16）
+
+### 背景
+
+线上千问模型「观点辩论场出不来」，排查根因是千问 API key 失效（401 `invalid_api_key`）。修复时发现 key 散落两处（DB `llm_provider_props` 表 + `.env` 环境变量）且不一致：`.env` 里 `DEEPSEEK_API_KEY`/`DOUBAO_API_KEY` 也均为失效旧 key，仅 DB 里的是有效值。更关键的是，chat-llm 的 provider 路由**只在启动时加载一次 DB**（`ApplicationReadyEvent`），改 DB 后必须重启才生效，而 chat-core 已有 60 秒定时刷新，两者机制不一致导致「改了 DB 只修好 chat-core、chat-llm 仍用旧 key」。
+
+### 变更内容
+
+| 项 | 内容 |
+|----|------|
+| chat-llm 定时刷新 | `LlmApplication` 增加 `@EnableScheduling`；`LlmProviderAdminService` 新增 `@Scheduled(fixedRate=60000) scheduledRefresh()`，每 60 秒从 DB 重载 provider 路由 |
+| 容错设计 | 定时刷新复用 `loadDbProviders()`（仅覆盖同名项、不清空），**不用** `reload()`——后者会 `registry.reset()` 清空全部路由，清空后 DB 瞬时故障会留下「只剩 YAML 兜底」的脆弱窗口 |
+| key 真相源收敛 | 确立 DB `llm_provider_props` 为 provider key 唯一真相源；`.env` 中 `DEEPSEEK_API_KEY`/`QWEN_API_KEY`/`DOUBAO_API_KEY`/`LLM_API_KEY` 仅作 standalone/DB 故障兜底，已同步为 DB 有效值 |
+| 例外标注 | `DASHSCOPE_API_KEY` 用于 RAG/意图向量化 embedding（`app.rag.embedding.api-key`），不走 DB，需在 `.env` 单独保持有效 |
+| 模板 | `.env.template` 补充 provider key 说明与「DB 为真相源」注释 |
+
+### 部署与验证
+
+1. `mvn -pl chat-llm -am clean install -DskipTests` → `scp` jar → `bash /opt/app/restart-llm.sh all`
+2. 验证：启动日志显示 `scheduling-1` 线程每 60 秒执行一次定时刷新（`定时刷新完成，DB 提供商 7 个`）
+3. qwen 调用实测 `success:true`（592ms），观点辩论场恢复正常
+
+### 影响
+
+- 运维改 key：直接改 DB `llm_provider_props` 表，最长 60 秒内 chat-llm / chat-core 双端自动生效，**无需重启**
+- 排查 LLM 401 时需同时检查 DB 与 `.env` 两处 key 是否一致，且注意 `DASHSCOPE_API_KEY`（embedding）是独立路径

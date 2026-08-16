@@ -262,11 +262,13 @@ curl -X POST http://localhost:9095/internal/graph/extract -H "Content-Type: appl
 |------|------|--------|
 | `SERVER_PORT` | 服务端口 | 9095 |
 | `GRPC_PORT` | gRPC 端口（-1 关闭） | 9195 |
-| `DEEPSEEK_API_KEY` | DeepSeek API Key | |
-| `QWEN_API_KEY` | 千问 API Key | |
-| `DOUBAO_API_KEY` | 豆包 API Key | |
-| `OPENAI_API_KEY` | OpenAI API Key | |
-| `EMBEDDING_API_KEY` | RAG/记忆向量化 API Key（缺省回退 `QWEN_API_KEY`） | |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key（仅 standalone/DB 故障兜底；生产以 DB `llm_provider_props` 为唯一真相源） | |
+| `QWEN_API_KEY` | 千问 API Key（同上，standalone 兜底） | |
+| `DOUBAO_API_KEY` | 豆包 API Key（同上，standalone 兜底） | |
+| `OPENAI_API_KEY` | OpenAI API Key（同上，standalone 兜底） | |
+| `EMBEDDING_API_KEY` | RAG/记忆向量化 API Key（standalone 缺省回退 `QWEN_API_KEY`；生产/本地模式用 `DASHSCOPE_API_KEY`，不走 DB） | |
+
+> **生产环境 key 管理**：provider key 的唯一真相源是数据库 `llm_provider_props` 表（`prop_key='api_key'`）。chat-llm 与 chat-core 均从 DB 加载并每 60 秒定时刷新（`LlmProviderAdminService.scheduledRefresh()` / `CachedModelConfigRepository`），运维直接改 DB 后最长 60 秒内自动生效，无需重启。上表 `*_API_KEY` 环境变量仅作为 standalone 模式（无 DB）或 DB 故障时的兜底。
 
 ## 架构
 

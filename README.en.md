@@ -223,7 +223,7 @@ chat-llm supports **standalone deployment with zero external dependencies** — 
 # 1. Build (only chat-llm and its chat-common dependency)
 mvn clean install -DskipTests -pl chat-llm -am
 
-# 2. Configure API keys (only what you need)
+# 2. Configure API keys (only what you need; production uses DB `llm_provider_props` as the single source of truth, refreshed every 60s — no restart needed)
 export DEEPSEEK_API_KEY=sk-xxx
 export QWEN_API_KEY=sk-xxx
 export DOUBAO_API_KEY=sk-xxx

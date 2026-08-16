@@ -412,6 +412,7 @@ mvn test -pl chat-media   # 26 个测试
 | 08-14 | chat-llm 独立部署 standalone 模式 + 树状辩论多模型化 |
 | 08-15 | 性能与稳定性加固（熔断/缓存双写/DLX）+ V1.2.0 DDL 上线 + 文档开源规范化 |
 | 08-16 | 安全加固（方法级鉴权/WebSocket 鉴权/日志脱敏/上传 SSRF）+ 依赖漏洞清零 + web 弹性伸缩（Nacos 动态 upstream）+ 在线人数真实统计（895 用例全绿） |
+| 08-17 | 个人对话性能修复（11s→1-3s：tool_call_id + 豆包 thinking）+ 深度思考可配置化（前端开关全链路透传）+ 豆包换 mini 提速 + 树状博弈视角真正并行 + 包结构重构（llm.llm→llm）+ Controller 分层（Service 下沉）+ 内存治理（MaxDirectMemorySize，可用内存 9.6%→15%）+ games 领主排行榜修复（MySQL 驱动）+ 功能精简（AI 群聊/3D 模型暂隐藏） |
 
 > **关于提交历史**：早期开发过程中曾将模型 API Key 误写入代码仓库，为彻底清除敏感信息，对仓库进行了归档重建，故 Git 提交时间集中显示为 08-14 之后。完整迭代细节见 [架构评估报告.md](docs/01-架构设计/架构评估报告.md) 与 [CHANGELOG-3.0.md](docs/07-变更与经验/CHANGELOG-3.0.md)。
 

@@ -1,4 +1,4 @@
-package com.example.chat.controller;
+package com.example.chat.service;
 
 import com.example.chat.dto.LoginRequest;
 import com.example.chat.dto.RegisterRequest;
@@ -6,7 +6,6 @@ import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.security.JwtUtil;
 import com.example.chat.security.RateLimitChecker;
-import com.example.chat.service.CaptchaService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,11 +28,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * AuthController 真实行为断言：
+ * AuthService 真实行为断言（原 AuthControllerTest 迁移，业务逻辑已下沉至 Service）：
  * 登录（成功/密码错误/用户不存在/失败锁定）、注册（验证码/限流/用户名占用/昵称默认用户名/昵称透传）。
  */
 @ExtendWith(MockitoExtension.class)
-class AuthControllerTest {
+class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
@@ -48,11 +47,11 @@ class AuthControllerTest {
     @Mock
     private HttpServletRequest request;
 
-    private AuthController controller;
+    private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        controller = new AuthController(userRepository, passwordEncoder, jwtUtil, captchaService, rateLimitChecker);
+        authService = new AuthService(userRepository, passwordEncoder, jwtUtil, captchaService, rateLimitChecker);
         // 测试默认：IP 未锁定、未超注册限流、验证码通过（各用例按需覆盖）
         lenient().when(rateLimitChecker.getCount(anyString())).thenReturn(0L);
         lenient().when(rateLimitChecker.checkAndIncrement(anyString(), anyInt(), any())).thenReturn(true);
@@ -94,7 +93,7 @@ class AuthControllerTest {
         when(passwordEncoder.matches("secret", "encoded")).thenReturn(true);
         when(jwtUtil.generateToken("alice@chat.local", 1L, "user")).thenReturn("jwt-token");
 
-        ResponseEntity<?> resp = controller.login(login("alice", "secret"), request);
+        ResponseEntity<?> resp = authService.login(login("alice", "secret"), request);
 
         assertEquals(200, resp.getStatusCode().value());
         Map<?, ?> body = (Map<?, ?>) resp.getBody();
@@ -115,7 +114,7 @@ class AuthControllerTest {
         when(userRepository.findByName("alice")).thenReturn(u);
         when(passwordEncoder.matches("bad", "encoded")).thenReturn(false);
 
-        ResponseEntity<?> resp = controller.login(login("alice", "bad"), request);
+        ResponseEntity<?> resp = authService.login(login("alice", "bad"), request);
 
         assertEquals(401, resp.getStatusCode().value());
     }
@@ -124,7 +123,7 @@ class AuthControllerTest {
     void login_userNotFound_401() {
         when(userRepository.findByName("ghost")).thenReturn(null);
 
-        ResponseEntity<?> resp = controller.login(login("ghost", "x"), request);
+        ResponseEntity<?> resp = authService.login(login("ghost", "x"), request);
 
         assertEquals(401, resp.getStatusCode().value());
     }
@@ -133,7 +132,7 @@ class AuthControllerTest {
     void login_failedTooMany_429() {
         when(rateLimitChecker.getCount(anyString())).thenReturn(5L);
 
-        ResponseEntity<?> resp = controller.login(login("alice", "x"), request);
+        ResponseEntity<?> resp = authService.login(login("alice", "x"), request);
 
         assertEquals(429, resp.getStatusCode().value());
     }
@@ -142,7 +141,7 @@ class AuthControllerTest {
     void register_wrongCaptcha_400() {
         when(captchaService.verify(anyString(), anyString())).thenReturn(false);
 
-        ResponseEntity<?> resp = controller.register(register("alice", "secret", null), request);
+        ResponseEntity<?> resp = authService.register(register("alice", "secret", null), request);
 
         assertEquals(400, resp.getStatusCode().value());
     }
@@ -151,7 +150,7 @@ class AuthControllerTest {
     void register_ipRateLimited_429() {
         when(rateLimitChecker.checkAndIncrement(anyString(), anyInt(), any())).thenReturn(false);
 
-        ResponseEntity<?> resp = controller.register(register("alice", "secret", null), request);
+        ResponseEntity<?> resp = authService.register(register("alice", "secret", null), request);
 
         assertEquals(429, resp.getStatusCode().value());
     }
@@ -161,7 +160,7 @@ class AuthControllerTest {
         when(userRepository.findByName("alice"))
                 .thenReturn(user(1L, "alice", null, null, "user", "h"));
 
-        ResponseEntity<?> resp = controller.register(register("alice", "secret", null), request);
+        ResponseEntity<?> resp = authService.register(register("alice", "secret", null), request);
 
         assertEquals(400, resp.getStatusCode().value());
     }
@@ -177,7 +176,7 @@ class AuthControllerTest {
         });
         when(jwtUtil.generateToken("alice@chat.local", 42L, "user")).thenReturn("tok");
 
-        ResponseEntity<?> resp = controller.register(register(" alice ", "secret", null), request);
+        ResponseEntity<?> resp = authService.register(register(" alice ", "secret", null), request);
 
         assertEquals(201, resp.getStatusCode().value());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
@@ -204,7 +203,7 @@ class AuthControllerTest {
         // 响应 Map.of 不允许 null 值，token 必须 stub 否则 NPE
         when(jwtUtil.generateToken("bob@chat.local", 42L, "user")).thenReturn("tok");
 
-        controller.register(register("bob", "secret", " 波波 "), request);
+        authService.register(register("bob", "secret", " 波波 "), request);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).insert(captor.capture());

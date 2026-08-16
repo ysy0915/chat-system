@@ -2,10 +2,9 @@ package com.example.chat.controller;
 
 import com.example.chat.common.ApiResponse;
 import com.example.chat.common.ErrorCode;
-import com.example.chat.entity.User;
-import com.example.chat.repository.UserRepository;
 import com.example.chat.security.AuthUtils;
 import com.example.chat.security.JwtUtil;
+import com.example.chat.service.ProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -22,11 +21,11 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/profile")
 public class ProfileController {
-    private final UserRepository userRepository;
+    private final ProfileService profileService;
     private final JwtUtil jwtUtil;
 
-    public ProfileController(UserRepository userRepository, JwtUtil jwtUtil) {
-        this.userRepository = userRepository;
+    public ProfileController(ProfileService profileService, JwtUtil jwtUtil) {
+        this.profileService = profileService;
         this.jwtUtil = jwtUtil;
     }
 
@@ -37,18 +36,7 @@ public class ProfileController {
         if (userId == null) {
             return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         }
-        User user = userRepository.findById(userId);
-        if (user == null) {
-            return ResponseEntity.status(404).body(ApiResponse.error(ErrorCode.NOT_FOUND, "用户不存在"));
-        }
-        return ResponseEntity.ok(Map.of(
-                "id", user.id,
-                "name", user.name != null ? user.name : "",
-                "nickname", user.nickname != null ? user.nickname : "",
-                "email", user.email != null ? user.email : "",
-                "role", user.role != null ? user.role : "",
-                "createdAt", user.createdAt != null ? user.createdAt.toString() : ""
-        ));
+        return profileService.getProfile(userId);
     }
 
     @Operation(summary = "修改个人资料", description = "更新当前用户的昵称和用户名（需 JWT）")
@@ -59,23 +47,6 @@ public class ProfileController {
         if (userId == null) {
             return ResponseEntity.status(401).body(ApiResponse.error(ErrorCode.UNAUTHORIZED, "未登录"));
         }
-        User user = userRepository.findById(userId);
-        if (user == null) {
-            return ResponseEntity.status(404).body(ApiResponse.error(ErrorCode.NOT_FOUND, "用户不存在"));
-        }
-
-        String nickname = body.get("nickname");
-        String name = body.get("name");
-
-        if (nickname != null) user.nickname = nickname.trim();
-        if (name != null && !name.trim().isBlank()) user.name = name.trim();
-
-        userRepository.updateProfile(user);
-
-        return ResponseEntity.ok(Map.of(
-                "id", user.id,
-                "name", user.name != null ? user.name : "",
-                "nickname", user.nickname != null ? user.nickname : ""
-        ));
+        return profileService.updateProfile(userId, body);
     }
 }

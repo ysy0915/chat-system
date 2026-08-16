@@ -1,4 +1,4 @@
-package com.example.chat.controller;
+package com.example.chat.service;
 
 import com.example.chat.entity.Attachment;
 import com.example.chat.repository.AttachmentRepository;
@@ -9,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.IOException;
@@ -24,20 +23,20 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * AttachmentController 真实行为断言：
+ * AttachmentService 真实行为断言（原 AttachmentControllerTest 迁移，业务逻辑已下沉至 Service）：
  * 上传写盘 + 落库（字段透传）+ 返回 id/url；无扩展名文件名处理。
  */
 @ExtendWith(MockitoExtension.class)
-class AttachmentControllerTest {
+class AttachmentServiceTest {
 
     @Mock
     private AttachmentRepository attachmentRepository;
 
-    private AttachmentController controller;
+    private AttachmentService service;
 
     @BeforeEach
     void setUp() throws IOException {
-        controller = new AttachmentController(attachmentRepository);
+        service = new AttachmentService(attachmentRepository);
     }
 
     @AfterEach
@@ -65,9 +64,9 @@ class AttachmentControllerTest {
             return 1;
         });
 
-        ResponseEntity<?> resp = controller.upload(file, 7L, 99L);
+        Map<String, Object> result = service.upload(file, 7L, 99L);
 
-        assertEquals(200, resp.getStatusCode().value());
+        assertFalse(result.containsKey("error"));
         ArgumentCaptor<Attachment> captor = ArgumentCaptor.forClass(Attachment.class);
         verify(attachmentRepository).insert(captor.capture());
         Attachment saved = captor.getValue();
@@ -78,10 +77,8 @@ class AttachmentControllerTest {
         assertEquals(99L, saved.messageId);
         assertTrue(saved.storageUrl.contains("uploads"));
 
-        Map<?, ?> body = (Map<?, ?>) resp.getBody();
-        assertNotNull(body);
-        assertTrue(body.get("url").toString().contains("uploads"));
-        assertEquals(100L, body.get("id"));
+        assertTrue(result.get("url").toString().contains("uploads"));
+        assertEquals(100L, result.get("id"));
     }
 
     @Test
@@ -92,7 +89,7 @@ class AttachmentControllerTest {
             return 1;
         });
 
-        controller.upload(file, null, null);
+        service.upload(file, null, null);
 
         ArgumentCaptor<Attachment> captor = ArgumentCaptor.forClass(Attachment.class);
         verify(attachmentRepository).insert(captor.capture());
@@ -106,8 +103,8 @@ class AttachmentControllerTest {
     void upload_rejectsDisallowedExtension() throws Exception {
         // 可执行/脚本文件应被扩展名白名单拒绝
         var file = new MockMultipartFile("file", "evil.sh", "application/x-sh", new byte[]{1});
-        ResponseEntity<?> resp = controller.upload(file, null, null);
-        assertEquals(400, resp.getStatusCode().value());
+        Map<String, Object> result = service.upload(file, null, null);
+        assertTrue(result.containsKey("error"));
         verify(attachmentRepository, org.mockito.Mockito.never()).insert(any());
     }
 
@@ -115,16 +112,16 @@ class AttachmentControllerTest {
     void upload_rejectsNoExtension() throws Exception {
         // 无扩展名文件无法判断类型，应被拒绝
         var file = new MockMultipartFile("file", "noext", "application/octet-stream", new byte[]{1});
-        ResponseEntity<?> resp = controller.upload(file, null, null);
-        assertEquals(400, resp.getStatusCode().value());
+        Map<String, Object> result = service.upload(file, null, null);
+        assertTrue(result.containsKey("error"));
         verify(attachmentRepository, org.mockito.Mockito.never()).insert(any());
     }
 
     @Test
     void upload_rejectsEmptyFile() throws Exception {
         var file = new MockMultipartFile("file", "empty.txt", "text/plain", new byte[]{});
-        ResponseEntity<?> resp = controller.upload(file, null, null);
-        assertEquals(400, resp.getStatusCode().value());
+        Map<String, Object> result = service.upload(file, null, null);
+        assertTrue(result.containsKey("error"));
         verify(attachmentRepository, org.mockito.Mockito.never()).insert(any());
     }
 }

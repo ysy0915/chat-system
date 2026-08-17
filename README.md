@@ -1,8 +1,8 @@
+<div align="center">
+
 # 博思AI智能体 · 多模型协作与智能辩论平台
 
-> **让多个 AI 像专家团队一样为你辩论、推理、共创。**
->
-> 制作者：杨思义 · 博思AI团队 · 2026年8月
+**让多个 AI 像专家团队一样为你辩论、推理、共创。**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
@@ -10,19 +10,22 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1-brightgreen.svg)](pom.xml)
 [![Tests](https://img.shields.io/badge/Tests-895%20passed-success.svg)](#运行测试)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
+[![Stars](https://img.shields.io/github/stars/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
+[![Forks](https://img.shields.io/github/forks/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
 
 [English](README.en.md) | 简体中文
 
-**许可证**：本项目采用 [Apache License 2.0](LICENSE) 开源协议，可自由使用、修改、分发。
+**🖥️ [在线体验](http://112.124.106.108/chat/home)** · **📦 [源码仓库](https://github.com/ysy0915/chat-system)**
+
+</div>
+
+![博思AI智能体首页](docs/screenshots/homepage.png)
 
 ---
 
 ## 产品简介
 
 博思AI智能体是一个**多模型智能协作平台**。不同于传统 AI 产品"一个模型回答一个问题"的单声道模式，博思AI 让**豆包、DeepSeek、千问**等多个大模型同时参与对话、展开辩论、协作完成复杂任务，并融合 RAG 知识检索、多模态生成、AI 游戏于一体，提供一站式 AI 体验。
-
-- **在线体验**：http://112.124.106.108/chat/home
-- **源码仓库**：https://github.com/ysy0915/chat-system
 
 > 在线环境已启用安全拦截（UA 校验），脚本调用 API 请携带浏览器 `User-Agent` 头；浏览器正常访问不受影响。
 
@@ -142,12 +145,6 @@ chat-system-project/
 ```
 
 ---
-
-## 平台预览
-
-![首页预览](docs/screenshots/homepage.png)
-
-> 多模型协作与智能辩论平台首页 — 集成辩论场、知识图谱、个人对话、情绪树洞、AI 群聊、多模态生成等核心能力。
 
 ## 快速开始
 

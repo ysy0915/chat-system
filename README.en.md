@@ -1,8 +1,8 @@
+<div align="center">
+
 # BoshiAI Agent · Multi-Model Collaboration & Intelligent Debate Platform
 
-> **Let multiple AIs debate, reason, and co-create for you — like a team of experts.**
->
-> Author: Yang Siyi · BoshiAI Team · August 2026
+**Let multiple AIs debate, reason, and co-create for you — like a team of experts.**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
@@ -10,19 +10,20 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1-brightgreen.svg)](pom.xml)
 [![Tests](https://img.shields.io/badge/Tests-892%20passed-success.svg)](#running-tests)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
+[![Stars](https://img.shields.io/github/stars/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
+[![Forks](https://img.shields.io/github/forks/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
 
-**License**: This project is licensed under the [Apache License 2.0](LICENSE) — free to use, modify, and distribute.
+**🖥️ [Live Demo](http://112.124.106.108/chat/home)** · **📦 [Source Code](https://github.com/ysy0915/chat-system)**
 
-> ⚠️ The project documentation is primarily in Chinese. This README provides an English overview. For full details, refer to the Chinese documents under [`docs/`](docs/).
+</div>
+
+![BoshiAI Agent Homepage](docs/screenshots/homepage.png)
 
 ---
 
 ## Overview
 
 BoshiAI Agent is a **multi-model intelligent collaboration platform**. Unlike traditional AI products where "one model answers one question", BoshiAI brings **Doubao, DeepSeek, and Qwen** (multiple LLMs) into the same conversation to debate, reason, and collaborate on complex tasks — integrated with RAG knowledge retrieval, multimodal generation, and AI games in a single platform.
-
-- **Live Demo**: http://112.124.106.108/chat/home
-- **Source Code**: https://github.com/ysy0915/chat-system
 
 > The live environment enforces security interception (User-Agent validation). Script/API calls must include a browser `User-Agent` header; normal browser access is unaffected.
 
@@ -140,12 +141,6 @@ chat-system-project/
 ```
 
 ---
-
-## Preview
-
-![Homepage Preview](docs/screenshots/homepage.png)
-
-> Multi-model collaboration & intelligent debate platform homepage — integrating debate arena, knowledge graph, personal chat, emotion tree hole, AI group chat, and multimodal generation.
 
 ## Quick Start
 
@@ -315,7 +310,6 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 - **Author**: Yang Siyi · BoshiAI Team
 - **GitHub**: https://github.com/ysy0915/chat-system
-- **Live Demo**: http://112.124.106.108/chat/home
 
 ### Project Timeline
 

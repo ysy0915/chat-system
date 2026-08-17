@@ -42,7 +42,7 @@
         <dependency-check.version>10.0.4</dependency-check.version>
         <!-- 升级 Mockito + ByteBuddy 兼容 JDK 26 -->
         <mockito.version>5.14.2</mockito.version>
-        <byte-buddy.version>1.15.11</byte-buddy.version>
+        <byte-buddy.version>1.18.11</byte-buddy.version>
         <grpc.version>1.68.1</grpc.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <protobuf.version>3.25.5</protobuf.version>

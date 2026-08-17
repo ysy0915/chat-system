@@ -333,6 +333,6 @@ The project was initiated in **late July 2026** and completed a full design-to-p
 | 08-16 | Security hardening (method-level auth / WS auth / log masking / upload SSRF) + zero dependency vulnerabilities + web auto-scaling (Nacos upstream) + real online-count stats (895 tests green) |
 | 08-17 | Personal chat perf fix (11s→1-3s) + configurable deep thinking (frontend toggle) + doubao mini swap + tree debate true parallelism + package refactor + controller layering + memory governance + games leaderboard fix + feature trim |
 
-> **About commit history**: During early development, model API keys were accidentally committed to the repository. To thoroughly purge sensitive information, the repository was archived and rebuilt, so git commit timestamps are concentrated after 08-14. Full iteration details: [Architecture Assessment Report](docs/01-架构设计/架构评估报告.md) & [CHANGELOG-3.0.md](docs/07-变更与经验/CHANGELOG-3.0.md).
+> **About commit history**: During early development, model API keys were accidentally committed to the repository. To thoroughly purge sensitive information, the repository was archived and rebuilt, so git commit timestamps are concentrated after 08-14. Full iteration details: [Architecture Assessment Report](docs/01-架构设计/架构评估报告.md) & [Development Timeline](docs/08-项目复盘/研发时间线.md) (reconstructed 07-30~08-17 from server logs).
 
 > BoshiAI Agent — AI that doesn't just answer, but debates, reasons, and empathizes.

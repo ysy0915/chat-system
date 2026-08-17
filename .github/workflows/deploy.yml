@@ -118,7 +118,7 @@ jobs:
 
       - name: Deploy Frontend to Nginx
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
-        uses: easingthemes/ssh-deploy@v5.1.0
+        uses: easingthemes/ssh-deploy@v6.0.3
         with:
           SSH_PRIVATE_KEY: ${{ secrets.MAIN_SSH_KEY }}
           REMOTE_HOST: ${{ secrets.MAIN_HOST }}

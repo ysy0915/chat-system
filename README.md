@@ -17,6 +17,10 @@
 
 **🖥️ [在线体验](http://112.124.106.108/chat/home)** · **📦 [源码仓库](https://github.com/ysy0915/chat-system)**
 
+> 🌍 **English documentation**: [README (English)](README.en.md) · [API Overview (English)](docs/en/API-OVERVIEW.md) · [ADR Summary (English)](docs/en/ADR-SUMMARY.md)
+>
+> Translation contributions are welcome — see [Discussion #17](https://github.com/ysy0915/chat-system/issues/17).
+
 </div>
 
 ![博思AI智能体首页](docs/screenshots/homepage.png)

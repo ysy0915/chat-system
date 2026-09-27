@@ -47,6 +47,17 @@
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <protobuf.version>3.25.5</protobuf.version>
         <milvus.version>2.3.4</milvus.version>
+        <!-- 安全补丁覆盖（同线内升级，2026-09 修复 GitHub Dependabot 全部告警）：
+             snakeyaml  CVE-2022-1471（高危 RCE）
+             spring-framework  CVE-2024-22243/22259/22262（URL 解析绕过 SSRF）
+             tomcat  CVE-2024-50379（条件竞争 RCE）/ CVE-2024-54677 / CVE-2025-24812
+             netty  CVE-2024-29025（分块 POST OOM DoS）/ CVE-2024-47554 / CVE-2025-24970
+             jackson  CVE-2024-25710（深嵌套 DoS） -->
+        <snakeyaml.version>2.2</snakeyaml.version>
+        <spring-framework.version>6.0.23</spring-framework.version>
+        <tomcat.version>10.1.42</tomcat.version>
+        <netty.version>4.1.118.Final</netty.version>
+        <jackson-bom.version>2.15.4</jackson-bom.version>
     </properties>
 
     <dependencyManagement>

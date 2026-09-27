@@ -138,6 +138,10 @@ resilience4j:
 
 # RAG 知识库（本地开发默认关闭）
 app:
+  security:
+    # 内部接口令牌：/internal/** 校验 X-Internal-Token（chat-web 与 chat-core 使用同一值）。
+    # 未配置时放行并告警（本地开发），生产必须配置，否则内部接口仅靠网络隔离。
+    internal-token: ${INTERNAL_API_TOKEN:}
   module:
     core: true
   rag:

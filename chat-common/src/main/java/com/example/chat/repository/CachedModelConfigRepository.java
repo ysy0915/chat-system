@@ -1,6 +1,8 @@
 package com.example.chat.repository;
 
+import com.example.chat.config.MasterKeyProvider;
 import com.example.chat.entity.ModelConfig;
+import com.example.chat.security.ApiKeyCipher;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +45,7 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
     private static final Logger log = LoggerFactory.getLogger(CachedModelConfigRepository.class);
 
     private final ModelConfigRepository delegate;
+    private final MasterKeyProvider masterKeyProvider;
 
     /** 全量 enabled 模型快照（volatile 保证可见性） */
     private volatile List<ModelConfig> enabledCache = Collections.emptyList();
@@ -50,9 +53,11 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
     /** 按 modelType 分组的 enabled 模型快照（volatile 引用替换，与 enabledCache 同步原子 swap） */
     private volatile Map<String, List<ModelConfig>> byTypeCache = Collections.emptyMap();
 
-    public CachedModelConfigRepository(@Qualifier("modelConfigRepository") ModelConfigRepository delegate) {
+    public CachedModelConfigRepository(@Qualifier("modelConfigRepository") ModelConfigRepository delegate,
+                                       MasterKeyProvider masterKeyProvider) {
         // @Qualifier 显式指定 MyBatis 原始 Mapper bean，避免 @Primary 导致的循环依赖
         this.delegate = delegate;
+        this.masterKeyProvider = masterKeyProvider;
     }
 
     @PostConstruct
@@ -67,7 +72,7 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
     @Scheduled(fixedRate = 60000)
     public void refreshCache() {
         try {
-            List<ModelConfig> fresh = delegate.findAllEnabled();
+            List<ModelConfig> fresh = decryptAll(delegate.findAllEnabled());
             Map<String, List<ModelConfig>> grouped = new ConcurrentHashMap<>();
             for (ModelConfig m : fresh) {
                 grouped.computeIfAbsent(m.getModelType(), k -> new java.util.ArrayList<>()).add(m);
@@ -82,6 +87,30 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
             // 刷新失败保留旧缓存，不影响线上请求
             log.error("[ModelConfigCache] 刷新失败，保留旧缓存: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 读侧统一解密：DB 中 api_key 为密文（enc:v1: 前缀，见 ApiKeyCipher），
+     * 解出明文后进缓存，调用方（ApiKeyResolver / MediaGenService 等）零改动。
+     * 存量明文原样通过；解密失败抛异常由调用处 catch 保留旧快照。
+     */
+    private List<ModelConfig> decryptAll(List<ModelConfig> list) {
+        if (list == null || list.isEmpty()) {
+            return list;
+        }
+        for (ModelConfig m : list) {
+            m.apiKeyEncrypted = ApiKeyCipher.decryptIfEncrypted(
+                    m.apiKeyEncrypted, masterKeyProvider.get());
+        }
+        return list;
+    }
+
+    private ModelConfig decryptOne(ModelConfig m) {
+        if (m != null) {
+            m.apiKeyEncrypted = ApiKeyCipher.decryptIfEncrypted(
+                    m.apiKeyEncrypted, masterKeyProvider.get());
+        }
+        return m;
     }
 
     @Override
@@ -99,17 +128,17 @@ public class CachedModelConfigRepository implements ModelConfigRepository {
 
     @Override
     public List<ModelConfig> findAll() {
-        return delegate.findAll();
+        return decryptAll(delegate.findAll());
     }
 
     @Override
     public ModelConfig findById(Long id) {
-        return delegate.findById(id);
+        return decryptOne(delegate.findById(id));
     }
 
     @Override
     public List<ModelConfig> findByIds(List<Long> ids) {
-        return delegate.findByIds(ids);
+        return decryptAll(delegate.findByIds(ids));
     }
 
     @Override

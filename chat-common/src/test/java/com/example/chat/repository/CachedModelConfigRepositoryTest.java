@@ -103,7 +103,7 @@ class CachedModelConfigRepositoryTest {
         delegate.data.add(model(1, "chat", "qwen"));
         delegate.data.add(model(2, "chat", "deepseek"));
         delegate.data.add(model(3, "image", "qwen"));
-        cache = new CachedModelConfigRepository(delegate);
+        cache = new CachedModelConfigRepository(delegate, new com.example.chat.config.MasterKeyProvider(""));
     }
 
     @Test

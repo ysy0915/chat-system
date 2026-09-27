@@ -133,6 +133,21 @@ public class InMemoryLlmRoutingRepository implements LlmRoutingRepository {
         return list != null ? list.size() : 0;
     }
 
+    @Override
+    public int updatePropValue(Long providerId, String propKey, String propValue) {
+        List<PropRow> list = props.get(providerId);
+        if (list == null) {
+            return 0;
+        }
+        for (PropRow row : list) {
+            if (row.propKey.equals(propKey)) {
+                list.set(list.indexOf(row), new PropRow(propKey, propValue, row.propType));
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     // ──────────── 模型 ────────────
 
     @Override

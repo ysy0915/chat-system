@@ -325,6 +325,11 @@ mvn test -pl chat-media   # 26 个测试
 | 自动拉黑 | 60 秒超 1000 次 → 封禁 10 分钟 |
 | 内容安全 | 阿里云内容安全 API，色情/暴力/敏感内容自动拦截 |
 | 数据隔离 | JWT 认证 + 用户级会话隔离，思考链不持久化 |
+| WebSocket 订阅鉴权 | 私有 topic 仅 token 归属者本人可订阅，匿名/他人订阅一律拒绝（fail-close），防越权接收他人消息 |
+| 内部接口令牌 | `/internal/**` 校验 `X-Internal-Token`（web 与 core 共享，常量时间比较），网络隔离 + 应用层双层防护 |
+| IP 防伪造 | 仅可信代理（内网/回环）直连才采信 X-Forwarded-For/X-Real-IP，外部直连取 RemoteAddr，防伪造绕过限流 |
+| 启动配置自检 | 启动即校验密钥占位符 / LLM api_key / 表结构漂移，问题打 ERROR 日志可被告警采集 |
+| api_key 加密存储 | LLM 密钥 AES-256-GCM 密文落库（GCM 防篡改 + 随机 IV），启动自动加密迁移存量明文，拖库不泄漏密钥 |
 
 ---
 

@@ -18,7 +18,7 @@ set -euo pipefail
 MODE="${1:-milvus}"
 ENV_FILE="/opt/app/.env"
 APP="/opt/app"
-INTERNAL_IP="your-intra-ip"   # Milvus 服务器内网 IP（Nginx upstream 用）
+INTERNAL_IP="127.0.0.1"   # 单机部署：Nginx 与应用同机，走本地回环
 
 # ---------------- 输出函数 ----------------
 log()  { echo -e "\033[32m[INSTALL] $1\033[0m"; }

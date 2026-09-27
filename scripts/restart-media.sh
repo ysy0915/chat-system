@@ -41,7 +41,7 @@ done
 
 # 启动（内存减配：Xmx160m / Xss256k / Metaspace128m / CodeCache48m / G1 region 1m）
 nohup java \
-    -Xms160m -Xmx160m \
+    -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xms160m -Xmx160m \
     -Xss256k \
     -XX:MaxMetaspaceSize=128m \
         -XX:MaxDirectMemorySize=64m \

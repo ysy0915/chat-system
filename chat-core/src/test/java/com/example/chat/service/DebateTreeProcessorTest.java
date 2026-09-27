@@ -77,13 +77,13 @@ class DebateTreeProcessorTest {
             when(llmInvoker.invoke(any(), anyList(), anyDouble(), anyString(), any(), anyString()))
                     .thenReturn(json);
 
-            // 反射调用 private decompose()
+            // 2026-08-17 起固定 3 视角：LLM 返回不足 3 个时兜底为默认 3 视角
             List<DebateTreeProcessor.Perspective> result = invokeDecompose("AI 是否应该替代人类工作?");
 
-            assertThat(result).hasSize(2);
-            assertThat(result.get(0).label).isEqualTo("经济效益");
-            assertThat(result.get(0).focus).isEqualTo("关注成本与收益");
-            assertThat(result.get(1).label).isEqualTo("社会影响");
+            assertThat(result).hasSize(3);
+            assertThat(result.get(0).label).isEqualTo("理性分析");
+            assertThat(result.get(1).label).isEqualTo("批判性观点");
+            assertThat(result.get(2).label).isEqualTo("综合考量");
         }
 
         @Test
@@ -91,14 +91,17 @@ class DebateTreeProcessorTest {
         void jsonWithMarkdownFence() throws Exception {
             String json = """
                     ```json
-                    {"perspectives": [{"id": "a", "label": "技术可行性", "focus": "技术成熟度"}]}
+                    {"perspectives": [{"id": "a", "label": "技术可行性", "focus": "技术成熟度"},
+                     {"id": "b", "label": "社会影响", "focus": "社会接受度"},
+                     {"id": "c", "label": "经济效益", "focus": "投入产出"}]}
                     ```""";
             when(llmInvoker.invoke(any(), anyList(), anyDouble(), anyString(), any(), anyString()))
                     .thenReturn(json);
 
             List<DebateTreeProcessor.Perspective> result = invokeDecompose("量子计算");
 
-            assertThat(result).hasSize(1);
+            // 恰好 3 个视角：正常解析，不触发兜底
+            assertThat(result).hasSize(3);
             assertThat(result.get(0).label).isEqualTo("技术可行性");
         }
 

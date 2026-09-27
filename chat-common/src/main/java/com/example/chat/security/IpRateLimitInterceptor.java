@@ -1,5 +1,6 @@
 package com.example.chat.security;
 
+import com.example.chat.util.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -198,17 +199,15 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
     /**
      * 获取客户端真实 IP：依次取 X-Forwarded-For 首段、X-Real-IP，最后回退到 RemoteAddr。
      */
+    /**
+     * 获取客户端真实 IP。
+     *
+     * <p>委托 {@link ClientIpResolver#resolve}：仅当直连方是可信代理（回环/内网，即
+     * Nginx 同机/同内网）时才采信 X-Forwarded-For / X-Real-IP，防止外部直连时
+     * 伪造代理头逐次换 IP 绕过限流与黑名单。</p>
+     */
     private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip != null && !ip.isBlank() && !"unknown".equalsIgnoreCase(ip)) {
-            // X-Forwarded-For 可能有多个，取第一个
-            return ip.split(",")[0].trim();
-        }
-        ip = request.getHeader("X-Real-IP");
-        if (ip != null && !ip.isBlank() && !"unknown".equalsIgnoreCase(ip)) {
-            return ip.trim();
-        }
-        return request.getRemoteAddr();
+        return ClientIpResolver.resolve(request);
     }
 
     /** 手动拉黑 IP（供管理接口调用） */

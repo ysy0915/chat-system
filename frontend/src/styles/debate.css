@@ -11,11 +11,23 @@
 }
 
 /* 树状模式：全宽 + 可滚动 + 画布剧中 */
+/* 内容超高时由 body 滚动（同 monitor 页先例）：
+   app-layout 固定 100vh + body overflow hidden 会把超出的树图/结论裁掉且无处可滚，
+   必须放开这两层让页面自然滚动；.tree-mode 自身改为 visible 防止双层滚动条。 */
+body:has(.debate-container.tree-mode) {
+    overflow-y: auto;
+    height: auto;
+}
+body:has(.debate-container.tree-mode) .app-layout {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+}
 .debate-container.tree-mode {
     max-width: none;
     min-height: 100dvh;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: visible;
     padding: 8px 0 0;
     align-items: center;
     -webkit-overflow-scrolling: touch;

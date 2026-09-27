@@ -93,10 +93,10 @@ public class SecurityConfig {
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:*",
                 "http://127.0.0.1:*",
-                "http://112.124.106.108:*",     // 生产主服务器（IP:端口 直接访问）
-                "http://your-nginx-ip:*",           // 生产环境主服务器
-                "http://*.your-domain.com",
-                "https://*.your-domain.com"
+                "http://112.124.106.108:*",     // 生产主服务器（历史）
+                "http://47.110.234.58:*",       // 生产主服务器
+                "http://yangsy.online",
+                "https://yangsy.online"
         ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));

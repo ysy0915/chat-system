@@ -2,6 +2,7 @@ package com.example.chat.llm;
 
 import com.example.chat.config.GlobalExceptionHandler;
 import com.example.chat.config.LlmConfigProperties;
+import com.example.chat.config.MasterKeyProvider;
 import com.example.chat.security.JwtUtil;
 import com.example.chat.storage.StorageRegistry;
 import com.example.chat.service.DirectLLMClient;
@@ -52,7 +53,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableAspectJAutoProxy
 @EnableScheduling
 @Import({LlmConfigProperties.class, DirectLLMClient.class, BaseUrlResolver.class, JwtUtil.class,
-        GlobalExceptionHandler.class, StorageRegistry.class})
+        GlobalExceptionHandler.class, StorageRegistry.class, MasterKeyProvider.class})
 public class LlmApplication {
 
     public static void main(String[] args) {

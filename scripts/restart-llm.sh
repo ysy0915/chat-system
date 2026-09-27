@@ -46,7 +46,7 @@ restart_one() {
 
     # 启动
     nohup java \
-        -Xms256m -Xmx512m \
+        -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xms256m -Xmx512m \
         -Xss512k \
         -XX:MaxDirectMemorySize=128m \
         -XX:MaxMetaspaceSize=256m \

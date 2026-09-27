@@ -41,7 +41,7 @@ done
 
 # 启动
 nohup java \
-    -Xms128m -Xmx128m \
+    -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xms128m -Xmx128m \
     -Xss256k \
     -XX:MaxMetaspaceSize=128m \
         -XX:MaxDirectMemorySize=64m \

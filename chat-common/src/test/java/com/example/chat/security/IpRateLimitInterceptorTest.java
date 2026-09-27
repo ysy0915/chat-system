@@ -47,13 +47,23 @@ class IpRateLimitInterceptorTest {
     // ---------- getClientIp ----------
 
     @Test
-    @DisplayName("X-Forwarded-For 优先取首段")
+    @DisplayName("可信代理（本机）：X-Forwarded-For 优先取首段")
     void getClientIp_xForwardedForFirst() throws Exception {
         request.addHeader("X-Forwarded-For", "1.2.3.4, 5.6.7.8, 9.10.11.12");
         request.addHeader("X-Real-IP", "99.99.99.99");
         request.setRemoteAddr("127.0.0.1");
 
         assertEquals("1.2.3.4", invokeGetClientIp(request));
+    }
+
+    @Test
+    @DisplayName("外部直连：伪造的代理头被忽略，取 TCP 对端地址")
+    void getClientIp_externalDirect_ignoresForgedHeaders() throws Exception {
+        request.addHeader("X-Forwarded-For", "1.2.3.4, 5.6.7.8");
+        request.addHeader("X-Real-IP", "99.99.99.99");
+        request.setRemoteAddr("203.0.113.9");
+
+        assertEquals("203.0.113.9", invokeGetClientIp(request));
     }
 
     @Test

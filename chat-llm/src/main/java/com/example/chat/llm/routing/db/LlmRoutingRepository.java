@@ -95,6 +95,17 @@ public interface LlmRoutingRepository {
     @Delete("DELETE FROM llm_provider_props WHERE provider_config_id = #{providerId}")
     int deleteProps(@Param("providerId") Long providerId);
 
+    /**
+     * 原位更新某个 KV 属性值（api_key 明文→密文自动迁移用）。
+     */
+    @Update("""
+            UPDATE llm_provider_props SET prop_value = #{propValue}
+            WHERE provider_config_id = #{providerId} AND prop_key = #{propKey}
+            """)
+    int updatePropValue(@Param("providerId") Long providerId,
+                        @Param("propKey") String propKey,
+                        @Param("propValue") String propValue);
+
     // ──────────── 模型 ────────────
 
     @Select("""

@@ -64,8 +64,10 @@ app:
         connect-seconds: 10
         read-seconds: 60
       # 场景参数：未声明的字段继承默认值（max-tokens=4096, temperature=0.7, top-p=1.0, enable-tools=false）
+      # 注意：空花括号条目（如 chat: {}）在 Map<String, SceneConfig> 绑定时会触发
+      # ConverterNotFoundException（LinkedHashMap 无法转换为 SceneConfig），未声明的场景
+      # 会自动走 getOrDefault(scene, DEFAULTS) 默认值，因此无需显式声明空条目
       scenes:
-        chat: {}
         debate:
           max-tokens: 2048
           temperature: 0.9
@@ -75,7 +77,6 @@ app:
         treehole:
           max-tokens: 2048
           temperature: 0.8
-        auto: {}
   # chat-llm 服务地址（RAG / 知识图谱运行时已迁移至 chat-llm，chat-core 经内部 API 调用）
   llm-service:
     base-url: ${LLM_SERVICE_BASE_URL:http://127.0.0.1:9095}

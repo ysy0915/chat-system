@@ -28,7 +28,9 @@ public class AuthController {
     @Operation(summary = "获取注册验证码", description = "生成一次性算术验证码（5 分钟有效），注册时需携带")
     @GetMapping("/captcha")
     public ResponseEntity<?> captcha() {
-        return ResponseEntity.ok(authService.generateCaptcha());
+        // AuthService.generateCaptcha() 已返回 ResponseEntity，不能再用 ResponseEntity.ok() 包一层，
+        // 否则内层 ResponseEntity 被序列化为 {headers, body, statusCode}，前端取不到 question
+        return authService.generateCaptcha();
     }
 
     @Operation(summary = "用户登录", description = "用户名 + 密码登录，返回 JWT Token 和用户信息（连续失败 5 次锁定 15 分钟）")

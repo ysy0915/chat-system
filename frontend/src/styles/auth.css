@@ -69,11 +69,27 @@
     padding: 44px 44px 36px;
     width: 100%;
     max-width: 440px;
+    /* 小屏适配：弹窗不超出视口，超高时内部滚动（否则注册表单底部的验证码会被裁掉看不到） */
+    max-height: 90vh;
+    overflow-y: auto;
     backdrop-filter: blur(24px);
     box-shadow:
         0 24px 80px rgba(0, 0, 0, 0.12),
         0 0 60px rgba(59, 130, 246, 0.04);
     animation: authSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* 窄屏收紧内边距，给表单留更多可视空间 */
+@media (max-height: 760px), (max-width: 480px) {
+    .auth-modal {
+        padding: 28px 24px 24px;
+        border-radius: 18px;
+    }
+    .auth-tabs {
+        margin-bottom: 18px;
+    }
+    .auth-field {
+        margin-bottom: 14px;
+    }
 }
 @keyframes authSlideIn {
     from { transform: translateY(-30px) scale(0.96); opacity: 0; }

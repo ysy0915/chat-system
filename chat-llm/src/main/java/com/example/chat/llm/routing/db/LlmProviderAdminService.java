@@ -1,11 +1,13 @@
 package com.example.chat.llm.routing.db;
 
+import com.example.chat.config.MasterKeyProvider;
 import com.example.chat.llm.config.LLMConfig;
 import com.example.chat.llm.routing.LLMProviderRegistry;
 import com.example.chat.llm.routing.ModelRoute;
 import com.example.chat.llm.routing.ProviderRoute;
 import com.example.chat.llm.strategy.LLMProviderStrategy;
 import com.example.chat.llm.strategy.LLMProviderStrategyFactory;
+import com.example.chat.security.ApiKeyCipher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -47,13 +49,16 @@ public class LlmProviderAdminService {
     private final LlmRoutingRepository repo;
     private final LLMProviderRegistry registry;
     private final LLMProviderStrategyFactory strategyFactory;
+    private final MasterKeyProvider masterKeyProvider;
 
     public LlmProviderAdminService(LlmRoutingRepository repo,
                                    LLMProviderRegistry registry,
-                                   LLMProviderStrategyFactory strategyFactory) {
+                                   LLMProviderStrategyFactory strategyFactory,
+                                   MasterKeyProvider masterKeyProvider) {
         this.repo = repo;
         this.registry = registry;
         this.strategyFactory = strategyFactory;
+        this.masterKeyProvider = masterKeyProvider;
     }
 
     /**
@@ -61,6 +66,12 @@ public class LlmProviderAdminService {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
+        try {
+            migratePlaintextApiKeys();
+        } catch (Exception e) {
+            // 迁移失败不阻断启动：存量明文仍可正常读取（读侧兼容）
+            log.error("[LLMAdmin] api_key 明文迁移失败，存量明文仍可运行: {}", e.getMessage());
+        }
         try {
             int n = loadDbProviders();
             log.info("[LLMAdmin] 启动完成，DB 提供商已注册: {}，当前路由总数: {}",
@@ -266,6 +277,12 @@ public class LlmProviderAdminService {
         for (Map<String, Object> p : repo.listProps(providerId)) {
             map.put(String.valueOf(p.get("propKey")), p.get("propValue"));
         }
+        // 读侧统一解密：api_key 落库为密文（enc:v1: 前缀），此处解出明文供路由/策略使用；
+        // 存量明文（无前缀）原样通过，兼容未迁移数据
+        Object key = map.get(PROP_API_KEY);
+        if (key != null) {
+            map.put(PROP_API_KEY, ApiKeyCipher.decryptIfEncrypted(String.valueOf(key), masterKeyProvider.get()));
+        }
         return map;
     }
 
@@ -292,7 +309,59 @@ public class LlmProviderAdminService {
     }
 
     private void writeProp(Long providerId, String key, String value, String type) {
-        repo.insertProp(providerId, key, value == null ? "" : value, type, null);
+        repo.insertProp(providerId, key, encryptApiKeyIfNeeded(key, value), type, null);
+    }
+
+    /**
+     * 写侧加密：api_key 落库前加密（已是密文的"保留原值"回写不再二次加密）。
+     * 主密钥未配置时保留明文落库 + WARN 一次（本地开发兼容，生产须配置 APP_MASTER_KEY）。
+     */
+    private String encryptApiKeyIfNeeded(String key, String value) {
+        if (value == null || !PROP_API_KEY.equals(key) || ApiKeyCipher.isEncrypted(value)) {
+            return value == null ? "" : value;
+        }
+        if (!masterKeyProvider.isAvailable()) {
+            log.warn("[LLMAdmin] APP_MASTER_KEY 未配置，api_key 将明文落库（生产请配置后重启，"
+                    + "启动时会自动加密存量明文）");
+            return value;
+        }
+        return ApiKeyCipher.encrypt(value, masterKeyProvider.get());
+    }
+
+    /**
+     * 存量明文 api_key 自动迁移（幂等）：应用就绪后扫描全表，
+     * 非空且非 {@code enc:v1:} 前缀的 api_key 加密回写。
+     * <p>迁移后无需重启：随后的 {@link #loadDbProviders()} 直接按密文读取解密。</p>
+     */
+    public int migratePlaintextApiKeys() {
+        if (!masterKeyProvider.isAvailable()) {
+            log.info("[LLMAdmin] APP_MASTER_KEY 未配置，跳过 api_key 明文迁移（读侧兼容明文）");
+            return 0;
+        }
+        int migrated = 0;
+        for (LlmProviderRow p : repo.listProviders()) {
+            for (Map<String, Object> prop : repo.listProps(p.getId())) {
+                if (!PROP_API_KEY.equals(String.valueOf(prop.get("propKey")))) {
+                    continue;
+                }
+                Object raw = prop.get("propValue");
+                if (raw == null) {
+                    continue;
+                }
+                String value = String.valueOf(raw);
+                if (value.isBlank() || ApiKeyCipher.isEncrypted(value)) {
+                    continue;
+                }
+                repo.updatePropValue(p.getId(), PROP_API_KEY,
+                        ApiKeyCipher.encrypt(value, masterKeyProvider.get()));
+                migrated++;
+                log.info("[LLMAdmin] 提供商 {} 的 api_key 已自动加密迁移", p.getProviderName());
+            }
+        }
+        if (migrated > 0) {
+            log.info("[LLMAdmin] api_key 明文迁移完成，共加密 {} 个", migrated);
+        }
+        return migrated;
     }
 
     private void writeModels(Long providerId, Map<String, Object> dto) {

@@ -8,8 +8,15 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -20,12 +27,19 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketConfig.class);
+
+    /**
+     * 私有 topic 特征：/topic/<名称>.<数字userId>，如 /topic/user.1、/topic/debate.42、/topic/treehole.9。
+     * 公开 topic（online-count、public-questions、castlesiege.state 等）不含 ".数字" 后缀，不受影响。
+     */
+    private static final Pattern PRIVATE_TOPIC = Pattern.compile("^/topic/[a-z]+\\.\\d+$");
 
     private final JwtUtil jwtUtil;
 
@@ -106,9 +120,34 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        // 订阅级鉴权暂缓：SockJS + STOMP 场景下 accessor.getSessionAttributes() 无法稳定
-        // 取到握手拦截器写入的 userId/authed，导致已登录用户被误判「未登录」、收不到私有推送。
-        // 当前先保留握手层 JWT 校验（token 有效则绑定真实 userId），订阅层鉴权待
-        // 改用 WebSocketSessionRegistry（sessionId -> userId 映射）方案后重新上线。
+        // 订阅级鉴权：私有 topic（/topic/xxx.{userId}）仅允许 token 归属者本人订阅。
+        // 此前该层为空实现，任意已建立 WebSocket 连接的客户端（包括匿名连接）都能
+        // 订阅他人的 /topic/user.{id}、/topic/debate.{id}、/topic/treehole.{id}，
+        // 越权接收他人私聊与树洞的流式回答。
+        //
+        // 会话属性来自握手拦截器写入的 attributes（userId/authed），经 Spring 的
+        // SESSION_ATTRIBUTES 头随 STOMP 帧透传，SUBSCRIBE 帧上稳定可取
+        // （与 Spring Security WebSocket 的拦截器同一机制）。
+        registration.interceptors(new ChannelInterceptor() {
+            @Override
+            public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+                if (accessor == null || !StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+                    return message;
+                }
+                String destination = accessor.getDestination();
+                if (destination == null || !PRIVATE_TOPIC.matcher(destination).matches()) {
+                    return message;
+                }
+                Map<String, Object> attrs = accessor.getSessionAttributes();
+                String userId = attrs == null ? null : (String) attrs.get("userId");
+                boolean authed = attrs != null && Boolean.TRUE.equals(attrs.get("authed"));
+                if (authed && userId != null && destination.endsWith("." + userId)) {
+                    return message;
+                }
+                log.warn("[WS] 订阅被拒绝(越权防护): destination={}, authed={}, uid={}", destination, authed, userId);
+                throw new MessagingException("订阅无权限: " + destination);
+            }
+        });
     }
 }

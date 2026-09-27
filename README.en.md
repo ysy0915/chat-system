@@ -261,6 +261,11 @@ mvn test -pl chat-media   # 26 tests
 | Auto-ban | >1000 req/60s → 10 min ban |
 | Content safety | Alibaba Cloud content-safety API (porn/violence/sensitive content blocked) |
 | Data isolation | JWT auth + user-level session isolation, chain-of-thought never persisted |
+| WebSocket subscription auth | Private topics subscribable only by the token owner; anonymous/others rejected (fail-close), prevents cross-user eavesdropping |
+| Internal API token | `/internal/**` requires `X-Internal-Token` (shared between web & core, constant-time compare); network isolation + application-layer defense in depth |
+| IP spoofing protection | Proxy headers (X-Forwarded-For / X-Real-IP) trusted only from private/loopback direct connections; external clients use RemoteAddr |
+| Startup config self-check | Key placeholders, enabled LLM api-keys and schema drift checked at startup; issues logged as ERROR for alerting |
+| Encrypted api-key storage | LLM keys stored as AES-256-GCM ciphertext (tamper-proof + random IV), with automatic migration of legacy plaintext at startup — a stolen DB dump no longer leaks keys |
 
 ---
 

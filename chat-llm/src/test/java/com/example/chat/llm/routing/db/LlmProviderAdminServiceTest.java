@@ -1,5 +1,6 @@
 package com.example.chat.llm.routing.db;
 
+import com.example.chat.config.MasterKeyProvider;
 import com.example.chat.llm.config.LLMConfig;
 import com.example.chat.llm.routing.LLMProviderRegistry;
 import com.example.chat.llm.strategy.LLMProviderStrategyFactory;
@@ -49,7 +50,7 @@ class LlmProviderAdminServiceTest {
         registry.loadFromYaml(); // 模拟 @PostConstruct
 
         LLMProviderStrategyFactory strategyFactory = new LLMProviderStrategyFactory(mapper);
-        service = new LlmProviderAdminService(repo, registry, strategyFactory);
+        service = new LlmProviderAdminService(repo, registry, strategyFactory, new MasterKeyProvider(""));
     }
 
     private LlmProviderRow provider(long id, String name, boolean enabled) {

@@ -253,11 +253,11 @@ public class OpenAISdkProvider implements LLMProviderStrategy {
 
             LangChainResponse r = LangChainResponse.ok(content, provider, model);
             if (usage != null) {
-                r.setTotalTokens(toInt(usage.get("total_tokens")));
-                r.setPromptTokens(toInt(usage.get("prompt_tokens")));
-                r.setCompletionTokens(toInt(usage.get("completion_tokens")));
-                r.setCacheHitTokens(toInt(usage.get("prompt_cache_hit_tokens")));
-                r.setCacheMissTokens(toInt(usage.get("prompt_cache_miss_tokens")));
+                r.setTotalTokens(UsageJsonUtils.toInt(usage.get("total_tokens")));
+                r.setPromptTokens(UsageJsonUtils.toInt(usage.get("prompt_tokens")));
+                r.setCompletionTokens(UsageJsonUtils.toInt(usage.get("completion_tokens")));
+                r.setCacheHitTokens(UsageJsonUtils.toInt(usage.get("prompt_cache_hit_tokens")));
+                r.setCacheMissTokens(UsageJsonUtils.toInt(usage.get("prompt_cache_miss_tokens")));
             }
             r.setReasoningContent(reasoning.isBlank() ? null : reasoning);
             r.setToolCalls(toolCalls);
@@ -266,14 +266,6 @@ public class OpenAISdkProvider implements LLMProviderStrategy {
             log.warn("[{}] 解析响应失败: {}", name(), e.getMessage());
             return LangChainResponse.ok(json, provider, model);
         }
-    }
-
-    private static Integer toInt(Object v) {
-        if (v instanceof Number n) return n.intValue();
-        if (v instanceof String s) {
-            try { return Integer.parseInt(s); } catch (NumberFormatException ignored) {}
-        }
-        return null;
     }
 
     private static String truncate(String s) {

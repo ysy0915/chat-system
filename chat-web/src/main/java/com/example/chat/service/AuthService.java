@@ -8,6 +8,7 @@ import com.example.chat.entity.User;
 import com.example.chat.repository.UserRepository;
 import com.example.chat.security.JwtUtil;
 import com.example.chat.security.RateLimitChecker;
+import com.example.chat.util.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -47,16 +48,15 @@ public class AuthService {
         this.rateLimitChecker = rateLimitChecker;
     }
 
-    /** 解析客户端真实 IP（Nginx 反代后取 X-Real-IP / X-Forwarded-For） */
+    /**
+     * 解析客户端真实 IP。
+     *
+     * <p>委托 {@link ClientIpResolver#resolve}：仅当直连方是可信代理（回环/内网）时才
+     * 采信 X-Real-IP / X-Forwarded-For。此前无条件信任代理头，攻击者直连后端端口
+     * 伪造 X-Real-IP 即可绕过登录失败锁定（5 次锁 15 分钟）与注册限流（5 次/小时）。</p>
+     */
     private String clientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (ip == null || ip.isBlank()) {
-            String xff = request.getHeader("X-Forwarded-For");
-            if (xff != null && !xff.isBlank()) {
-                ip = xff.split(",")[0].trim();
-            }
-        }
-        return ip == null || ip.isBlank() ? request.getRemoteAddr() : ip;
+        return ClientIpResolver.resolve(request);
     }
 
     /** 生成注册验证码 */

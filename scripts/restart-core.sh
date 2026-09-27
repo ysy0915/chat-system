@@ -52,7 +52,7 @@ restart_one() {
 
     # 启动
     nohup java \
-        -Xms${XMX} -Xmx${XMX} \
+        -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xms${XMX} -Xmx${XMX} \
         -Xss512k \
         -XX:MaxDirectMemorySize=256m \
         -XX:MaxMetaspaceSize=256m \
@@ -71,7 +71,8 @@ restart_one() {
         -jar "$APP_JAR" \
         --spring.profiles.active=prod \
         --server.port=${P} \
-        --spring.application.name=chat-core \        > "$LOG_FILE" 2>&1 &
+        --spring.application.name=chat-core \
+        > "$LOG_FILE" 2>&1 &
 
     echo $! > "$PID_FILE"
     echo "[core-$P] 启动中 PID=$(cat $PID_FILE)"

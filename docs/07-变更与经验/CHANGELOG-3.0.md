@@ -1,6 +1,73 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11（初版）· 持续更新至 2026-08-17
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-09-27
+
+---
+
+## 安全修复三连 + 启动自检 + cross-node 根治（2026-09-27）
+
+### 1. WebSocket 订阅级鉴权从空实现到真正落地（越权漏洞修复）
+
+- 问题：`WebSocketConfig#configureClientInboundChannel` 此前是空实现（注释称 SockJS 场景下取不到 session attributes 而暂缓），任意建立 WS 连接的客户端（含匿名连接）都可订阅他人私有 topic（`/topic/user.{id}`、`/topic/debate.{id}`、`/topic/treehole.{id}`），**越权接收他人私聊/树洞的流式回答**。
+- 根因：此前误判「SockJS + STOMP 取不到握手 attributes」；实际握手拦截器写入的 attributes 会经 `SESSION_ATTRIBUTES` 头随 STOMP 帧透传，SUBSCRIBE 帧上稳定可取（与 Spring Security WebSocket 拦截器同一机制）。
+- 修复：`ChannelInterceptor` 拦截 SUBSCRIBE 帧，私有 topic（`^/topic/[a-z]+\\.{\\d+}$`）必须「已登录 且 token 归属 userId == topic 中的 userId」，否则抛 `MessagingException` 拒绝（fail-close，属性缺失也拒绝）。公开 topic（online-count、public-questions、castlesiege.state 等）不受影响。
+- 验证：新增 `WebSocketSubscriptionAuthTest` 6 项断言（本人订阅放行 / 他人订阅拒绝 / 匿名订阅私有拒绝 / 匿名订阅公开放行 / 会话属性缺失 fail-close），全绿。
+
+### 2. /internal/** 共享令牌鉴权（内部接口双层防护）
+
+- 问题：web→core 的内部接口（含 `/internal/tools` 管理写接口）**零鉴权**，纯靠「Nginx 不转发」的网络隔离；一旦端口映射/防火墙配置失误即直接暴露公网。
+- 修复：新增 `InternalApiTokenFilter`（`MessageDigest.isEqual` 常量时间比较，防时序侧信道）校验请求头 `X-Internal-Token`；chat-web 侧 `RestTemplateConfig` 拦截器对 `/internal/**` 请求**自动注入令牌**（CoreClient 业务代码零改动）。令牌未配置时放行并 WARN 一次（本地开发兼容）。
+- 配置：环境变量 `INTERNAL_API_TOKEN`（web 与 core 同值，`openssl rand -hex 24` 生成）已写入 `/opt/app/.env`。
+- 验证：线上三态实测——无 token **401** / 正确 token **200** / 错误 token **401**；web→core 调用链路无拒绝记录。
+
+### 3. 客户端 IP 防伪造（限流/登录锁定绕过修复）
+
+- 问题：`IpRateLimitInterceptor` 与 `AuthService` 无条件采信 `X-Forwarded-For` / `X-Real-IP`，攻击者直连后端端口可逐次伪造新「IP」，**绕过登录失败锁定（5 次锁 15 分钟）、注册限流与全站限流/黑名单**。
+- 修复：新增 `ClientIpResolver`——仅当 TCP 直连方是**可信代理**（回环/RFC1918 内网，即生产 Nginx 同机/同内网）时才采信代理头（X-Forwarded-For 优先取首段，与原语义一致）；外部直连一律取 `RemoteAddr`，忽略一切可伪造头。限流拦截器、登录锁定两处调用方统一委托该工具。
+- 验证：新增 `ClientIpResolverTest` 7 项断言（伪造忽略 / 可信采信 / 回退 / unknown 处理 / 网段判定），全绿；线上 curl 无 UA 请求被过滤器拦截顺带验证限流链路在工作。
+
+### 4. CORS 白名单占位符清理
+
+- 问题：`SecurityConfig` 白名单残留 `your-nginx-ip` / `*.your-domain.com` 占位符，实际不匹配任何来源，形同虚设。
+- 修复：改为真实生产地址（服务器 IP + 域名 `yangsy.online`）。
+
+### 5. 启动配置自检 StartupConfigValidator（防「带病上线」）
+
+- 问题：历史三次线上事故均属「启动时即可检出」类——LLM api_key 占位符 → 调用 401；`tree_hole_messages` 缺列 → Unknown column；cross-node 交换机未声明 → 每次广播刷 channel error。都是等到线上报错才发现。
+- 修复：应用就绪后自检（**只告警不阻断**，避免误判导致无法拉起）：① 关键环境变量（DB/RabbitMQ/JWT/INTERNAL_API_TOKEN）占位符检测；② 已启用 LLM 供应商的 api_key 空/占位符检测（附修复 SQL）；③ `tree_hole_messages` schema 漂移检测（provider/model/mood/tokens 四列，附修复 DDL）。ERROR 级别日志可被告警系统采集，日志关键字 `[StartupCheck]`。
+- 验证：线上运行输出「配置自检通过」（112 库 schema 实测完好，provider/model/tokens 列都在）。
+
+### 6. cross-node 交换机无条件声明（channel error 根治）
+
+- 问题：`BroadcastService` 只要存在 RabbitTemplate 就向 `cross-node` 交换机发布（双 web 实例 STOMP 广播同步），但该交换机**仅在 `app.cross-node.enabled=true` 时**由 `CrossNodeConfig` 声明；单机部署（开关关闭）时交换机不存在，每次广播触发 RabbitMQ channel error 刷 ERROR 日志，需人工上 broker 补建。
+- 修复：新增 `CrossNodeExchangeDefaults` **无条件声明**交换机（幂等，参数与 CrossNodeConfig 完全一致，开关开启时两边声明等价不冲突）。
+- 验证：部署后日志确认 cross-node channel error 归零，`rabbitmqctl` 确认交换机自动存在。
+
+### 7. 部署踩坑记录
+
+- **前端 nginx 映射必须匹配 `base: '/chat/'`（白屏事故）**：前端构建 `base` 是 `/chat/`（index.html 引用 `/chat/assets/xxx.js`），而主服务器 `conf.d/chat.conf` 是按 `base:'/'` 旧构建写的 `root /opt/app/static/chat`——新构建部署后 `/chat/assets/*` 被映射到不存在的 `chat/chat/assets/` → **全站 JS/CSS 404 白屏**（旧构建能用纯粹是因为当时引用 `/assets/*` 恰好能被该 root 命中）。修复：两台服务器 `chat.conf` 的 `root` 统一改为 `/opt/app/static`（与仓库 `nginx.conf` 8080 server 语义一致），SPA 兜底 `try_files $uri $uri/ /chat/index.html`，html 一律 `no-cache`、指纹资源 `immutable`。**教训：改前端 base/构建配置前先核对线上 nginx 的 location 映射**。
+- **前端必须发到「入口服务器」（2026-09-27 追加，本次最深的坑）**：生产是双服务器拓扑——`yangsy.online`（112.124.106.108，低配 nginx 入口，自持静态文件 + API 反代到应用服务器）+ 应用服务器（47.110.234.58，全部 Java 服务）。此前几轮前端一直 scp 到应用服务器，用户经域名访问的始终是入口服务器的**旧版**——「改了不发版」的假象由此而来。**前端发布目标 = 主服务器 `/opt/app/static/chat/`（密钥 `ngnix.pem`）；后端发布目标 = 应用服务器（密钥 `Core.pem`）**。两台 nginx 均已给 `index.html` 加 `Cache-Control: no-cache`（入口页回源校验 + hash 资源 30d immutable），发版后普通刷新即可见。
+- **deploy.sh 与服务器目录不符**：脚本写 `/opt/app/chat-core/`，实际布局是 `/opt/app/core/`（无 `chat-` 前缀），`deploy.sh all` 会在 scp 失败处静默中断——本次改为手动 scp+restart 部署，脚本待修。
+- **Spring Boot 只加载 classpath 第一个 application.yml**：chat-common 里新增的 `app.security.internal-token` 配置项被各模块自己的 application.yml 覆盖，导致令牌首次部署未生效（401 没拦住）；解法：`@Value` 用**嵌套占位符** `${app.security.internal-token:${INTERNAL_API_TOKEN:}}` 直接兜底环境变量，不依赖 yml 映射。
+- **既有测试失败 2 个**（`DebateTreeProcessorTest$Decompose`）：HEAD 干净工作区验证与本次改动无关——树状辩论固定 3 视角后旧测试仍断言动态数量，待按现行为更新测试。
+
+### 8. 代码收敛
+
+- `OpenAICompatProvider` / `OpenAISdkProvider` 各持一份逐字相同的 `toInt` 重复实现（含相同的空 catch 回退），收敛到 `UsageJsonUtils`。
+- 评审修正：`rag/legacy` **不是死代码**——`HybridSearchService`、`KnowledgeController`、`LegacyRagController` 均在引用，不可直接删除，真正的清理需先做调用方迁移。
+
+### 9. LLM api_key DB 落库加密（深夜追加，明文密钥根除）
+
+- 问题：全部大模型 api_key **明文**存 `llm_provider_props` 表——拖走一个数据库备份即拿走 DeepSeek/千问/豆包等全部密钥。评审定位为当前最大遗留高危项。
+- 修复：新增 `ApiKeyCipher`（AES-256-GCM，密文 `enc:v1:<base64(IV+密文)>`，SHA-256 从 `APP_MASTER_KEY` 派生密钥，随机 IV，GCM 防篡改）；写侧（chat-llm 管理面）落库前加密，「留空保留原值」不二次加密；读侧双链统一解密（chat-llm `propsMap` + chat-core/web/media 的 `CachedModelConfigRepository`，7 个调用方零改动）；**chat-llm 启动自动迁移存量明文**（幂等）。
+- 兼容策略：无前缀明文原样透传（渐进迁移）；主密钥未配置时写侧明文落库 + WARN（本地开发兼容）；密文存在但主密钥缺失/不一致 fail-fast 抛异常，不静默用错误 key。
+- 部署踩坑：chat-llm 主类是显式 `@Import` 注册公共组件（不扫 `com.example.chat` 包），新 `@Component` 必须加进 `LlmApplication` 的 `@Import` 列表——首启因缺 `MasterKeyProvider` 注册失败，补 `@Import` 后恢复。
+- 验证：① 单测 `ApiKeyCipherTest` 8 项全绿；② chat-llm 217 测试全绿；③ 线上启动后 DB 实查 4 个 api_key 全部为 `enc:v1:` 密文（deepseek/qwen/doubao/openai）；④ llm 3 提供商注册成功、core 6 模型缓存刷新 0 失败；⑤ **E2E 真实调用 deepseek-chat 返回成功**（密文→解密→上游 200，838ms）。
+- 注意：`APP_MASTER_KEY` 丢失/变更 = DB 全部 api_key 不可解密，需重录；服务器 `.env` 已生成配置。
+
+### 10. 遗留测试修复
+
+- `DebateTreeProcessorTest` 2 个失败断言按「固定 3 视角」新行为更新（LLM 返回 2 视角断言降级为默认 3 视角；markdown 样例改为 3 视角正常解析路径）。chat-core 全绿，至此全模块测试 0 失败。
 
 ---
 

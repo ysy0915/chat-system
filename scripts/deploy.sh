@@ -15,12 +15,12 @@
 # ============================================================
 set -e
 
-PROJECT_ROOT="/Users/apple/IdeaProjects/chat-system-project"
+PROJECT_ROOT="/Users/apple/IdeaProjects/chat-system"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
-MAIN_PEM="/Users/apple/Downloads/我的密钥.pem"
-MILVUS_PEM="/Users/apple/Downloads/Milvus.pem"
-MAIN_SERVER="root@your-nginx-ip"
-MILVUS_SERVER="root@your-milvus-ip"
+MAIN_PEM="/Users/apple/Desktop/core.pem"
+MILVUS_PEM="/Users/apple/Desktop/core.pem"
+MAIN_SERVER="root@47.110.234.58"
+MILVUS_SERVER="root@47.110.234.58"
 NGINX_PATH="/opt/app/static/chat"
 APP_PATH="/opt/app"
 

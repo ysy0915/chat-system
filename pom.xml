@@ -32,7 +32,7 @@
         <spring-cloud.version>2022.0.4</spring-cloud.version>
         <spring-cloud-alibaba.version>2022.0.0.0</spring-cloud-alibaba.version>
         <springdoc.version>2.3.0</springdoc.version>
-        <resilience4j.version>2.2.0</resilience4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
         <!-- Code Quality -->
         <jacoco.version>0.8.15</jacoco.version>
         <spotbugs.version>4.9.3</spotbugs.version>

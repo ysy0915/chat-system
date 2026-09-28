@@ -106,7 +106,7 @@ deploy_module() {
     local mod=$1 jar=$2 name=$3
     shift 3
     yellow "[$mod] 上传jar..."
-    scp -q -i "$MILVUS_PEM" "$PROJECT_ROOT/$mod/target/$jar" $MILVUS_SERVER:$APP_PATH/$mod/
+    scp -q -i "$MILVUS_PEM" "$PROJECT_ROOT/$mod/target/$jar" $MILVUS_SERVER:$APP_PATH/$(echo $mod | sed 's/chat-//')/
     yellow "[$mod] 重启服务..."
     ssh -i "$MILVUS_PEM" $MILVUS_SERVER "bash $APP_PATH/restart-$(echo $mod | sed 's/chat-//').sh"
     check_health "$@"

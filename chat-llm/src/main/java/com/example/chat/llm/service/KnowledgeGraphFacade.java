@@ -8,6 +8,8 @@ import java.util.Map;
  * <p>知识图谱控制器（{@code KnowledgeGraphController}）依赖本接口而非具体实现：
  * <ul>
  *   <li>Neo4j 实现：{@link KnowledgeGraphService}（<code>app.knowledge-graph.backend=neo4j</code>，默认）</li>
+ *   <li>Milvus 实现：{@link MilvusKnowledgeGraphService}（<code>app.knowledge-graph.backend=milvus</code>，
+ *       写入与查询全走 Milvus，实体向量召回语义搜索）</li>
  *   <li>纯内存实现：{@link InMemoryKnowledgeGraphService}（<code>app.knowledge-graph.backend=memory</code>，
  *       standalone 模式零基础设施依赖）</li>
  * </ul>

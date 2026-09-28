@@ -35,6 +35,8 @@ app:
       search-ef: 64
   knowledge-graph:
     enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
+    # 生产默认走 Milvus（写入/查询全部使用 Milvus，无需 Neo4j）；改回 neo4j 需安装 Neo4j
+    backend: ${KNOWLEDGE_GRAPH_BACKEND:milvus}
 
 # ── LLM 配置 ──
 llm:

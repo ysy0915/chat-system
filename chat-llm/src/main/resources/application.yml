@@ -98,5 +98,7 @@ app:
       rrf-k: 60                                           # RRF 融合常数
   knowledge-graph:
     enabled: ${KNOWLEDGE_GRAPH_ENABLED:false}
+    # 后端：neo4j（默认）/ milvus（写入与查询全走 Milvus，需 app.rag.enabled=true）/ memory（standalone）
+    backend: ${KNOWLEDGE_GRAPH_BACKEND:neo4j}
 
 # LLM 网关 / Resilience4j / Actuator / Logging 等基础配置见 application-common.yml

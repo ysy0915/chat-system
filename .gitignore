@@ -65,6 +65,9 @@ build/
 logs/
 *.pid
 
+### Redis dump（本地产物，不入库）###
+dump.rdb
+
 ### Environment ###
 .env
 .env.local

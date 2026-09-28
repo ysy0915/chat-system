@@ -217,3 +217,13 @@
   4. **弹性扩缩容控制器**：`web-scale.sh`（scale-up/scale-down/status）+ health-check 标记机制（`web-8082-disabled` 标记存在则跳过守护 8082）
 - **后果**：✅ 扩缩容零改配置、约 1 分钟自动生效（Nacos 摘除/注册 + cron 同步）；✅ 幽灵实例问题根除（标记机制接管 8082 守护）；✅ 纯轮询负载更均衡；⚠️ **放弃粘性依赖跨节点广播机制**——结果无论在哪节点生成，`BroadcastService` + RabbitMQ `cross-node` + `_nodeId` 都能推回真正持有用户连接的节点，这是放弃 `ip_hash` 的前提；⚠️ 主服务器 `nacos-upstream-sync.sh` 与 Milvus 服务器 `web-scale.sh`/`health-check.sh` 三处脚本需保持一致（仓库 `scripts/` 为权威源）。
 
+## ADR-028 知识图谱后端 Milvus 化：复用向量库基建，生产免依赖 Neo4j（2026-09-29）
+
+- **状态**：Accepted（2026-09-29 上线）
+- **背景**：知识图谱原以 Neo4j 为生产后端，但生产服务器仅 7.4G 内存，已运行 8 个 Java 进程 + Milvus/Nacos 容器（内存 ~85%），再塞一个 Neo4j 容器（500MB+）既浪费又增加 OOM 风险；而 Milvus 已是 RAG 必备组件，知识图谱的数据本质是「实体 + 关系三元组」，用标量字段 + 向量即可表达，无需独立图数据库。
+- **决策**：新增 `MilvusKnowledgeGraphService`（`app.knowledge-graph.backend=milvus`，生产默认），实现 `KnowledgeGraphFacade` + `GraphStore` SPI，与 neo4j/memory 后端同构可插拔：
+  1. **双 Collection**：`kg_entity`（name/rel_count/embedding 实体向量）/ `kg_triple`（subject/relation/object/count/source/question/embedding），PK = sha256 内容指纹 → upsert 天然幂等，重复三元组 count 自增
+  2. **查询**：`getGraph` 标量 expr 拉取 top 实体与边；`searchEntities` 向量语义召回 + 一跳邻居扩展（embedding 不可用回退 like）；`getStats` 集合行数。返回结构与 Neo4j 版完全一致（`{nodes, edges}`），GraphClient 与前端零改动
+  3. **复用 RAG 管道**：`milvusServiceClient` / `LegacyEmbeddingService` 均 `required=false`，RAG 未开时安全降级（只登记不落库）；Redis 去重失败回退进程内；expr 注入转义
+- **后果**：✅ 生产少部署一个 500MB+ 组件，运维面收窄（图数据库与向量库共用监控/备份/重启策略）；✅ 实体搜索从「子串匹配」升级为「语义召回」；✅ 三元组重复出现自动加权（count），图谱质量随对话积累提升；⚠️ 不支持 Cypher（`GraphStore.query` 返回空，SQL 执行器图谱页降级）——Milvus 标量 expr 可覆盖绝大多数查询场景；⚠️ 历史批量导入（`BatchImportService`）绑定 Neo4j Driver，milvus 后端暂返回 false，待后续实现「从 MySQL 历史消息直接抽取灌入 Milvus」；⚠️ 实体向量带进程内缓存（5000 条上限），重启后首轮写路径会集中调 embedding API。
+

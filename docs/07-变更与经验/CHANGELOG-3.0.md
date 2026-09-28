@@ -1,6 +1,31 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11（初版）· 持续更新至 2026-09-27
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-09-29
+
+---
+
+## 知识图谱接入 Milvus + 依赖安全补丁 + 生产全量部署（2026-09-29）
+
+### 1. 知识图谱后端 Milvus 化（生产免依赖 Neo4j）
+
+- 新增 `MilvusKnowledgeGraphService`（`app.knowledge-graph.backend=milvus`，**生产默认已切换**），实现 `KnowledgeGraphFacade` + `GraphStore` SPI，与 neo4j/memory 后端同构可插拔，上层（GraphClient/前端图谱页）零改动。
+- 双 Collection 设计：`kg_entity`（实体 + 向量 HNSW/COSINE）/ `kg_triple`（三元组），PK=sha256 内容指纹，upsert 天然幂等，重复三元组 count 自增。
+- 查询全走 Milvus：`getGraph` 标量 expr；`searchEntities` 向量语义召回 + 一跳邻居（embedding 不可用回退 like）；返回结构与 Neo4j 版完全一致。
+- 复用 RAG 管道（milvusServiceClient/LegacyEmbeddingService），均 required=false 安全降级；指纹幂等单测 ×3，chat-llm 全量 220 测试 0 失败。决策详情见 ADR-028。
+- 生产服务器 Neo4j 不再部署（内存余量考虑）；`.env` 移除无效遗留变量 `APP_KNOWLEDGE_GRAPH_BACKEND`（实际映射名为 `KNOWLEDGE_GRAPH_BACKEND`）。
+
+### 2. 依赖安全补丁（GitHub Dependabot 全部告警清零）
+
+- 同线属性覆盖升级（不动 Spring Boot 3.1.6 主版本，Spring Cloud Alibaba 兼容性零影响）：snakeyaml 1.33→**2.2**（CVE-2022-1471 高危 RCE）、spring-framework 6.0.14→**6.0.23**（CVE-2024-22243/22259/22262）、tomcat 10.1.16→**10.1.42**（CVE-2024-50379 高危条件竞争 RCE 等）、netty 4.1.101→**4.1.118.Final**（CVE-2024-29025 等）、jackson 2.15.3→**2.15.4**（CVE-2024-25710）。
+- 全模块构建 + 测试通过，产物内版本逐一验证；修复升级引入的 2 个过时测试断言（DebateFlow/RestTemplateConfig）。
+
+### 3. 生产环境加固与全量部署
+
+- **Milvus 崩溃根因修复**：standalone 首启时 etcd 未就绪导致凭据写入超时 panic（非 OOM）；三容器补 `restart: always`，重启后 healthz OK。
+- **服务器加 2G swap**（vm.swappiness=10）：7.4G 内存在 8 Java 进程 + 4 容器下长期 ~85%，swap 作峰值安全垫。
+- **deploy.sh 路径修复**：jar 上传路径 `/opt/app/chat-xxx` 与服务器实际目录 `/opt/app/{core,web,games,media,llm}` 不一致导致 scp 失败，已对齐。
+- **全量部署完成**（165s）：前端 + 双 core + 双 web + games + media + 双 llm 全健康；chat-llm 日志确认 `[MilvusKG] Milvus 知识图谱后端已启用` + StorageRegistry 注册 `type=graph impl=milvus`。
+- 服务器新装：Docker 24（含国内镜像加速）、Nacos v2.2.3 容器（当前部署未启用，备用）、Milvus v2.3.4 三件套。
 
 ---
 

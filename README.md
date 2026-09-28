@@ -68,7 +68,7 @@ JWT 认证的私密 AI 对话，历史记录持久化，支持文件上传、语
 上传 PDF/Word/TXT → 自动解析分块 → Milvus 向量存储 → 对话时意图驱动自动检索增强回答
 
 ### 知识脉络图
-Neo4j 图数据库存储实体与关系，LLM 自动抽取三元组，前端 Canvas 可视化展示知识网络
+LLM 自动抽取三元组写入 Milvus（知识图谱后端可插拔：milvus 默认 / neo4j / memory），支持语义召回，前端 Canvas 可视化展示知识网络
 
 ### Multi-Agent 并行工作流
 超长/跨域复杂请求自动拆解为 ≤9 个子任务 → RabbitMQ 分发到双实例 10 并发 Worker 并行执行 → 收敛压缩 ≤1000 字。全局限流 + 公平分发 + 死信重试 + 对账兜底。
@@ -112,7 +112,7 @@ Redis Lua 原子限流（8 并行 / 超限降级）+ manual ack 零丢失 + DLX 
 AI 能力层 chat-llm（端口 9095）  多 Provider 策略 + 图执行引擎 + RAG + 知识图谱 + gRPC
           chat-games（端口 8083） · chat-media（端口 8084）
 
-基础设施  MySQL(RDS) · Redis · RabbitMQ · Nacos · Neo4j · Milvus
+基础设施  MySQL(RDS) · Redis · RabbitMQ · Nacos · Milvus（向量库 + 知识图谱）· Neo4j(可选)
           Prometheus 监控栈（12 条告警规则 → 钉钉推送）
 ```
 
@@ -122,7 +122,7 @@ AI 能力层 chat-llm（端口 9095）  多 Provider 策略 + 图执行引擎 + 
 | **AI 引擎** | chat-llm 独立 LLM 服务（多 Provider：OpenAI 兼容 / DeepSeek / 豆包）+ 自研 LangGraph 风格图执行引擎 |
 | **知识库** | Milvus 向量数据库 + Embedding + RAG 检索增强 |
 | **消息中间件** | RabbitMQ（跨节点广播 · Multi-Agent 子任务分发 · DLX 死信重试） |
-| **数据库** | MySQL + Redis + Neo4j |
+| **数据库** | MySQL + Redis + Milvus（向量库 / 知识图谱，Neo4j 可选后端） |
 | **可观测性** | Prometheus + Alertmanager + Micrometer Tracing + AOP 切面业务指标 |
 | **前端** | React 18 + Vite + Router v6 + WebSocket 流式 |
 | **部署** | Docker + Docker Compose + Nginx + 双服务器架构 |
@@ -282,7 +282,7 @@ curl -N -X POST http://localhost:9095/api/v1/chain/stream \
 | 9095 | HTTP | REST API（对话、模型管理面、RAG、知识图谱） |
 | 9195 | gRPC | 图执行引擎 gRPC 接口（LangGraph 编排） |
 
-> **注意**：内存数据**重启即清空**，仅适合本地演示 / 单机验证；生产请使用 `local` 或 `prod` profile 并接入 MySQL/Redis/Milvus/Neo4j。完整说明与全部 curl 示例见 `chat-llm/STANDALONE.md`。
+> **注意**：内存数据**重启即清空**，仅适合本地演示 / 单机验证；生产请使用 `local` 或 `prod` profile 并接入 MySQL/Redis/Milvus（知识图谱默认 Milvus 后端，无需 Neo4j）。完整说明与全部 curl 示例见 `chat-llm/STANDALONE.md`。
 
 ### Docker 部署
 

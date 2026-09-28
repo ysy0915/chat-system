@@ -64,7 +64,7 @@ Castle Siege (real-time AI lord battles), Snake King (multiplayer snake), AI Pon
 Upload PDF/Word/TXT → auto-parse & chunk → Milvus vector storage → intent-driven retrieval-augmented answers during conversation.
 
 ### Knowledge Graph
-Neo4j graph database stores entities and relations; LLM auto-extracts triples; frontend Canvas visualizes the knowledge network.
+LLM auto-extracts triples into Milvus (pluggable graph backend: milvus default / neo4j / memory) with semantic recall; frontend Canvas visualizes the knowledge network.
 
 ### Multi-Agent Parallel Workflow
 Ultra-long / cross-domain requests are auto-decomposed into ≤9 subtasks → distributed via RabbitMQ to dual-instance 10-concurrency Workers for parallel execution → converged and compressed to ≤1000 characters. Global rate limiting + fair distribution + dead-letter retry + reconciliation fallback.
@@ -108,7 +108,7 @@ Business      chat-core (port 9090 primary / 9092 replica, dual-instance HA)
 AI Layer      chat-llm (port 9095)   multi-provider strategy + graph execution engine + RAG + knowledge graph + gRPC
               chat-games (port 8083) · chat-media (port 8084)
 
-Infra         MySQL (RDS) · Redis · RabbitMQ · Nacos · Neo4j · Milvus
+Infra         MySQL (RDS) · Redis · RabbitMQ · Nacos · Milvus (vector + knowledge graph) · Neo4j (optional)
               Prometheus stack (12 alert rules → DingTalk push)
 ```
 
@@ -118,7 +118,7 @@ Infra         MySQL (RDS) · Redis · RabbitMQ · Nacos · Neo4j · Milvus
 | **AI Engine** | chat-llm standalone LLM service (multi-provider: OpenAI-compatible / DeepSeek / Doubao) + self-built LangGraph-style graph execution engine |
 | **Knowledge Base** | Milvus vector DB + Embedding + RAG |
 | **Messaging** | RabbitMQ (cross-node broadcast · multi-agent subtask distribution · DLX dead-letter retry) |
-| **Databases** | MySQL + Redis + Neo4j |
+| **Databases** | MySQL + Redis + Milvus (vector store / knowledge graph, Neo4j as optional backend) |
 | **Observability** | Prometheus + Alertmanager + Micrometer Tracing + AOP business metrics |
 | **Frontend** | React 18 + Vite + Router v6 + WebSocket streaming |
 | **Deployment** | Docker + Docker Compose + Nginx + dual-server architecture |

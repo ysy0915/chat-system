@@ -133,8 +133,6 @@ export const zh = {
     'landing.f.model3d.desc': '输入文字描述，AI 自动生成 3D 模型，支持下载查看，让创意从平面走向立体。',
     'landing.f.games.title': 'AI多人游戏',
     'landing.f.games.desc': '和真人玩家、AI模型同场竞技，在蛇王争霸、城池争夺战与AI乒乓球中体验更有代入感的多人对抗乐趣。',
-    'landing.f.history.title': '问答足迹',
-    'landing.f.history.desc': '集中管理你的提问与探索，支持快速检索与二次编辑，让过往思考不被遗忘。',
     // 核心能力卡片
     'landing.c.understand.title': '懂你所想',
     'landing.c.understand.desc': '无论是规划行程、分析资料还是创作内容，它都能精准理解你的意图，自动拆解步骤并调用工具，让你专注于结果本身。',
@@ -836,8 +834,6 @@ export const en = {
     'landing.f.model3d.desc': 'Type a description and AI generates a 3D model you can download and view, bringing ideas from flat to dimensional.',
     'landing.f.games.title': 'AI Games',
     'landing.f.games.desc': 'Compete with real players and AI models in Snake King, Castle Siege and AI Ping-Pong for immersive multiplayer fun.',
-    'landing.f.history.title': 'Q&A History',
-    'landing.f.history.desc': 'Manage all your questions and explorations, with quick search and re-editing so past thoughts are never forgotten.',
     // 核心能力卡片
     'landing.c.understand.title': 'Know What You Need',
     'landing.c.understand.desc': 'Whether planning a trip, analyzing data, or creating content, it precisely understands your intent, automatically breaks down steps, and calls tools, letting you focus on the result itself.',

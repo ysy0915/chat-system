@@ -104,11 +104,6 @@ export default function Landing() {
               <h3>{t('landing.f.games.title')}</h3>
               <p>{t('landing.f.games.desc')}</p>
             </Link>
-            <Link to="/history" className="feature-card">
-              <div className="feature-icon">📋</div>
-              <h3>{t('landing.f.history.title')}</h3>
-              <p>{t('landing.f.history.desc')}</p>
-            </Link>
           </div>
         </section>
 

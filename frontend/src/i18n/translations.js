@@ -113,7 +113,7 @@ export const zh = {
     'landing.totalUsage': '累计使用 {count} 次',
     'landing.featuresTitle': '功能简介',
     'landing.productLead': '打破人机边界，融合真人社交与AI智慧，打造懂你、助你的全能数字伙伴。',
-    'landing.productTip': '点击卡片即可使用对应功能 👆',
+    'landing.productTip': '点击卡片即可使用对应功能 👇',
     'landing.coreTitle': '核心能力',
     'landing.coreLead': '从意图理解到任务执行，从安全守护到弹性扩展，六大核心能力构建全能数字伙伴。',
     // 功能卡片
@@ -814,7 +814,7 @@ export const en = {
     'landing.totalUsage': '{count} total uses',
     'landing.featuresTitle': 'Features',
     'landing.productLead': 'Breaking the boundary between humans and machines, merging real social interaction with AI intelligence to build an all-round digital companion that understands and assists you.',
-    'landing.productTip': 'Click a card to use the feature 👆',
+    'landing.productTip': 'Click a card to use the feature 👇',
     'landing.coreTitle': 'Core Capabilities',
     'landing.coreLead': 'From intent understanding to task execution, from security protection to elastic scaling, six core capabilities build your all-round digital companion.',
     // 功能卡片

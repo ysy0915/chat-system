@@ -463,11 +463,11 @@ public class MilvusKnowledgeGraphService implements KnowledgeGraphFacade, GraphS
 
     // ═════════════════════════ 查询 ═════════════════════════
 
-    /** top 实体：nameLike 为空时全量扫描取 topN，否则 like 过滤 */
+    /** top 实体：nameLike 为空时全量扫描取 topN，否则 like 过滤（Milvus 仅支持前缀匹配） */
     private List<EntityRow> topEntities(String nameLike, int minWeight, int limit) {
         String expr = nameLike == null
                 ? "rel_count >= " + Math.max(0, minWeight)
-                : "name like \"%"
+                : "name like \""
                         + nameLike.replace("\\", "\\\\").replace("\"", "").replace("%", "")
                         + "%\" and rel_count >= " + Math.max(0, minWeight);
         R<io.milvus.grpc.QueryResults> resp = milvusClient.query(QueryParam.newBuilder()

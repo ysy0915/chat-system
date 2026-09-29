@@ -13,7 +13,7 @@
 [![Stars](https://img.shields.io/github/stars/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
 [![Forks](https://img.shields.io/github/forks/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
 
-**🖥️ [Live Demo](http://112.124.106.108/chat/home)** · **📦 [Source Code](https://github.com/ysy0915/chat-system)**
+**🖥️ [Live Demo](https://yangsy.online/chat/home)** · **📦 [Source Code](https://github.com/ysy0915/chat-system)**
 
 </div>
 

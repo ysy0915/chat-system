@@ -15,7 +15,7 @@
 
 [English](README.en.md) | 简体中文
 
-**🖥️ [在线体验](http://112.124.106.108/chat/home)** · **📦 [源码仓库](https://github.com/ysy0915/chat-system)**
+**🖥️ [在线体验](https://yangsy.online/chat/home)** · **📦 [源码仓库](https://github.com/ysy0915/chat-system)**
 
 </div>
 
@@ -398,7 +398,7 @@ mvn test -pl chat-media   # 26 个测试
 
 - **制作者**：杨思义 · 博思AI团队
 - **GitHub**：https://github.com/ysy0915/chat-system
-- **在线体验**：http://112.124.106.108/chat/home
+- **在线体验**：https://yangsy.online/chat/home
 
 ### 项目历程
 

@@ -21,7 +21,7 @@
 
 BoshiAI Agent is a **multi-model intelligent collaboration platform**. Unlike traditional AI products where "one model answers one question", BoshiAI brings **Doubao, DeepSeek, and Qwen** (multiple LLMs) into the same conversation to debate, reason, and collaborate on complex tasks — integrated with RAG knowledge retrieval, multimodal generation, and AI games in a single platform.
 
-- **Live Demo**: http://112.124.106.108/chat/home
+- **Live Demo**: https://yangsy.online/chat/home
 - **Source Code**: https://github.com/ysy0915/chat-system
 
 > The live environment enforces security interception (User-Agent validation). Script/API calls must include a browser `User-Agent` header; normal browser access is unaffected.
@@ -309,7 +309,7 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 - **Author**: Yang Siyi · BoshiAI Team
 - **GitHub**: https://github.com/ysy0915/chat-system
-- **Live Demo**: http://112.124.106.108/chat/home
+- **Live Demo**: https://yangsy.online/chat/home
 
 ### Project Timeline
 

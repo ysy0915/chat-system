@@ -3,6 +3,8 @@ package com.example.chat.llm;
 import com.example.chat.config.GlobalExceptionHandler;
 import com.example.chat.config.LlmConfigProperties;
 import com.example.chat.config.MasterKeyProvider;
+import com.example.chat.repository.CachedModelConfigRepository;
+import com.example.chat.repository.ModelConfigRepository;
 import com.example.chat.security.JwtUtil;
 import com.example.chat.storage.StorageRegistry;
 import com.example.chat.service.DirectLLMClient;
@@ -74,6 +76,23 @@ public class LlmApplication {
             "com.example.chat.repository",
             "com.example.chat.llm.rag.legacy",
             "com.example.chat.llm.routing.db"})
-    public static class MapperScanConfig {}
+    public static class MapperScanConfig {
+
+        /**
+         * 注册 {@link CachedModelConfigRepository}（@Primary 解密缓存版）。
+         * <p>chat-llm 只扫 {@code com.example.chat.llm} 包，chat-common 的
+         * 该 @Component 不会被自动发现——不注册时 {@code @Autowired ModelConfigRepository}
+         * 注入的是<b>不解密</b>的原始 MyBatis mapper，api_key 密文直接透传上游导致 401
+         * （知识图谱三元组抽取即踩此坑）。standalone 无 DataSource 时不注册（与 MapperScan 同条件）。</p>
+         */
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        public CachedModelConfigRepository cachedModelConfigRepository(
+                @org.springframework.beans.factory.annotation.Qualifier("modelConfigRepository")
+                ModelConfigRepository delegate,
+                MasterKeyProvider masterKeyProvider) {
+            return new CachedModelConfigRepository(delegate, masterKeyProvider);
+        }
+    }
 }
 

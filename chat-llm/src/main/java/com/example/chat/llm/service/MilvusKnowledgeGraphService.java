@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -63,6 +64,11 @@ import java.util.concurrent.Executors;
  * <p>图谱可视化（getGraph）/ 邻居扩展用标量 expr 查询，实体搜索优先向量召回、
  * embedding 服务不可用时回退 {@code like} 关键词。与 Neo4j / memory 版返回
  * 完全相同的 <code>{nodes, edges}</code> 结构，上层接口无感知。</p>
+ *
+ * <p><b>计数原子性</b>：Milvus 无原子自增，rel_count/count 的「查旧值+1 再 upsert」
+ * 读-改-写由 {@link #withCounterLock} 做跨实例互斥（Redis SET NX + TTL，
+ * 双 chat-llm 实例并发抽取场景）；Redis 不可用回退进程内锁，超时 fail-open
+ * （偏差可自愈：同三元组再现仍会 +1）。</p>
  *
  * <p>限制：不支持 Cypher（GraphStore.query 返回空）；批量导入历史数据返回 false
  * （BatchImportService 绑定 Neo4j Driver）。</p>
@@ -95,6 +101,24 @@ public class MilvusKnowledgeGraphService implements KnowledgeGraphFacade, GraphS
 
     /** 实体向量缓存（upsert 需回传全字段，避免同名实体反复向量化） */
     private final Map<String, float[]> embedCache = new ConcurrentHashMap<>();
+
+    /**
+     * 计数锁（进程内兜底）：Redis 不可用时保护单实例的读-改-写。
+     * 键为 "kg:cnt:e/t:{id}"，与 Redis 锁同键空间。
+     */
+    private final ConcurrentHashMap<String, Object> localLocks = new ConcurrentHashMap<>();
+
+    /** Lua 释放锁：仅当 token 匹配才删除（防误解他人锁） */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> UNLOCK_SCRIPT =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                            + "return redis.call('del', KEYS[1]) else return 0 end",
+                    Long.class);
+
+    /** 计数锁参数：TTL 防死锁；自旋 50×100ms=5s 上限，超时 fail-open（计数偏差可自愈） */
+    private static final Duration LOCK_TTL = Duration.ofSeconds(10);
+    private static final long LOCK_SPIN_MS = 100;
+    private static final int LOCK_MAX_SPINS = 50;
 
     private volatile boolean ready;
 
@@ -394,37 +418,94 @@ public class MilvusKnowledgeGraphService implements KnowledgeGraphFacade, GraphS
                 .withCollectionName(collection).build());
     }
 
-    // ═════════════════════════ 写入（upsert 幂等 + 计数自增） ═════════════════════════
+    // ═════════════════════════ 写入（upsert 幂等 + 计数自增跨实例互斥） ═════════════════════════
+
+    /**
+     * 计数自增读-改-写互斥：Redis SET NX（TTL 防死锁）跨实例互斥，
+     * Redis 不可用回退进程内 monitor（单实例；当前抽取为单线程执行器，本身已串行）。
+     * 自旋 5s 超时后 fail-open 执行——计数偏差可自愈（同三元组再现时仍会 +1），不阻塞抽取。
+     */
+    void withCounterLock(String key, Runnable action) {
+        if (redisTemplate != null) {
+            String token = UUID.randomUUID().toString();
+            try {
+                for (int i = 0; i < LOCK_MAX_SPINS; i++) {
+                    if (Boolean.TRUE.equals(redisTemplate.opsForValue()
+                            .setIfAbsent(key, token, LOCK_TTL))) {
+                        try {
+                            action.run();
+                        } finally {
+                            releaseCounterLock(key, token);
+                        }
+                        return;
+                    }
+                    Thread.sleep(LOCK_SPIN_MS);
+                }
+                log.warn("[MilvusKG] 计数锁等待超时 key={}，fail-open 执行（count 可能偏差，可自愈）", key);
+                action.run();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("[MilvusKG] 计数锁等待被中断 key={}，降级执行", key);
+                action.run();
+            } catch (org.springframework.data.redis.RedisSystemException e) {
+                // Redis 故障：回退进程内锁（单实例内仍互斥；跨实例由去重键 + 单线程执行器兜底）
+                log.debug("[MilvusKG] Redis 计数锁不可用，回退进程内锁: {}", e.getMessage());
+                runWithLocalLock(key, action);
+            }
+            return;
+        }
+        runWithLocalLock(key, action);
+    }
+
+    private void runWithLocalLock(String key, Runnable action) {
+        Object monitor = localLocks.computeIfAbsent(key, k -> new Object());
+        synchronized (monitor) {
+            action.run();
+        }
+    }
+
+    private void releaseCounterLock(String key, String token) {
+        try {
+            redisTemplate.execute(UNLOCK_SCRIPT, List.of(key), token);
+        } catch (org.springframework.data.redis.RedisSystemException e) {
+            // 释放失败无妨：TTL 10s 兜底自动过期
+            log.debug("[MilvusKG] 计数锁释放失败（TTL 兜底）: {}", e.getMessage());
+        }
+    }
 
     private void upsertEntity(String name) {
         long id = fingerprint(name);
-        long newCount = currentEntityCount(name) + 1;
-        List<Float> vector = vectorOf(name);
-        milvusClient.upsert(UpsertParam.newBuilder()
-                .withCollectionName(ENTITY_COLLECTION)
-                .withFields(entityFields(id, name, newCount, vector))
-                .build());
+        withCounterLock("kg:cnt:e:" + id, () -> {
+            long newCount = currentEntityCount(name) + 1;
+            List<Float> vector = vectorOf(name);
+            milvusClient.upsert(UpsertParam.newBuilder()
+                    .withCollectionName(ENTITY_COLLECTION)
+                    .withFields(entityFields(id, name, newCount, vector))
+                    .build());
+        });
     }
 
     private void upsertTriple(String subject, String relation, String object,
                               String source, String question) {
         long id = fingerprint(subject + "|" + relation + "|" + object);
-        long newCount = currentTripleCount(id) + 1;
-        // 复用 subject 向量：避免每条三元组多一次向量化调用
-        List<Float> vector = vectorOf(subject);
-        milvusClient.upsert(UpsertParam.newBuilder()
-                .withCollectionName(TRIPLE_COLLECTION)
-                .withFields(List.of(
-                        new InsertParam.Field("id", List.of(id)),
-                        new InsertParam.Field("subject", List.of(subject)),
-                        new InsertParam.Field("relation", List.of(relation)),
-                        new InsertParam.Field("object", List.of(object)),
-                        new InsertParam.Field("count", List.of(newCount)),
-                        new InsertParam.Field("source", List.of(source != null ? source : "chat")),
-                        new InsertParam.Field("question",
-                                List.of(question != null ? question : "")),
-                        new InsertParam.Field("embedding", List.of(vector))))
-                .build());
+        withCounterLock("kg:cnt:t:" + id, () -> {
+            long newCount = currentTripleCount(id) + 1;
+            // 复用 subject 向量：避免每条三元组多一次向量化调用
+            List<Float> vector = vectorOf(subject);
+            milvusClient.upsert(UpsertParam.newBuilder()
+                    .withCollectionName(TRIPLE_COLLECTION)
+                    .withFields(List.of(
+                            new InsertParam.Field("id", List.of(id)),
+                            new InsertParam.Field("subject", List.of(subject)),
+                            new InsertParam.Field("relation", List.of(relation)),
+                            new InsertParam.Field("object", List.of(object)),
+                            new InsertParam.Field("count", List.of(newCount)),
+                            new InsertParam.Field("source", List.of(source != null ? source : "chat")),
+                            new InsertParam.Field("question",
+                                    List.of(question != null ? question : "")),
+                            new InsertParam.Field("embedding", List.of(vector))))
+                    .build());
+        });
     }
 
     private List<InsertParam.Field> entityFields(long id, String name, long relCount, List<Float> vector) {

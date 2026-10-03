@@ -67,6 +67,8 @@ install_base() {
     command -v python3 >/dev/null 2>&1 || install_pkg python3
     command -v openssl >/dev/null 2>&1 || install_pkg openssl
     command -v jq >/dev/null 2>&1     || install_pkg jq
+    # 备份依赖：mysqldump（mariadb 兼容 RDS MySQL 8）
+    command -v mysqldump >/dev/null 2>&1 || install_pkg mariadb-server || install_pkg mariadb-client || warn "mysqldump 安装失败——backup.sh 的 MySQL 备份将不可用"
 }
 
 # ---------------- 2. 目录结构 ----------------
@@ -98,8 +100,12 @@ ensure_env() {
     log "生成 .env 模板"
     JWT=$(openssl rand -base64 48)
     NEO4J_PWD=$(openssl rand -base64 16 | tr -d '=/+')
+    MASTER_KEY=$(openssl rand -hex 32)
+    INTERNAL_TOKEN=$(openssl rand -hex 32)
     cat > "$ENV_FILE" <<EOF
 # ===== AI 聊天系统环境变量（首次安装自动生成，请按需修改） =====
+# 【变量命名】LLM Key 变量名以代码引用为准（DEEPSEEK/QWEN/DOUBAO/LLM_API_KEY），
+#   勿用 QIANWEN_API_KEY 等别名——代码不读取，配了也不生效（历史踩坑）。
 
 # MySQL（阿里云 RDS）
 DB_USERNAME=changeme
@@ -113,17 +119,28 @@ REDIS_PORT=6379
 # RabbitMQ
 RABBITMQ_HOST=127.0.0.1
 RABBITMQ_PORT=5672
+RABBITMQ_USERNAME=changeme
+RABBITMQ_PASSWORD=changeme
+
+# 阿里云内容安全（fail-close，未配置则聊天内容被拦截）
+ALIBABA_CLOUD_ACCESS_KEY_ID=changeme
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=changeme
+
+# 阿里云 OSS 对象存储（头像/图片/文件）
+OSS_ACCESS_KEY_ID=changeme
+OSS_ACCESS_KEY_SECRET=changeme
 
 # JWT（≥32字节，勿泄露）
 JWT_SECRET=${JWT}
 
 # Nacos
+NACOS_ENABLED=true
 NACOS_HOST=127.0.0.1
 NACOS_PORT=8848
 NACOS_USERNAME=nacos
 NACOS_PASSWORD=nacos
 
-# Neo4j 知识图谱（chat-llm 使用）
+# Neo4j 知识图谱（可选，2026-09-29 起生产图谱默认 Milvus 后端）
 NEO4J_URI=bolt://127.0.0.1:7687
 NEO4J_PASSWORD=${NEO4J_PWD}
 KNOWLEDGE_GRAPH_ENABLED=true
@@ -141,11 +158,30 @@ LLM_SERVICE_BASE_URL=http://127.0.0.1:9095
 # Embedding（legacy 知识库 1024 维，勿改）
 EMBEDDING_MODE=legacy
 EMBEDDING_DIMENSION=1024
+EMBEDDING_MODEL=text-embedding-v3
+EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/api/v1
 
-# ===== LLM API Keys（请填写真实 Key） =====
-QIANWEN_API_KEY=changeme
+# ===== LLM API Keys =====
+# 【真相源规则】生产环境 provider key 唯一真相源是 DB llm_provider_props 表
+#   （chat-llm / chat-core 每 60 秒定时刷新覆盖，改 key 无需重启）；
+#   以下仅作 standalone / DB 故障兜底，须与 DB 保持一致。
+#   DASHSCOPE_API_KEY 例外：用于 RAG/意图向量化 embedding，不走 DB，须保持有效。
 DEEPSEEK_API_KEY=changeme
+QWEN_API_KEY=changeme
 DOUBAO_API_KEY=changeme
+LLM_API_KEY=changeme
+DASHSCOPE_API_KEY=changeme
+
+# LLM api_key 加密主密钥（AES-256-GCM，openssl rand -hex 32）
+# 丢失/变更 = DB 中全部 api_key 无法解密，需重录；未配置 = key 明文落库（仅本地可接受）
+APP_MASTER_KEY=${MASTER_KEY}
+
+# 内部接口令牌（/internal/** 校验 X-Internal-Token，chat-web 与 chat-core 同值）
+INTERNAL_API_TOKEN=${INTERNAL_TOKEN}
+
+# 内部密码
+SQL_EXECUTOR_PASSWORD=changeme
+MONITOR_PASSWORD=changeme
 
 # 钉钉告警 webhook（可选，空则告警仅落盘）
 DINGTALK_WEBHOOK=
@@ -316,6 +352,16 @@ ensure_app_scripts() {
     done
 }
 
+# ---------------- 6.5 备份 cron（MySQL + Milvus 每日 04:00） ----------------
+ensure_backup() {
+    if [ -f $APP/backup.sh ]; then
+        chmod +x $APP/backup.sh $APP/restore.sh 2>/dev/null
+        bash $APP/backup.sh --install-cron
+    else
+        warn "缺少 $APP/backup.sh —— 从开发机上传（scripts/backup.sh）后执行 --install-cron"
+    fi
+}
+
 # ---------------- 7. 主服务器模式（Nginx + Redis + RabbitMQ） ----------------
 install_main_server() {
     log "安装主服务器组件（Nginx / Redis / RabbitMQ）"
@@ -414,6 +460,7 @@ main() {
         ensure_env
         install_middleware
         install_monitoring
+        ensure_backup
         ensure_app_scripts
     fi
 

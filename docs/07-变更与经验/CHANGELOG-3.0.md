@@ -1,6 +1,54 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11（初版）· 持续更新至 2026-09-29
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-10-03
+
+---
+
+## 配置管理治理：模板收敛 + 体检工具 + 部署前置卡点（2026-10-03）
+
+> 背景：架构自评中「配置管理」维度最低分（5.5）。此前 LLM 401 连环排障暴露的四个坑（QWEN/QIANWEN 命名漂移、`.env` 重复变量、DB 旧 key、deploy.sh 指错服务器数周）全部源自配置三源（`.env` / Nacos / DB）分裂且无任何一致性校验，本轮系统性修复。
+
+### 1. 命名漂移修复（install-server.sh）
+
+- 问题：`install-server.sh` 生成的服务器 `.env` 模板写 `QIANWEN_API_KEY=changeme`，而代码/Nacos 副本/文档全部读取 `QWEN_API_KEY`——死变量，standalone/DB 故障兜底永远不生效。修复为 `QWEN_API_KEY`，并加注释防再犯（LLM Key 变量名以代码引用为准，勿用拼音别名）。
+
+### 2. .env 模板双源收敛（22 处漂移清零）
+
+- 问题：`install-server.sh` 内嵌的 `.env` heredoc 模板与仓库根 `.env.template` 是两个独立演化的模板，变量集互相缺失达 22 处。
+- install 模板补齐：`APP_MASTER_KEY`（自动 `openssl rand -hex 32` 生成——此前新装机器无主密钥、key 明文落库）、`DASHSCOPE_API_KEY`（RAG 向量化必需、不走 DB）、`LLM_API_KEY`、`INTERNAL_API_TOKEN`（自动生成）、`SQL_EXECUTOR_PASSWORD`/`MONITOR_PASSWORD`、RabbitMQ/阿里云内容安全/OSS 凭据、`EMBEDDING_MODEL/BASE_URL`。
+- `.env.template` 补齐：Nacos/Milvus/Neo4j/RAG/意图识别等运维段变量，两模板形成同一全集（真相源规则注释同步对齐：DB 为 provider key 唯一真相源，env 仅兜底，DASHSCOPE 例外）。
+
+### 3. 新增配置体检工具 config-check.sh（scripts/）
+
+- 五项检查：① 重复变量定义（后值静默覆盖前值，ERROR）② 死变量（KEY/TOKEN/PASSWORD 类判命名漂移，ERROR）③ 两份模板变量集漂移（ERROR）④ 代码以无默认值 `${VAR}` 引用但模板均未提供（WARN）⑤ 密钥占位值未填（仅对真实 env 报，WARN）。
+- 支持远端体检：`bash scripts/config-check.sh --remote root@host` 经 ssh 检查服务器 `/opt/app/.env`，凭据不落地本机。
+- 首跑即抓出全部 22 处模板漂移（正是工具要防的问题本身），修复后 0 ERROR / 0 WARN；`NACOS_USERNAME/PASSWORD` 识别为预留变量（Nacos 开鉴权后使用）降级为提示。
+
+### 4. deploy.sh 部署前置卡点
+
+- 任何目标（all/单模块/前端）部署前先执行 `config-check.sh`，存在 ERROR 即中止——配置漂移不再可能流向线上。
+
+### 5. 遗留与教训
+
+- `.env` 兜底 key 与 DB key 一致性无法脚本化比对（AES-256-GCM 密文带随机 IV，每次密文不同）；建议后续在 `LlmProviderAdminService` 60s 定时刷新处解密后与环境变量比对、漂移打 WARN 日志。
+- **bash UTF-8 坑**：`set -u` 下 `$v（`（全角括号紧跟变量名）会把全角字符并入变量名、报未定义变量——凡 `$var` 后跟全角字符必须写 `${var}`；macOS BSD grep 不支持 `\s`，须用 `[[:space:]]`。
+- Nacos 副本 diff（`docs/nacos-configs/` ↔ 线上 Nacos）与 Nacos 鉴权仍待做。
+
+### 6. 备份策略落地（数据层 P0，同日追加）
+
+- 背景：架构自评「数据层 6.5」最大短板——MySQL(RDS)/Milvus/Redis 全部零备份，一次磁盘故障即不可逆丢失（Milvus 含知识图谱 kg_entity/kg_triple + RAG 向量库）。
+- 新增 `scripts/backup.sh`（服务器端）：MySQL `mysqldump --single-transaction` 逻辑全量（RDS 云快照的兜底）+ Milvus 停机快照（stop etcd/minio/standalone → tar volumes → 重启 → healthz 等待，窗口约 1~3 分钟）+ 过期清理（默认保留 7 天）+ 异机复制（`BACKUP_REMOTE_HOST` 指向入口服务器，需 ssh 互信）；落盘自动 `gzip -t` 校验 + 空文件检测；`--install-cron` 自装每日 04:00 定时任务。
+- 新增 `scripts/restore.sh`：`list` / `mysql <dump>` / `milvus <tar>` 三个子命令；恢复均为破坏性操作（mysql 整库覆盖、milvus 清空 volumes），内置交互确认 + `--yes` 跳过。
+- 集成：`deploy.sh install` 自动上传两脚本，`install-server.sh` 新增 `ensure_backup()` 装定时任务；Redis（缓存/会话）与 RabbitMQ（在途任务）明确不备份并记录理由。
+- 运维文档：`docs/03-运维部署/备份与恢复.md`（wiki 同步）——覆盖范围、安装、异机互信配置、恢复步骤、季度演练建议与已知限制（`--online` 一致性风险等）。
+- Redis 不备份 ≠ 无损：登录态/验证码缓存会清空，重启即重建，可接受。
+
+### 7. 图谱计数并发丢更新修复（数据层 P0 收官，同日追加）
+
+- 问题：`MilvusKnowledgeGraphService` 的 rel_count/count 自增是「查旧值 → +1 → upsert」读-改-写，非原子——chat-llm **双实例（9095/9096）** 并发抽取同一三元组、或 Redis 去重键不可用时（两实例同时处理同一消息），互相覆盖导致计数丢失（如 5+2 应为 7，实得 6）。
+- 修复：Milvus 2.3 无原子自增，新增 `withCounterLock` 计数锁——Redis `SET NX` + TTL 10s 跨实例互斥（随机 token + Lua 比对释放防误解锁），抢锁失败自旋等待（100ms×50），超时 **fail-open**（计数偏差可自愈：同三元组再现仍会 +1，不阻塞抽取线程）；Redis 故障回退进程内 monitor 锁（单实例，当前抽取本身为单线程执行器已串行）。
+- 覆盖点：`upsertEntity`（kg_entity.rel_count）与 `upsertTriple`（kg_triple.count）两处读-改-写均包锁，键空间 `kg:cnt:e/t:{指纹}`。
+- 验证：新增 4 项锁行为测试——Redis 加锁+释放、Redis 故障回退进程内、200 线程同 key 非原子计数零丢失、自旋超时 fail-open；chat-llm 全量 224 测试 0 失败。
 
 ---
 

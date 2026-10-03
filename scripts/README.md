@@ -7,8 +7,9 @@
 ### 部署相关
 | 脚本 | 说明 |
 |------|------|
-| `deploy.sh` | **一键自动化部署**（安装+构建+上传+重启+健康检查），支持双 core/双 web/llm 与单模块部署 |
+| `deploy.sh` | **一键自动化部署**（安装+构建+上传+重启+健康检查），支持双 core/双 web/llm 与单模块部署；部署前自动执行 `config-check.sh` 体检卡点 |
 | `install-server.sh` | 服务器端一键安装（幂等）：JDK17/Docker/中间件(Nacos/Neo4j/Milvus)/Prometheus监控栈/.env，`--main` 安装主服务器 |
+| `config-check.sh` | **配置一致性体检**：重复变量/死变量（命名漂移）/模板漂移（.env.template ↔ install-server.sh）/缺配必填/占位值；支持 `--remote root@host` 远端体检服务器 .env，存在 ERROR 退出非 0 |
 | `restart-all.sh` | 重启全部服务 |
 | `restart-core.sh` | 重启core服务（支持 9090/9092/all） |
 | `restart-web.sh` | 重启web服务（双实例 8081/8082） |
@@ -16,6 +17,8 @@
 | `restart-media.sh` | 重启media服务 |
 | `restart-llm.sh` | 重启llm服务 |
 | `restart-all-after-resize.sh` | 服务器扩容后重启全部 |
+| `backup.sh` | **服务器端备份**（MySQL mysqldump + Milvus 停机快照 + 异机复制），`--install-cron` 自装每日 04:00 定时任务，详见 `docs/03-运维部署/备份与恢复.md` |
+| `restore.sh` | **服务器端恢复**（mysql/milvus 子命令，破坏性操作带交互确认），`list` 查看可用备份 |
 
 ### 一键部署用法（开发机执行）
 

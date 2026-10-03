@@ -8,7 +8,7 @@
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17-orange.svg)](pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1-brightgreen.svg)](pom.xml)
-[![Tests](https://img.shields.io/badge/Tests-961%20passed-success.svg)](#运行测试)
+[![Tests](https://img.shields.io/badge/Tests-965%20passed-success.svg)](#运行测试)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
 [![Stars](https://img.shields.io/github/stars/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
 [![Forks](https://img.shields.io/github/forks/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
@@ -299,7 +299,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ## 运行测试
 
 ```bash
-# 全量测试（961 用例全绿）
+# 全量测试（965 用例全绿）
 mvn clean test
 
 # 单模块
@@ -337,7 +337,7 @@ mvn test -pl chat-media   # 26 个测试
 
 | 维度 | 指标 |
 |------|------|
-| 测试 | 全量 **961 用例全绿**，含 @SpringBootTest 集成测试、Mapper 契约测试 |
+| 测试 | 全量 **965 用例全绿**，含 @SpringBootTest 集成测试、Mapper 契约测试 |
 | 代码规范 | Checkstyle **0 违规** · PMD 2000+→92 · SpotBugs 0 阻断 |
 | 架构设计 | 双 core 高可用 + web 弹性伸缩（Nacos 动态 upstream）+ stop 广播 + nodeId 防堆积 + LangGraph 混合编排 + Multi-Agent 并行工作流 |
 | 模型抽象 | Provider 策略 + SPI 策略工厂 + 注册中心 + 动态路由 + 模型自助管理面 + 工具平台化 + 存储 SPI 热插拔 |
@@ -417,6 +417,7 @@ mvn test -pl chat-media   # 26 个测试
 | 08-17 | 个人对话性能修复（11s→1-3s：tool_call_id + 豆包 thinking）+ 深度思考可配置化（前端开关全链路透传）+ 豆包换 mini 提速 + 树状博弈视角真正并行 + 包结构重构（llm.llm→llm）+ Controller 分层（Service 下沉）+ 内存治理（MaxDirectMemorySize，可用内存 9.6%→15%）+ games 领主排行榜修复（MySQL 驱动）+ 功能精简（AI 群聊/3D 模型暂隐藏） |
 | 09-27 | 安全加固三连（WebSocket 订阅级鉴权 fail-close / internal 令牌常量时间比较 / IP 防伪造限流防绕过）+ 启动配置自检 StartupConfigValidator + cross-node 交换机根治 + LLM api_key AES-256-GCM 密文落库 + pre-commit 密钥拦截 + gitleaks 全历史扫描清零 |
 | 09-29 | 知识图谱后端 Milvus 化（写入/查询全走 Milvus，语义召回，生产免依赖 Neo4j，ADR-028）+ 依赖 CVE 清零（snakeyaml 高危 RCE / Tomcat 9.8 / Spring / Netty 同线升级）+ 生产加固（Milvus 自愈 restart + 2G swap）+ v9 公告发布 |
+| 10-03 | 运维治理三连：配置体检工具 config-check.sh + deploy.sh 前置卡点（.env 模板 22 处漂移清零，根治 401 排障四坑）+ 备份体系上线（MySQL/Milvus 每日 04:00 全量 + 异机双副本 + restore 演练手册）+ 图谱计数分布式锁修复（rel_count 并发丢更新，965 用例全绿）+ v10 公告发布 |
 
 > **关于提交历史**：早期开发过程中曾将模型 API Key 误写入代码仓库，为彻底清除敏感信息，对仓库进行了归档重建，故 Git 提交时间集中显示为 08-14 之后。完整迭代细节见 [架构评估报告.md](docs/01-架构设计/架构评估报告.md) 与 [研发时间线.md](docs/08-项目复盘/研发时间线.md)（依据服务器日志还原 07-30~08-17 的完整研发过程）。
 

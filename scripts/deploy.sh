@@ -17,9 +17,10 @@ set -e
 
 PROJECT_ROOT="/Users/apple/IdeaProjects/chat-system"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
-MAIN_PEM="/Users/apple/Desktop/core.pem"
+MAIN_PEM="/Users/apple/Desktop/ngnix.pem"
 MILVUS_PEM="/Users/apple/Desktop/core.pem"
-MAIN_SERVER="root@47.110.234.58"
+# 前端发布目标 = 入口服务器（自持静态文件）；后端发布目标 = 应用服务器
+MAIN_SERVER="root@112.124.106.108"
 MILVUS_SERVER="root@47.110.234.58"
 NGINX_PATH="/opt/app/static/chat"
 APP_PATH="/opt/app"
@@ -36,6 +37,13 @@ START_TIME=$(date +%s)
 echo "============================================================"
 echo "  AI聊天系统一键部署  target=$TARGET  $(date)"
 echo "============================================================"
+
+# ---------- 配置体检（前置卡点：重复变量/死变量/模板漂移任一 ERROR 即中止） ----------
+yellow "[0] 配置体检（config-check）..."
+if ! bash "$PROJECT_ROOT/scripts/config-check.sh"; then
+    red "配置体检存在 ERROR（重复变量/死变量/模板漂移）——先修复再部署，防止线上凭据漂移"
+    exit 1
+fi
 
 # ---------- 健康检查函数（支持多端口） ----------
 check_health() {
@@ -67,6 +75,9 @@ install_server() {
     yellow "[install] 上传安装脚本与监控配置到 $label ($server)..."
     scp -q -i "$pem" "$PROJECT_ROOT/scripts/install-server.sh" $server:$APP_PATH/
     if [ "$mode" != "--main" ]; then
+        scp -q -i "$pem" \
+            "$PROJECT_ROOT/scripts/backup.sh" \
+            "$PROJECT_ROOT/scripts/restore.sh"             $server:$APP_PATH/
         scp -q -i "$pem" \
             "$PROJECT_ROOT/docs/prometheus-prod.yml"       $server:$APP_PATH/prometheus/prometheus.yml
         scp -q -i "$pem" \

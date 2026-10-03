@@ -8,7 +8,7 @@
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17-orange.svg)](pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1-brightgreen.svg)](pom.xml)
-[![Tests](https://img.shields.io/badge/Tests-961%20passed-success.svg)](#running-tests)
+[![Tests](https://img.shields.io/badge/Tests-965%20passed-success.svg)](#running-tests)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933.svg)](frontend/package.json)
 [![Stars](https://img.shields.io/github/stars/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
 [![Forks](https://img.shields.io/github/forks/ysy0915/chat-system?style=social)](https://github.com/ysy0915/chat-system)
@@ -273,7 +273,7 @@ mvn test -pl chat-media   # 26 tests
 
 | Dimension | Metric |
 |------|------|
-| Testing | **961 test cases all green**, incl. @SpringBootTest integration & Mapper contract tests |
+| Testing | **965 test cases all green**, incl. @SpringBootTest integration & Mapper contract tests |
 | Code quality | Checkstyle **0 violations** · PMD 2000+→92 · SpotBugs 0 blockers |
 | Architecture | Dual core/web HA + stop broadcast + nodeId anti-backlog + LangGraph hybrid + multi-agent workflow |
 | Model abstraction | Provider strategy + SPI factory + registry + dynamic routing + self-service model management + tool platformization + storage SPI hot-swap |
@@ -333,6 +333,7 @@ The project was initiated in **late July 2026** and completed a full design-to-p
 | 08-17 | Personal chat perf fix (11s→1-3s) + configurable deep thinking (frontend toggle) + doubao mini swap + tree debate true parallelism + package refactor + controller layering + memory governance + games leaderboard fix + feature trim |
 | 09-27 | Security hardening triple (WS subscription-level auth fail-close / internal token constant-time compare / IP anti-spoofing) + startup config self-check + cross-node exchange root-fix + LLM api_key AES-256-GCM encryption at rest + pre-commit secret hook + gitleaks full-history clean |
 | 09-29 | Knowledge graph rebuilt on Milvus (write & query fully on Milvus, semantic recall, Neo4j-free production, ADR-028) + dependency CVEs cleared (snakeyaml critical RCE / Tomcat / Spring / Netty in-line upgrades) + production hardening (Milvus self-healing restart + 2G swap) + v9 announcement |
+| 10-03 | Ops governance triple: config-check.sh tooling + deploy.sh pre-deploy gate (22 .env template drifts cleared, fixing the four 401 pitfalls) + backup system live (MySQL/Milvus nightly 04:00 full backup + off-site dual copies + restore drill manual) + knowledge graph counter distributed-lock fix (rel_count concurrent lost-update, 965 tests green) + v10 announcement |
 
 > **About commit history**: During early development, model API keys were accidentally committed to the repository. To thoroughly purge sensitive information, the repository was archived and rebuilt, so git commit timestamps are concentrated after 08-14. Full iteration details: [Architecture Assessment Report](docs/01-架构设计/架构评估报告.md) & [Development Timeline](docs/08-项目复盘/研发时间线.md) (reconstructed 07-30~08-17 from server logs).
 

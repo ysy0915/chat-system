@@ -4,6 +4,30 @@
 
 ---
 
+## 图片/视频生成「not found」修复：三重根因（2026-10-04 第二起）
+
+> 现象：多模态页点生成报 not found（Spring 404 `{"error":"Not Found"}`）；修复后又暴露模型层 404（`生成失败: API返回状态 404`），连续三重问题叠加。
+
+### 1. Nginx vhost 缺失转发（入口层）
+
+- 根因：真实流量走 `conf.d/chat.conf`（`yangsy.online` 443，certbot 管理），其 `/api/` 整体转 chat-web:8081，**web 无 media 路由 → Spring 404**；而 media/games 的专属 location 只存在于无人访问的主 `nginx.conf` 8080 server。
+- 修复：`chat.conf` 补 `/api/v1/media/`(8084)、`/api/v1/games/`(8083)、`/ws/games` 三组 location（games 一并修复）；`docs/nginx-yangsy-online.conf` 首次入库存档（此前线上配置无仓库副本）。
+
+### 2. 过期内网 IP + 跨 VPC 不通（网络层，同批修复）
+
+- 主 `nginx.conf` 写死 `172.23.172.13`（旧应用服务器内网 IP，已漂移为 .15；且两台服务器分属 172.18/172.23 不同 VPC 网段，内网互访本就不通）→ 6 处全部替换为应用服务器公网 `47.110.234.58`（含 games/ws/kibana/neo4j/upstream）。
+- 遗留：`nacos-upstream-sync.sh` 自动生成的 `upstream.chat.conf` 仍取 Nacos 注册的内网 IP（死链，8080 server 无生产流量，暂不阻塞）。
+
+### 3. 媒体模型行迁移丢失 + 硬编码 ID 漂移（模型层）
+
+- 根因①：`MediaGenService` 硬编码旧表 ID `IMAGE=4/VIDEO=5/3D=7`，09-26 `llm_*` 迁移后错位为 `qwen-plus`/`text-embedding-v3`/`gpt-4o`（媒体模型行根本没迁移）→ 百炼对文本模型调生成端点返回 404。修复：代码改为 `findAllEnabledByType("image"/"video"/"3d")` 按类型查询，ID 永不再漂移，未配置时报错附修复提示。
+- 根因②：provider 级 `base_url=compatible-mode/v1`（聊天兼容路径）拼百炼原生端点 → 404。修复：`llm_model_config` 补 `qwen-image`/`wan2.2-t2v-plus` 两行（id 11/12，model_type=image/video）+ `llm_model_props` 模型级 `base_url=https://dashscope.aliyuncs.com`。
+- 根因③：**chat-media 缺 `@EnableScheduling`**——`CachedModelConfigRepository` 60s 定时刷新从未运行（日志仅启动 1 次），配置/base_url 变更永不生效，缓存钉死在启动快照。修复：`MediaApplication` 补注解。
+- 验证：图片经完整生产链路真实生成 200（qwen-image，5.5s 出图）；视频任务提交成功（wan2.2-t2v-plus，task_id 返回后台轮询）。media 单测 10 项适配新查询语义全绿。
+- 遗留：① OSS 转存未启用（生产 `.env` 无 OSS 凭据，生成结果为百炼 7 天临时 URL，前端已有加载失败兜底）② 3D 模型行未补（功能已下线隐藏）③ `InvalidBearerTokenException` 未列入全局处理（历史遗留）。
+
+---
+
 ## 知识库管理报错「服务内部错误」修复：代理层 4xx 透传（2026-10-04）
 
 > 现象：管理员外账号访问「知识库管理」本应提示「仅管理员可操作知识库」，实际报 500「服务内部错误」，误导排障方向。

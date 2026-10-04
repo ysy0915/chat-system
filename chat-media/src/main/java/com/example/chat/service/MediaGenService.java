@@ -32,9 +32,6 @@ public class MediaGenService {
 
     private static final Logger log = LoggerFactory.getLogger(MediaGenService.class);
 
-    static final long IMAGE_MODEL_ID = 4L;
-    static final long VIDEO_MODEL_ID = 5L;
-    static final long MODEL3D_MODEL_ID = 7L;
     static final Duration IMAGE_TIMEOUT = Duration.ofSeconds(120);
     static final int VIDEO_POLL_INTERVAL_MS = 10000;
     static final int VIDEO_MAX_POLL_COUNT = 360;
@@ -65,15 +62,20 @@ public class MediaGenService {
 
     /** 执行媒体生成完整流程 */
     public MediaGenResult generate(String prompt, String type, Long userId) {
-        long modelId = switch (type) {
-            case "video" -> VIDEO_MODEL_ID;
-            case "3d" -> MODEL3D_MODEL_ID;
-            default -> IMAGE_MODEL_ID;
+        // 按类型查启用的模型配置（2026-10-04 修复：此前硬编码旧表 ID 4/5/7，
+        // 09-26 llm_* 迁移后 ID 错位成 qwen-plus/embedding/gpt-4o，生成必 404）
+        String modelType = switch (type) {
+            case "video" -> "video";
+            case "3d" -> "3d";
+            default -> "image";
         };
+        String typeLabel = "video".equals(type) ? "视频" : ("3d".equals(type) ? "3D" : "图像");
 
-        ModelConfig config = modelConfigRepo.findById(modelId);
+        ModelConfig config = modelConfigRepo.findAllEnabledByType(modelType)
+                .stream().findFirst().orElse(null);
         if (config == null) {
-            throw new IllegalArgumentException(("3d".equals(type) ? "3D" : "图像") + "模型未配置");
+            throw new IllegalArgumentException(
+                    typeLabel + "模型未配置（需 llm_model_config 存在 model_type='" + modelType + "' 且 enabled=1 的行）");
         }
         if (config.apiKeyEncrypted == null || config.apiKeyEncrypted.isBlank()) {
             throw new IllegalArgumentException("模型 API Key 未配置");

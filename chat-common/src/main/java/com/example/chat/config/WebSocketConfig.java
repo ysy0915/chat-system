@@ -41,6 +41,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      */
     private static final Pattern PRIVATE_TOPIC = Pattern.compile("^/topic/[a-z]+\\.\\d+$");
 
+    /**
+     * 游客可用的私有 topic：辩论场（POST /api/v1/debate 不要求登录，前端以本地 chat_user_id
+     * 定向接收 /topic/debate.{id}）。若不放行，游客发起辩论后将永远收不到事件（卡「思考中」）。
+     * 观点辩论为公开内容、敏感性低，放行匿名订阅；私聊（user.*）与树洞（treehole.*）
+     * 均要求登录，维持强制鉴权不变。
+     */
+    private static final Pattern GUEST_ALLOWED_PRIVATE_TOPIC = Pattern.compile("^/topic/debate\\.\\d+$");
+
     private final JwtUtil jwtUtil;
 
     public WebSocketConfig(JwtUtil jwtUtil) {
@@ -143,6 +151,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 String userId = attrs == null ? null : (String) attrs.get("userId");
                 boolean authed = attrs != null && Boolean.TRUE.equals(attrs.get("authed"));
                 if (authed && userId != null && destination.endsWith("." + userId)) {
+                    return message;
+                }
+                // 匿名连接放行游客功能 topic（debate）：辩论场后端支持匿名发起，须能收到自己的事件流
+                if (!authed && GUEST_ALLOWED_PRIVATE_TOPIC.matcher(destination).matches()) {
                     return message;
                 }
                 log.warn("[WS] 订阅被拒绝(越权防护): destination={}, authed={}, uid={}", destination, authed, userId);

@@ -80,10 +80,19 @@ class WebSocketSubscriptionAuthTest {
     }
 
     @Test
-    @DisplayName("匿名连接订阅私有 topic → 拒绝")
-    void anonymous_privateTopic_denied() {
+    @DisplayName("匿名连接订阅敏感私有 topic（user/treehole）→ 拒绝")
+    void anonymous_sensitivePrivateTopic_denied() {
+        assertThrows(MessagingException.class,
+                () -> interceptor.preSend(subscribeFrame("/topic/user.7", null, null), null));
+        assertThrows(MessagingException.class,
+                () -> interceptor.preSend(subscribeFrame("/topic/treehole.7", null, null), null));
+    }
+
+    @Test
+    @DisplayName("匿名连接订阅游客功能 topic（debate）→ 放行（辩论场支持匿名发起，须能收到自己的事件流）")
+    void anonymous_guestDebateTopic_allowed() {
         Message<?> msg = subscribeFrame("/topic/debate.7", null, null);
-        assertThrows(MessagingException.class, () -> interceptor.preSend(msg, null));
+        assertDoesNotThrow(() -> interceptor.preSend(msg, null));
     }
 
     @Test

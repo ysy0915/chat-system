@@ -53,15 +53,16 @@
              tomcat  CVE-2024-50379（条件竞争 RCE）/ CVE-2024-54677 / CVE-2025-24812
              netty  CVE-2024-29025（分块 POST OOM DoS）/ CVE-2024-47554 / CVE-2025-24970
              jackson  CVE-2024-25710（深嵌套 DoS）
-        2026-10-04 第二轮 CVE 清零：
-             tomcat 10.1.42 → 10.1.60：CVE-2025-52434（APR/Native 竞争条件 JVM 崩溃）/ CVE-2025-52520（上传整数溢出绕过大小限制）等 10.1.43+ 全部批次
-             netty 4.1.118.Final → 4.1.138.Final：CVE-2025-55163（MadeYouReset HTTP/2 DDoS，修复于 4.1.124.Final）及后续批次
-             jackson 2.15.4 → 2.21.7：CVE-2026-59888（@JsonView 漏洞，影响 2.15.0~2.18.8/2.21.4，修复于 2.21.5） -->
+        2026-10-04 第二轮 CVE 清零尝试后回滚：
+             tomcat 10.1.60 / netty 4.1.138.Final / jackson 2.21.7 上线后出现严重回归——
+             Nacos 配置解析失败致 chat-core Milvus 地址回落占位符 your-milvus-ip（意图漏斗卡死、
+             /internal/chat/process 全量超时）、STOMP CONNECT 无响应（辩论场卡思考中）。
+             先回滚至 09-29 已验证组合恢复服务；新版本需在灰度环境验证 Nacos client 兼容性后再上 -->
        <snakeyaml.version>2.2</snakeyaml.version>
        <spring-framework.version>6.0.23</spring-framework.version>
-       <tomcat.version>10.1.60</tomcat.version>
-       <netty.version>4.1.138.Final</netty.version>
-       <jackson-bom.version>2.21.7</jackson-bom.version>
+       <tomcat.version>10.1.42</tomcat.version>
+       <netty.version>4.1.118.Final</netty.version>
+       <jackson-bom.version>2.15.4</jackson-bom.version>
     </properties>
 
     <dependencyManagement>

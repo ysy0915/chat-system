@@ -129,7 +129,8 @@ verify_all() {
     check_health "9090:core主" "9092:core从" "8081:web-1" "8082:web-2" "8083:games" "8084:media" "9095:llm" || return 1
 
     yellow "[验证] 前端可达性..."
-    fe_code=$(ssh -i "$MAIN_PEM" $MAIN_SERVER "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:80/ 2>/dev/null" || echo "000")
+    # 80 端口已由 certbot 接管（return 404 强制走 https），须按真实入口 https+域名检查
+    fe_code=$(ssh -i "$MAIN_PEM" $MAIN_SERVER "curl -s -o /dev/null -w '%{http_code}' -k https://127.0.0.1/ -H 'Host: yangsy.online' 2>/dev/null" || echo "000")
     if [ "$fe_code" = "200" ]; then green "frontend: OK"
     else red "frontend: FAIL($fe_code)"; return 1; fi
     return 0

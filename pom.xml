@@ -52,12 +52,16 @@
              spring-framework  CVE-2024-22243/22259/22262（URL 解析绕过 SSRF）
              tomcat  CVE-2024-50379（条件竞争 RCE）/ CVE-2024-54677 / CVE-2025-24812
              netty  CVE-2024-29025（分块 POST OOM DoS）/ CVE-2024-47554 / CVE-2025-24970
-             jackson  CVE-2024-25710（深嵌套 DoS） -->
-        <snakeyaml.version>2.2</snakeyaml.version>
-        <spring-framework.version>6.0.23</spring-framework.version>
-        <tomcat.version>10.1.42</tomcat.version>
-        <netty.version>4.1.118.Final</netty.version>
-        <jackson-bom.version>2.15.4</jackson-bom.version>
+             jackson  CVE-2024-25710（深嵌套 DoS）
+        2026-10-04 第二轮 CVE 清零：
+             tomcat 10.1.42 → 10.1.60：CVE-2025-52434（APR/Native 竞争条件 JVM 崩溃）/ CVE-2025-52520（上传整数溢出绕过大小限制）等 10.1.43+ 全部批次
+             netty 4.1.118.Final → 4.1.138.Final：CVE-2025-55163（MadeYouReset HTTP/2 DDoS，修复于 4.1.124.Final）及后续批次
+             jackson 2.15.4 → 2.21.7：CVE-2026-59888（@JsonView 漏洞，影响 2.15.0~2.18.8/2.21.4，修复于 2.21.5） -->
+       <snakeyaml.version>2.2</snakeyaml.version>
+       <spring-framework.version>6.0.23</spring-framework.version>
+       <tomcat.version>10.1.60</tomcat.version>
+       <netty.version>4.1.138.Final</netty.version>
+       <jackson-bom.version>2.21.7</jackson-bom.version>
     </properties>
 
     <dependencyManagement>
@@ -209,6 +213,14 @@
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-bom</artifactId>
                 <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Jackson BOM：覆盖 Boot 3.1.6 默认的 2.15.x（此前仅定义属性未 import，属死属性未生效；2026-10-04 补 import 修 CVE-2026-59888） -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-bom.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

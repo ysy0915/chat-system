@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import com.example.chat.exception.ChatServiceException;
+import com.example.chat.exception.UpstreamHttpException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Base64;
@@ -46,34 +48,51 @@ public class CoreClient {
         return h;
     }
 
+    /**
+     * 代理调用 chat-llm：上游非 2xx 抛 {@link UpstreamHttpException} 透传状态码与响应体。
+     * 上游 401/403/400 是鉴权与参数语义，不得落入全局兜底被伪装成 500「服务器内部错误」。
+     */
+    private Object exchangeUpstream(String url, org.springframework.http.HttpMethod method, org.springframework.http.HttpEntity<?> entity) {
+        try {
+            return restTemplate.exchange(url, method, entity, Object.class).getBody();
+        } catch (HttpStatusCodeException e) {
+            throw new UpstreamHttpException(e.getStatusCode().value(), e.getResponseBodyAsString());
+        }
+    }
+
     /** GET /api/v1/rag/kb - 知识库列表（chat-llm） */
     public Object listKnowledgeBases(String authHeader) {
-        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/rag/kb",
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** POST /api/v1/rag/kb - 创建知识库（chat-llm） */
     public Object createKnowledgeBase(Map<String, Object> body, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb", org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/rag/kb",
+                org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader)));
     }
 
     /** DELETE /api/v1/rag/kb/{id} - 删除知识库（chat-llm） */
     public Object deleteKnowledgeBase(Long id, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb/" + id, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/rag/kb/" + id,
+                org.springframework.http.HttpMethod.DELETE,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** GET /api/v1/rag/kb/{id}/documents - 文档列表（chat-llm） */
     public Object listDocuments(Long kbId, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents",
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** DELETE /api/v1/rag/documents/{docId} - 删除文档（chat-llm） */
     public Object deleteDocument(Long docId, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity = new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/rag/documents/" + docId, org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/rag/documents/" + docId,
+                org.springframework.http.HttpMethod.DELETE,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** POST /api/v1/rag/kb/{id}/documents - 上传文档 (multipart, param="file"，chat-llm) */
@@ -95,7 +114,8 @@ public class CoreClient {
             headers.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA);
             org.springframework.http.HttpEntity<?> entity =
                     new org.springframework.http.HttpEntity<>(parts, headers);
-            return restTemplate.postForObject(llmBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents", entity, Object.class);
+            return exchangeUpstream(llmBaseUrl + "/api/v1/rag/kb/" + kbId + "/documents",
+                    org.springframework.http.HttpMethod.POST, entity);
         } catch (java.io.IOException e) {
             throw new ChatServiceException("rag", "UPLOAD_IO_ERROR", "读取文件失败: " + e.getMessage(), e);
         }
@@ -105,50 +125,44 @@ public class CoreClient {
 
     /** GET /api/v1/llm/admin/providers - 提供商列表（chat-llm，apiKey 脱敏） */
     public Object listLlmProviders(String authHeader) {
-        org.springframework.http.HttpEntity<?> entity =
-                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers",
-                org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/llm/admin/providers",
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** GET /api/v1/llm/admin/providers/types - 支持的调用类型（chat-llm） */
     public Object listLlmProviderTypes(String authHeader) {
-        org.springframework.http.HttpEntity<?> entity =
-                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/types",
-                org.springframework.http.HttpMethod.GET, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/llm/admin/providers/types",
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** POST /api/v1/llm/admin/providers - 新增提供商（chat-llm） */
     public Object createLlmProvider(Map<String, Object> body, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity =
-                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers",
-                org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/llm/admin/providers",
+                org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader)));
     }
 
     /** PUT /api/v1/llm/admin/providers/{id} - 更新提供商（chat-llm） */
     public Object updateLlmProvider(Long id, Map<String, Object> body, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity =
-                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/" + id,
-                org.springframework.http.HttpMethod.PUT, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/llm/admin/providers/" + id,
+                org.springframework.http.HttpMethod.PUT,
+                new org.springframework.http.HttpEntity<>(body, authHeaders(authHeader)));
     }
 
     /** DELETE /api/v1/llm/admin/providers/{id} - 删除提供商（chat-llm） */
     public Object deleteLlmProvider(Long id, String authHeader) {
-        org.springframework.http.HttpEntity<?> entity =
-                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/" + id,
-                org.springframework.http.HttpMethod.DELETE, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/llm/admin/providers/" + id,
+                org.springframework.http.HttpMethod.DELETE,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     /** POST /api/v1/llm/admin/providers/reload - 全量重载（chat-llm） */
     public Object reloadLlmProviders(String authHeader) {
-        org.springframework.http.HttpEntity<?> entity =
-                new org.springframework.http.HttpEntity<>(authHeaders(authHeader));
-        return restTemplate.exchange(llmBaseUrl + "/api/v1/llm/admin/providers/reload",
-                org.springframework.http.HttpMethod.POST, entity, Object.class).getBody();
+        return exchangeUpstream(llmBaseUrl + "/api/v1/llm/admin/providers/reload",
+                org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(authHeaders(authHeader)));
     }
 
     @Value("${app.core.base-urls:}")

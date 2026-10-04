@@ -3,8 +3,10 @@ package com.example.chat.config;
 import com.example.chat.common.ApiResponse;
 import com.example.chat.common.ErrorCode;
 import com.example.chat.exception.LLMCallException;
+import com.example.chat.exception.UpstreamHttpException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -83,6 +85,21 @@ public class GlobalExceptionHandler {
         // 5xx / 网络异常 / 超时 / 解析失败——问题在模型服务侧，属暂时性故障
         log.error("[LLMCall] 模型 {} 调用失败: {}", ex.getModel(), ex.getMessage());
         return buildResponse(ErrorCode.INTERNAL_ERROR, "AI 服务繁忙或暂时不可用，请稍后重试");
+    }
+
+    /** 服务间代理调用：上游非 2xx 按原状态码与响应体透传，不得伪装成 500（401/403 是鉴权语义） */
+    @ExceptionHandler(UpstreamHttpException.class)
+    public ResponseEntity<String> handleUpstream(UpstreamHttpException ex) {
+        int status = ex.getHttpStatus();
+        String body = ex.getUpstreamBody();
+        if (body == null || body.isBlank()) {
+            // 上游无响应体（网关层裸 4xx/5xx）：退化为统一错误体，但状态码仍透传
+            log.warn("[Upstream] 上游服务返回 {}（无响应体）", status);
+            return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"ok\":false,\"code\":" + status + ",\"error\":\"上游服务返回 " + status + "\"}");
+        }
+        log.warn("[Upstream] 上游服务返回 {}: {}", status, body);
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(body);
     }
 
     // ---- 兜底 ----

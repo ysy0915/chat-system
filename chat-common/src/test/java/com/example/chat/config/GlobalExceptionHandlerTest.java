@@ -3,7 +3,9 @@ package com.example.chat.config;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import com.example.chat.exception.UpstreamHttpException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -133,6 +135,32 @@ class GlobalExceptionHandlerTest {
         assertEquals(500, body.get("code"));
         assertNotNull(body.get("error"));
         assertEquals(3, body.size());
+    }
+
+    @Test
+    @DisplayName("上游透传异常：原状态码与响应体原样透传（403 不再伪装成 500）")
+    void handleUpstream_passesThroughStatusAndBody() {
+        UpstreamHttpException ex = new UpstreamHttpException(403,
+                "{\"ok\":false,\"code\":403,\"error\":\"仅管理员可操作知识库\"}");
+
+        ResponseEntity<String> response = handler.handleUpstream(ex);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().contains("仅管理员可操作知识库"));
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+    }
+
+    @Test
+    @DisplayName("上游透传异常：上游无响应体时退化为统一错误体，状态码仍透传")
+    void handleUpstream_emptyBody_fallsBackToUnifiedError() {
+        UpstreamHttpException ex = new UpstreamHttpException(502, "");
+
+        ResponseEntity<String> response = handler.handleUpstream(ex);
+
+        assertEquals(HttpStatus.BAD_GATEWAY, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().contains("\"code\":502"));
     }
 
     /**

@@ -1,6 +1,29 @@
 # 3.0 版本更新公告
 
-> 发布日期：2026-08-11（初版）· 持续更新至 2026-10-03
+> 发布日期：2026-08-11（初版）· 持续更新至 2026-10-04
+
+---
+
+## 知识库管理报错「服务内部错误」修复：代理层 4xx 透传（2026-10-04）
+
+> 现象：管理员外账号访问「知识库管理」本应提示「仅管理员可操作知识库」，实际报 500「服务内部错误」，误导排障方向。
+
+### 1. 根因（双层）
+
+- **数据**：生产库全部账号 `role=user`，不存在任何 admin——`RagAdminAuthInterceptor` 返回 403 是**正确行为**。主账号已提升 admin（`UPDATE users SET role='admin'`），需**重新登录**获取含 admin 角色的新 JWT（role 在 token 内，旧 token 不刷新）。
+- **代码**：`CoreClient`（chat-web）对 chat-llm 的 RAG/LLM 管理代理调用不捕获上游 4xx——RestTemplate 抛 `HttpClientErrorException` 直落 `GlobalExceptionHandler` 兜底 → 500「服务器内部错误」，上游 401/403/400 的鉴权与参数语义完全丢失（前端本有 403 专属提示页，因状态码丢失无法命中）。
+
+### 2. 修复
+
+- 新增 `UpstreamHttpException`（chat-common）：携带上游原始 HTTP 状态码与响应体。
+- `GlobalExceptionHandler` 新增透传分支：按原状态码 + 原响应体返回；上游无响应体（网关裸 4xx/5xx）退化为统一错误体但**状态码仍透传**。
+- `CoreClient` 全部 chat-llm 代理方法（RAG 知识库 6 个 + LLM 管理 6 个）统一走 `exchangeUpstream` 捕获转抛；内部 core 调用（`/internal/**`）不变，仍走故障转移语义。
+
+### 3. 验证
+
+- 单测 +3：代理收到上游 403 抛透传异常（状态码+原文案断言）、处理器透传 403、空响应体退化分支；chat-common/chat-web 全绿。
+- 生产端到端：合法 role=user JWT 请求 KB 列表，修复前 `HTTP 500` → 修复后 `HTTP 403 + {"ok":false,"code":403,"error":"仅管理员可操作知识库"}`；401/403 状态码经 axios 拦截器联动（401 清会话）。
+- 附带发现：web 自身 `IpRateLimitInterceptor` 对 curl UA 返回 403「访问被拒绝」——测试代理链路时须用浏览器 UA（排查指南已有该条目）。
 
 ---
 

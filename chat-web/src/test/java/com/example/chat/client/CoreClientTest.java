@@ -1,6 +1,7 @@
 package com.example.chat.client;
 
 import com.example.chat.exception.ChatServiceException;
+import com.example.chat.exception.UpstreamHttpException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -8,9 +9,15 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+
+import java.nio.charset.StandardCharsets;
 
 import java.util.Base64;
 import java.util.Map;
@@ -37,6 +44,7 @@ class CoreClientTest {
         client = new CoreClient(restTemplate);
         ReflectionTestUtils.setField(client, "coreBaseUrl", "http://127.0.0.1:9090");
         ReflectionTestUtils.setField(client, "coreBaseUrlsExtra", "");
+        ReflectionTestUtils.setField(client, "llmBaseUrl", "http://127.0.0.1:9095");
     }
 
     /** 单地址：请求转发到唯一 core URL */
@@ -119,6 +127,21 @@ class CoreClientTest {
 
         verify(restTemplate).postForEntity(eq("http://127.0.0.1:9090/internal/chat/stop"), any(), eq(Object.class));
         verify(restTemplate).postForEntity(eq("http://127.0.0.1:9092/internal/chat/stop"), any(), eq(Object.class));
+    }
+
+    /** 知识库代理：上游 403（仅管理员可操作知识库）→ 透传 UpstreamHttpException，不得伪装成 500 */
+    @Test
+    void listKnowledgeBases_upstream403_throwsUpstreamPassthrough() {
+        String body = "{\"ok\":false,\"code\":403,\"error\":\"仅管理员可操作知识库\"}";
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(Object.class)))
+                .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden",
+                        HttpHeaders.EMPTY, body.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+
+        UpstreamHttpException ex = assertThrows(UpstreamHttpException.class,
+                () -> client.listKnowledgeBases("Bearer token"));
+
+        assertEquals(403, ex.getHttpStatus());
+        assertTrue(ex.getUpstreamBody().contains("仅管理员可操作知识库"));
     }
 
     /** broadcast：一个实例失败另一个成功 → 不抛异常 */

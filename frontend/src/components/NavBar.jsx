@@ -35,7 +35,8 @@ const NAV_LINKS = [
     { to: '/history', labelKey: 'nav.history' },
     { to: '/profile', labelKey: 'nav.profile' },
     { to: '/admin/models', labelKey: 'nav.adminModels' },
-    { to: '/knowledge', labelKey: 'nav.knowledge' },
+    // 知识库管理：仅 admin 可见（后端 RagAdminAuthInterceptor 403 兜底，前端隐藏入口）
+    { to: '/knowledge', labelKey: 'nav.knowledge', adminOnly: true },
 ]
 
 export default function NavBar({ authUser, onLogout, onOpenAuth }) {
@@ -89,7 +90,7 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                     {t('nav.brand')}
                 </Link>
                 <div className="navbar-links">
-                    {NAV_LINKS.map(l => (
+                    {NAV_LINKS.filter(l => !l.adminOnly || authUser?.role === 'admin').map(l => (
                         <Link key={l.to} to={l.to} className={isActive(l.to)}
                               onMouseEnter={() => prefetchRoute(l.to)}
                               onClick={(e) => renderNavClick(l, e)}>{t(l.labelKey)}</Link>
@@ -195,7 +196,7 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
                             type="button"
                         >✕</button>
                         <div className="mobile-drawer-links">
-                            {NAV_LINKS.map(l => (
+                            {NAV_LINKS.filter(l => !l.adminOnly || authUser?.role === 'admin').map(l => (
                                 <Link key={l.to} to={l.to} className={isActive(l.to)}
                                       onTouchStart={() => prefetchRoute(l.to)}
                                       onClick={(e) => renderNavClick(l, e, closeMobile)}>{t(l.labelKey)}</Link>

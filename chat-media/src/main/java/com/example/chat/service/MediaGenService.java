@@ -190,10 +190,12 @@ public class MediaGenService {
 
     private String callVideoGeneration(String baseUrl, String apiKey, String model, String prompt) throws Exception {
         String submitUrl = baseUrl.replaceAll("/+$", "") + "/api/v1/services/aigc/video-generation/video-synthesis";
+        // 2026-10-04：去掉 duration 参数——wan2.2 系列不再支持自定义时长
+        // （传 duration:10 会报 "duration customization is not supported"，用 API 默认时长）
         Map<String, Object> body = Map.of(
                 "model", model,
                 "input", Map.of("prompt", prompt),
-                "parameters", Map.of("resolution", "720P", "ratio", "16:9", "duration", 10));
+                "parameters", Map.of("resolution", "720P", "ratio", "16:9"));
         HttpResponse<String> resp = httpPost(submitUrl, apiKey, objectMapper.writeValueAsString(body),
                 Duration.ofSeconds(30), "X-DashScope-Async", "enable");
         if (resp.statusCode() != 200)

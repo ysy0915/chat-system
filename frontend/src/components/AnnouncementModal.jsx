@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../i18n/LanguageContext'
 
 /**
- * 测试版本免责声明弹窗（每次会话首次访问弹出，3 秒倒计时后确认）
+ * 公测版本免责声明弹窗（每次会话首次访问弹出，3 秒倒计时后确认）
  */
 export default function AnnouncementModal({ onClose }) {
     const { t } = useLanguage()

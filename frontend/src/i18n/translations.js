@@ -92,9 +92,9 @@ export const zh = {
     'auth.captchaFetchFailed': '验证码获取失败，请重试',
 
     // ===== 免责声明弹窗 =====
-    'announcement.title': '测试版本说明',
-    'announcement.p1': '您正在访问"博思AI智能体"内部测试版本，仅通过 IP 地址向受邀用户开放体验，尚未正式对外上线。',
-    'announcement.p2': '所有功能仅供测试与反馈，不构成正式服务承诺。我们正依法办理 ICP 备案及生成式人工智能服务信息登记手续，正式服务上线前将另行通知。',
+    'announcement.title': '公测版本说明',
+    'announcement.p1': '您正在访问"博思AI智能体"公测版本。',
+    'announcement.p2': '我们正依法办理 ICP 备案及生成式人工智能服务信息登记手续，正式服务上线前将另行通知。',
     'announcement.periodTitle': '测试期间：',
     'announcement.li1': '· 不开放公开注册、充值或付费入口',
     'announcement.li2': '· 不收集任何个人敏感信息',
@@ -791,9 +791,9 @@ export const en = {
     'auth.captchaFetchFailed': 'Failed to fetch captcha, please retry',
 
     // ===== 免责声明弹窗 =====
-    'announcement.title': 'Test Version Notice',
-    'announcement.p1': 'You are accessing an internal test build of "Bosi AI Agent", available only to invited users via IP address; it has not been officially launched.',
-    'announcement.p2': 'All features are for testing and feedback only and do not constitute a formal service commitment. We are completing ICP filing and generative AI service registration as required by law; the formal launch will be announced separately.',
+    'announcement.title': 'Public Beta Notice',
+    'announcement.p1': 'You are accessing the public beta of "Bosi AI Agent".',
+    'announcement.p2': 'We are completing ICP filing and generative AI service registration as required by law; the formal launch will be announced separately.',
     'announcement.periodTitle': 'During the test period:',
     'announcement.li1': '· No public registration, top-up or payment access',
     'announcement.li2': '· No collection of personal sensitive information',

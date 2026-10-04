@@ -125,7 +125,7 @@ function AppShell(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    // 首次访问（每个会话）立即弹出测试版本说明
+    // 首次访问（每个会话）立即弹出公测版本说明
     useEffect(() => {
         const ack = sessionStorage.getItem('announcement_ack_v1')
         if (ack) return

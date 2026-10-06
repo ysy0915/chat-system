@@ -418,6 +418,8 @@ mvn test -pl chat-media   # 26 个测试
 | 09-27 | 安全加固三连（WebSocket 订阅级鉴权 fail-close / internal 令牌常量时间比较 / IP 防伪造限流防绕过）+ 启动配置自检 StartupConfigValidator + cross-node 交换机根治 + LLM api_key AES-256-GCM 密文落库 + pre-commit 密钥拦截 + gitleaks 全历史扫描清零 |
 | 09-29 | 知识图谱后端 Milvus 化（写入/查询全走 Milvus，语义召回，生产免依赖 Neo4j，ADR-028）+ 依赖 CVE 清零（snakeyaml 高危 RCE / Tomcat 9.8 / Spring / Netty 同线升级）+ 生产加固（Milvus 自愈 restart + 2G swap）+ v9 公告发布 |
 | 10-03 | 运维治理三连：配置体检工具 config-check.sh + deploy.sh 前置卡点（.env 模板 22 处漂移清零，根治 401 排障四坑）+ 备份体系上线（MySQL/Milvus 每日 04:00 全量 + 异机双副本 + restore 演练手册）+ 图谱计数分布式锁修复（rel_count 并发丢更新，965 用例全绿）+ v10 公告发布 |
+| 10-04 | 公测日：图片/视频生成 404 三重根因修复（入口路由/网络链路/wan2.2 duration 参数）+ 知识库管理鉴权修复（代理层 4xx 透传 + adminOnly 入口）+ SQL 执行台入口 404 修复（chat.conf 补 /api/v1/sql/ 转发）+ 依赖 CVE 第二轮升级后回滚（公测日止血，事后定位升级非根因：.env 缺 MILVUS_HOST + WS 游客 debate 订阅被误拒，双根因修复）+ v11 公告 + 首访弹窗公测版 |
+| 10-06 | 依赖 CVE 第三轮清零（升级重上站住：tomcat 10.1.60 / netty 4.1.138.Final / jackson 2.21.7，966 用例 + 7 实例健康 + 端到端全绿）+ config-check 远端体检模式（服务器 .env 盲区闭环）+ 整体评分 99 |
 
 > **关于提交历史**：早期开发过程中曾将模型 API Key 误写入代码仓库，为彻底清除敏感信息，对仓库进行了归档重建，故 Git 提交时间集中显示为 08-14 之后。完整迭代细节见 [架构评估报告.md](docs/01-架构设计/架构评估报告.md) 与 [研发时间线.md](docs/08-项目复盘/研发时间线.md)（依据服务器日志还原 07-30~08-17 的完整研发过程）。
 

@@ -45,7 +45,7 @@
         <byte-buddy.version>1.15.11</byte-buddy.version>
         <grpc.version>1.68.1</grpc.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
-        <protobuf.version>3.25.5</protobuf.version>
+        <protobuf.version>4.35.1</protobuf.version>
         <milvus.version>2.3.4</milvus.version>
         <!-- 安全补丁覆盖（同线内升级，2026-09 修复 GitHub Dependabot 全部告警）：
              snakeyaml  CVE-2022-1471（高危 RCE）

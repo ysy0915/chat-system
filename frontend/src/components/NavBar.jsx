@@ -46,9 +46,9 @@ export default function NavBar({ authUser, onLogout, onOpenAuth }) {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [announcementOpen, setAnnouncementOpen] = useState(false)
 
-    // 公告未读红点：用户首次看到公告前显示（v11：10月4日功能修复版发布，重置未读红点）
+    // 公告未读红点：用户首次看到公告前显示（v12：10月6日安全强化版发布，重置未读红点）
     const userId = authUser?.id || localStorage.getItem('online_presence_guest_id') || 'guest'
-    const seenKey = `announcement_seen_v11_${userId}`
+    const seenKey = `announcement_seen_v12_${userId}`
     const [announcementUnread, setAnnouncementUnread] = useState(() => !localStorage.getItem(seenKey))
 
     const handleOpenAnnouncement = () => {

@@ -125,8 +125,8 @@ deploy_module() {
 
 # ---------- 部署后全量验证 ----------
 verify_all() {
-    yellow "[验证] 部署后健康检查（双 core + 双 web + games + media + llm）..."
-    check_health "9090:core主" "9092:core从" "8081:web-1" "8082:web-2" "8083:games" "8084:media" "9095:llm" || return 1
+    yellow "[验证] 部署后健康检查（core + web + games + media + llm）..."
+    check_health "9090:core" "8081:web" "8083:games" "8084:media" "9095:llm" || return 1
 
     yellow "[验证] 前端可达性..."
     # 80 端口已由 certbot 接管（return 404 强制走 https），须按真实入口 https+域名检查
@@ -152,8 +152,8 @@ case "$TARGET" in
         build_backend
         # 启动顺序：llm（RAG/图谱依赖）→ core → web → games/media
         deploy_module chat-llm   chat-llm-0.0.1-SNAPSHOT.jar   "llm"          9095:llm
-        deploy_module chat-core  chat-core-0.0.1-SNAPSHOT.jar  "core双实例"  9090:core主 9092:core从
-        deploy_module chat-web   chat-web-0.0.1-SNAPSHOT.jar   "web双实例"    8081:web-1 8082:web-2
+        deploy_module chat-core  chat-core-0.0.1-SNAPSHOT.jar  "core"         9090:core
+        deploy_module chat-web   chat-web-0.0.1-SNAPSHOT.jar   "web"          8081:web
         deploy_module chat-games chat-games-0.0.1-SNAPSHOT.jar "games"        8083:games
         deploy_module chat-media chat-media-0.0.1-SNAPSHOT.jar "media"        8084:media
         verify_all ;;
@@ -162,14 +162,14 @@ case "$TARGET" in
         if [ "$TARGET" = "all" ] || [ "$TARGET" = "frontend" ]; then deploy_frontend; fi
         if [ "$TARGET" = "all" ] || [ "$TARGET" != "frontend" ]; then build_backend; fi
         case "$TARGET" in
-            all)   deploy_module chat-core  chat-core-0.0.1-SNAPSHOT.jar  "core双实例"  9090:core主 9092:core从
+            all)   deploy_module chat-core  chat-core-0.0.1-SNAPSHOT.jar  "core"         9090:core
                    deploy_module chat-llm   chat-llm-0.0.1-SNAPSHOT.jar   "llm"          9095:llm
-                   deploy_module chat-web   chat-web-0.0.1-SNAPSHOT.jar   "web双实例"    8081:web-1 8082:web-2
+                   deploy_module chat-web   chat-web-0.0.1-SNAPSHOT.jar   "web"          8081:web
                    deploy_module chat-games chat-games-0.0.1-SNAPSHOT.jar "games"        8083:games
                    deploy_module chat-media chat-media-0.0.1-SNAPSHOT.jar "media"        8084:media ;;
-            core)  deploy_module chat-core  chat-core-0.0.1-SNAPSHOT.jar  "core双实例"  9090:core主 9092:core从 ;;
+            core)  deploy_module chat-core  chat-core-0.0.1-SNAPSHOT.jar  "core"         9090:core ;;
             llm)   deploy_module chat-llm   chat-llm-0.0.1-SNAPSHOT.jar   "llm"          9095:llm ;;
-            web)   deploy_module chat-web   chat-web-0.0.1-SNAPSHOT.jar   "web双实例"    8081:web-1 8082:web-2 ;;
+            web)   deploy_module chat-web   chat-web-0.0.1-SNAPSHOT.jar   "web"          8081:web ;;
             games) deploy_module chat-games chat-games-0.0.1-SNAPSHOT.jar "games"        8083:games ;;
             media) deploy_module chat-media chat-media-0.0.1-SNAPSHOT.jar "media"        8084:media ;;
         esac

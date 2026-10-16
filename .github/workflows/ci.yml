@@ -89,7 +89,7 @@ jobs:
         run: bash scripts/sync-wiki.sh check
 
       - name: Publish Test Results
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         if: always()
         with:
           name: JUnit Tests

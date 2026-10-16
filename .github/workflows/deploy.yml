@@ -111,7 +111,7 @@ jobs:
       # ---- 前端部署到主服务器 Nginx ----
       - name: Download frontend dist
         if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -130,7 +130,7 @@ jobs:
       # ---- 后端 jar 上传 & 重启 ----
       - name: Download backend jars
         id: download_jars
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: jar-*
           merge-multiple: true

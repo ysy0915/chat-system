@@ -61,6 +61,21 @@ export default function Debate() {
   const summaryModelIdRef = useRef(null) // 整合模型 id = models 数组最后一个
   const scrollRef = useAutoScroll([rounds, finalAnswer, synthesizing])
 
+  // ---- 看门狗 ----
+  // 后端只有在收到 done/error 时才会解锁 debating；若服务重启、WS 断连或后端任务丢失，
+  // 事件永远不会到达 → 输入框永久 disabled（表现为「卡住」）。这里加超时兜底主动解锁。
+  const watchdogRef = useRef(null)
+  const debatingRef = useRef(false)
+  const clearWatchdog = () => {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current)
+      watchdogRef.current = null
+    }
+    debatingRef.current = false
+  }
+  // 线性模式 3 轮实测 ~10s；树状模式分支多、串行更久，给更宽的窗口
+  const watchdogMs = treeMode ? 150000 : 60000
+
   useEffect(() => { currentRoundRef.current = currentRound }, [currentRound])
   useEffect(() => { modelNamesRef.current = modelNames }, [modelNames])
 
@@ -179,6 +194,8 @@ export default function Debate() {
       setSynthesizing(true)
       setSynthesizer(p.synthesizer || modelNamesRef.current[summaryModelIdRef.current] || t('debate.synthesizer'))
     } else if (p.type === 'done') {
+      // 树状模式由 DebateTreeView 的 onDone 负责解锁，这里统一停表避免误触发超时
+      clearWatchdog()
       if (!treeMode) {
         setFinalAnswer(extractAnswer(p.answer))
         setDebating(false)
@@ -187,6 +204,7 @@ export default function Debate() {
         setThinking([])
       }
     } else if (p.type === 'error') {
+      clearWatchdog()
       setError(p.message)
       setDebating(false)
       setSynthesizing(false)
@@ -221,9 +239,13 @@ export default function Debate() {
       [`/topic/debate.${userId}`]: (payload) => throttledEmit(payload),
     },
     onConnect: () => setWsStatus('connected'),
-    onStompError: () => { setWsStatus('error'); setDebating(false) },
+    onStompError: () => { setWsStatus('error'); clearWatchdog(); setDebating(false) },
+    // 断连不主动解锁：重连后仍可能收到后续事件；若彻底断线则由看门狗兜底解锁
     onDisconnect: () => setWsStatus('disconnected'),
   })
+
+  // 离开页面时清掉看门狗，避免定时器泄漏
+  useEffect(() => clearWatchdog, [])
 
   useEffect(() => {
     if (!treeMode) scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -257,7 +279,20 @@ export default function Debate() {
         deep_thinking: deepThinking,
         ...(treeMode ? { mode: 'tree' } : {}),
       })
+      // 后端已受理：启动看门狗，收到 done/error 时由事件处理器停表
+      debatingRef.current = true
+      if (watchdogRef.current) clearTimeout(watchdogRef.current)
+      watchdogRef.current = setTimeout(() => {
+        if (!debatingRef.current) return
+        clearWatchdog()
+        setError(t('debate.timeout'))
+        setDebating(false)
+        setSynthesizing(false)
+        setReflecting(false)
+        setThinking([])
+      }, watchdogMs)
     } catch (err) {
+      clearWatchdog()
       if (err.response?.status === 400) {
         setError(err.response.data?.error || t('debate.sensitiveContent'))
       } else {

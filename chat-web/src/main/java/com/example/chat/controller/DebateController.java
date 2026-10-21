@@ -7,6 +7,8 @@ import com.example.chat.security.AuthUtils;
 import com.example.chat.service.ContentSafetyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,6 +23,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/debate")
 public class DebateController {
+    private static final Logger log = LoggerFactory.getLogger(DebateController.class);
+
     private final CoreClient coreClient;
     private final ContentSafetyService contentSafetyService;
 
@@ -46,13 +50,23 @@ public class DebateController {
             ));
         }
 
-        // 插入辩论记录
+        // 插入辩论记录（取回自增 ID：chat-core 靠它回写最终结论并把状态置为 completed。）
+        // 此前返回值被丢弃 → DebateProcessor 恒拿到 null → findById(null) 静默跳过 →
+        // 记录永远停在 debating（2026-10-21 修复）
         Map<String, Object> record = new HashMap<>();
         record.put("userId", userId);
         record.put("userName", "用户" + userId);
         record.put("question", question);
         record.put("status", "debating");
-        coreClient.insertDebateRecord(record);
+        Long debateRecordId = null;
+        try {
+            Object inserted = coreClient.insertDebateRecord(record);
+            if (inserted instanceof Map<?, ?> insertedMap && insertedMap.get("id") != null) {
+                debateRecordId = Long.valueOf(insertedMap.get("id").toString());
+            }
+        } catch (Exception ex) {
+            log.warn("[Debate] 写入辩论记录失败，该场次状态将无法回写: {}", ex.getMessage());
+        }
 
         // 插入消息记录
         Map<String, Object> msg = new HashMap<>();
@@ -94,6 +108,9 @@ public class DebateController {
         // 深度思考开关（前端「深度思考」按钮，仅对豆包等原生思考模型生效）
         boolean deepThinking = "true".equals(String.valueOf(body.get("deep_thinking")));
         debatePayload.put("deep_thinking", String.valueOf(deepThinking));
+        if (debateRecordId != null) {
+            debatePayload.put("debate_record_id", debateRecordId);
+        }
         coreClient.debateStart(debatePayload);
 
         return ResponseEntity.accepted().body(Map.of("req_id", reqId, "status", "debating"));

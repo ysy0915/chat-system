@@ -31,7 +31,15 @@
     display: block;
 }
 
-.navbar-links { display: flex; gap: 4px; }
+.navbar-links {
+    display: flex;
+    gap: 4px;
+    min-width: 0;               /* 空间不足时允许收缩，避免撑破 navbar 单行布局 */
+    overflow-x: auto;           /* 极窄桌面窗口下横向滚动，而非标签换行破坏 64px 高度 */
+    scrollbar-width: none;      /* Firefox 隐藏滚动条 */
+}
+
+.navbar-links::-webkit-scrollbar { display: none; }
 
 .navbar-links a {
     color: var(--text-secondary);
@@ -41,6 +49,8 @@
     font-size: 14px;
     font-weight: 500;
     transition: all 0.2s;
+    white-space: nowrap;        /* 中文标签不折行 */
+    flex-shrink: 0;
 }
 
 .navbar-links a:hover,

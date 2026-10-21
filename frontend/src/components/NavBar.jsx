@@ -28,7 +28,7 @@ const NAV_LINKS = [
     { to: '/graph', labelKey: 'nav.graph' },
     { to: '/personal', labelKey: 'nav.personal' },
     { to: '/treehole', labelKey: 'nav.treehole' },
-    // { to: '/', labelKey: 'nav.chat' },          // AI群聊伙伴：隐藏
+    { to: '/', labelKey: 'nav.chat' },
     { to: '/media', labelKey: 'nav.media' },
     // { to: '/3d', labelKey: 'nav.model3d' },     // 3D模型生成：隐藏
     { to: '/games', labelKey: 'nav.games' },

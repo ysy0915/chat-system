@@ -26,6 +26,9 @@ const PingPong = lazy(() => import('./pages/pingpang'))
 const SnakeKing = lazy(() => import('./pages/snakeking'))
 const CastleSiege = lazy(() => import('./pages/castlesiege'))
 
+// 沉浸式页面：隐藏顶部导航栏（页面自带返回入口，如 '/' 群聊页的「返回首页」按钮）
+const IMMERSIVE_PAGES = new Set(['/'])
+
 const KeepAliveRoute = React.memo(function KeepAliveRoute({ pathname, matchPath, children }) {
     const visible = pathname === matchPath
     return (
@@ -167,7 +170,10 @@ function AppShell(){
     return (
         <div className="app-layout">
             <OnlinePresenceTracker authUser={authUser} />
-            <NavBar authUser={authUser} onLogout={handleLogout} onOpenAuth={openAuth} />
+            {/* 群聊页('/')等沉浸式页面隐藏导航栏：页面自带返回入口，换取完整聊天视口 */}
+            {!IMMERSIVE_PAGES.has(location.pathname) && (
+                <NavBar authUser={authUser} onLogout={handleLogout} onOpenAuth={openAuth} />
+            )}
             {loginRequired ? (
                 <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
                               alignItems: 'center', justifyContent: 'center', gap: 16, color: '#64748b' }}>
